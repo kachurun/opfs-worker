@@ -116,6 +116,7 @@ async function runDemo() {
 
         // Create directories
         await fs.mkdir('/dir/sub-dir', { recursive: true });
+        await fs.mkdir('/dir2', { recursive: false });
         log('✅ Created nested directories: /dir/sub-dir', ui);
 
         // // Create files in directories

@@ -130,6 +130,42 @@ export default class OPFSFileSystem {
         await writeFileData(fileHandle, data, encoding, { append: true });
     }
 
+    /**
+     * Create a directory
+     */
+    async mkdir(path: string, options?: { recursive?: boolean }): Promise<void> {
+        const recursive = options?.recursive ?? false;
+        const segments = this.splitPath(path);
+
+        let current = this.root;
+
+        for (let i = 0; i < segments.length; i++) {
+            const segment = segments[i];
+
+            try {
+                current = await current.getDirectoryHandle(segment!, { create: recursive || i === segments.length - 1 });
+            }
+            catch (e: any) {
+                if (e.name === 'NotFoundError') {
+                    throw new OPFSError(
+                        `Parent directory does not exist: /${ segments.slice(0, i + 1).join('/') }`,
+                        'ENOENT'
+                    );
+                }
+
+                if (e.name === 'TypeMismatchError') {
+                    throw new OPFSError(`Path segment is not a directory: ${ segment }`, 'ENOTDIR');
+                }
+
+                throw new OPFSError('Failed to create directory', 'MKDIR_FAILED');
+            }
+        }
+    }
+
+
+    /**
+     * Get file or directory stats
+     */
     async stat(path: string): Promise<{
         size: number;
         mtime: string;
