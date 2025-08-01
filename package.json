@@ -1,22 +1,77 @@
 {
-  "name": "opfs-worker",
-  "version": "0.1.0",
-  "description": "OPFS File System Webworker",
-  "type": "module",
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
-  "scripts": {
-    "build": "tsc -p tsconfig.json",
-    "test": "echo \"No tests\""
-  },
-  "keywords": [],
-  "author": "",
-  "license": "MIT",
-  "dependencies": {
-    "comlink": "^4.4.2"
-  },
-  "devDependencies": {
-    "typescript": "^5.9.2",
-    "vite": "^7.0.6"
-  }
+    "name": "opfs-worker",
+    "version": "0.1.0",
+    "description": "A robust TypeScript library for working with Origin Private File System (OPFS) through Web Workers",
+    "type": "module",
+    "main": "dist/index.js",
+    "types": "dist/index.d.ts",
+    "exports": {
+        ".": {
+            "types": "./dist/index.d.ts",
+            "import": "./dist/opfs-worker.js",
+            "require": "./dist/opfs-worker.cjs"
+        },
+        "./inline": {
+            "types": "./dist/worker/inline-worker.d.ts",
+            "import": "./dist/opfs-worker-inline.js",
+            "require": "./dist/opfs-worker-inline.cjs"
+        }
+    },
+    "files": [
+        "dist/**/*",
+        "README.md",
+        "LICENSE"
+    ],
+    "scripts": {
+        "build": "vite build && tsc --emitDeclarationOnly --outDir dist",
+        "dev": "vite serve demo",
+        "preview": "vite preview demo",
+        "type-check": "tsc --noEmit",
+        "lint": "eslint src --ext .ts,.tsx",
+        "lint:fix": "eslint src --ext .ts,.tsx --fix",
+        "test": "vitest",
+        "test:coverage": "vitest --coverage",
+        "prepublishOnly": "npm run build"
+    },
+    "keywords": [
+        "opfs",
+        "origin-private-file-system",
+        "web-worker",
+        "filesystem",
+        "browser-storage",
+        "file-api",
+        "typescript"
+    ],
+    "author": "Your Name <your.email@example.com>",
+    "license": "MIT",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/your-username/opfs-worker.git"
+    },
+    "bugs": {
+        "url": "https://github.com/your-username/opfs-worker/issues"
+    },
+    "homepage": "https://github.com/your-username/opfs-worker#readme",
+    "devDependencies": {
+        "@flexbe/eslint-config": "^1.0.11",
+        "@types/node": "^20.19.9",
+        "@typescript-eslint/eslint-plugin": "^7.18.0",
+        "@typescript-eslint/parser": "^7.18.0",
+        "@vitest/coverage-v8": "^1.6.1",
+        "eslint": "^8.57.1",
+        "happy-dom": "^13.10.1",
+        "typescript": "^5.9.2",
+        "vite": "^7.0.6",
+        "vitest": "^1.6.1"
+    },
+    "engines": {
+        "node": ">=18.0.0"
+    },
+    "peerDependencies": {
+        "typescript": ">=5.0.0"
+    },
+    "packageManager": "bun@1.1.29",
+    "dependencies": {
+        "comlink": "^4.4.2"
+    }
 }
