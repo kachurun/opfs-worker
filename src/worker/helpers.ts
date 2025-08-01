@@ -17,6 +17,29 @@ export function createBuffer(data: string | Uint8Array | ArrayBuffer, encoding: 
     return data instanceof Uint8Array ? data : new Uint8Array(data);
 }
 
+
+/**
+ * Read raw binary data from a file using a file handle
+ *
+ * @param fileHandle - The file handle to read from
+ * @returns The raw binary data as Uint8Array
+ */
+export async function readFileData(fileHandle: FileSystemFileHandle): Promise<Uint8Array> {
+    const handle = await fileHandle.createSyncAccessHandle();
+
+    try {
+        const size = handle.getSize();
+        const buffer = new Uint8Array(size);
+
+        handle.read(buffer, { at: 0 });
+
+        return buffer;
+    }
+    finally {
+        handle.close();
+    }
+}
+
 /**
  * Write data to a file using a file handle
  *

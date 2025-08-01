@@ -7,7 +7,7 @@ import {
     PathError
 } from './errors';
 
-import { checkOPFSSupport, writeFileData } from './helpers';
+import { checkOPFSSupport, readFileData, writeFileData } from './helpers';
 
 import type { BufferEncoding } from 'typescript';
 
@@ -72,50 +72,27 @@ export default class OPFSFileSystem {
 
     /**
      * Read a file from the file system
-     *
-     * @param path - The path to the file
-     * @param options - The options for the file
-     *
-     * @returns The file content
      */
-    async readFile(path: string): Promise<Uint8Array>;
-    async readFile(path: string, options: BufferEncoding | { encoding: BufferEncoding }): Promise<string>;
+    async readFile(path: string, encoding: 'binary'): Promise<Uint8Array>;
+    async readFile(path: string, encoding?: BufferEncoding): Promise<string>;
     async readFile(
         path: string,
-        optionsOrEncoding?: BufferEncoding | { encoding?: BufferEncoding }
-    ): Promise<Uint8Array | string> {
-        let handle: FileSystemSyncAccessHandle | null = null;
-
-        const encoding = typeof optionsOrEncoding === 'string'
-            ? optionsOrEncoding
-            : optionsOrEncoding?.encoding;
-
+        encoding: BufferEncoding | 'binary' = 'utf-8'
+    ): Promise<string | Uint8Array> {
         try {
-            const fh = await this.getFileHandle(path, false);
+            const fileHandle = await this.getFileHandle(path, false);
+            const buffer = await readFileData(fileHandle);
 
-            handle = await fh.createSyncAccessHandle();
-
-            const size = handle.getSize();
-            const buffer = new Uint8Array(size);
-
-            handle.read(buffer, { at: 0 });
-
-            if (encoding) {
-                return decodeBuffer(buffer, encoding);
+            if (encoding === 'binary') {
+                return buffer;
             }
 
-            return buffer;
+            return decodeBuffer(buffer, encoding);
         }
         catch (err) {
             console.error(err);
 
             throw new FileNotFoundError(path);
-        }
-        finally {
-            try {
-                handle?.close();
-            }
-            catch {}
         }
     }
 
@@ -124,16 +101,13 @@ export default class OPFSFileSystem {
      *
      * @param path - The path to the file
      * @param data - The data to write to the file
-     * @param options - The options for the file
+     * @param encoding - The encoding to use
      */
-    async writeFile(path: string, data: string | Uint8Array | ArrayBuffer, encoding?: BufferEncoding): Promise<void>;
-    async writeFile(path: string, data: string | Uint8Array | ArrayBuffer, options?: { encoding?: BufferEncoding }): Promise<void>;
     async writeFile(
         path: string,
         data: string | Uint8Array | ArrayBuffer,
-        optionsOrEncoding?: BufferEncoding | { encoding?: BufferEncoding }
+        encoding?: BufferEncoding
     ): Promise<void> {
-        const encoding = typeof optionsOrEncoding === 'string' ? optionsOrEncoding : optionsOrEncoding?.encoding;
         const fileHandle = await this.getFileHandle(path, true);
 
         await writeFileData(fileHandle, data, encoding, { truncate: true });
@@ -144,16 +118,13 @@ export default class OPFSFileSystem {
      *
      * @param path - The path to the file
      * @param data - The data to append to the file
-     * @param options - The options for the file
+     * @param encoding - The encoding to use
      */
-    async appendFile(path: string, data: string | Uint8Array | ArrayBuffer, encoding?: BufferEncoding): Promise<void>;
-    async appendFile(path: string, data: string | Uint8Array | ArrayBuffer, options?: { encoding?: BufferEncoding }): Promise<void>;
     async appendFile(
         path: string,
         data: string | Uint8Array | ArrayBuffer,
-        optionsOrEncoding?: BufferEncoding | { encoding?: BufferEncoding }
+        encoding?: BufferEncoding
     ): Promise<void> {
-        const encoding = typeof optionsOrEncoding === 'string' ? optionsOrEncoding : optionsOrEncoding?.encoding;
         const fileHandle = await this.getFileHandle(path, true);
 
         await writeFileData(fileHandle, data, encoding, { append: true });

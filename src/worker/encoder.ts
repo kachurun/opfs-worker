@@ -17,8 +17,12 @@ export function encodeString(data: string, encoding: BufferEncoding = 'utf-8'): 
             return encodeAscii(data);
 
         case 'latin1':
-        case 'binary':
             return encodeLatin1(data);
+
+        case 'binary':
+            // For binary encoding, treat the string as raw bytes
+            // This assumes the string contains raw byte values
+            return Uint8Array.from(data, char => char.charCodeAt(0));
 
         case 'base64':
             return Uint8Array.from(atob(data), c => c.charCodeAt(0));
@@ -49,7 +53,10 @@ export function decodeBuffer(buffer: Uint8Array, encoding: BufferEncoding = 'utf
             return decodeUtf16LE(buffer);
 
         case 'latin1':
+            return String.fromCharCode(...buffer);
+
         case 'binary':
+            // For binary encoding, return raw byte values as string
             return String.fromCharCode(...buffer);
 
         case 'ascii':

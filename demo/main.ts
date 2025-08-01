@@ -1,3 +1,4 @@
+import { encodeString } from '../src/worker/encoder';
 import { createWorker } from '../src/worker/inline-worker';
 
 
@@ -80,45 +81,47 @@ async function runDemo() {
         // Write a file
         const testData = 'Hello, OPFS World! 🌍\nThis is a test file.';
 
-        await fs.writeFile('/a/demo.txt', testData);
-        log(`✅ Created '/a/demo.txt' with data: "${ testData }"`, ui);
+        await fs.writeFile('/text/demo.txt', testData);
+        log(`✅ Created '/text/demo.txt' with data: "${ testData }"`, ui);
 
         // Read the file back
-        const readContent = await fs.readFile('/a/demo.txt', 'utf-8');
+        const readContent = await fs.readFile('/text/demo.txt');
 
         log(`✅ Read content: "${ readContent }"`, ui);
 
         // Append to file
-        await fs.appendFile('/a/demo.txt', '\n📝 This line was appended!');
-        const appendedContent = await fs.readFile('/a/demo.txt', 'utf-8');
+        await fs.appendFile('/text/demo.txt', '\n📝 This line was appended!');
+        const appendedContent = await fs.readFile('/text/demo.txt', 'utf-8');
 
         log(`✅ After append: "${ appendedContent }"`, ui);
 
         // File stats
-        const stats = await fs.stat('/a/demo.txt');
+        const stats = await fs.stat('/text/demo.txt');
 
         log(`📊 File stats: size=${ stats.size }, isFile=${ stats.isFile }, modified=${ stats.mtime }`, ui);
 
         // // Binary file operations
-        // log('\n🔢 Testing binary operations...', ui);
-        // const binaryData = new Uint8Array([0x48, 0x65, 0x6c, 0x6c, 0x6f]); // "Hello"
+        log('\n🔢 Testing binary operations...', ui);
+        const binaryData = encodeString('Hello', 'binary'); // "Hello"
 
-        // await fs.writeFile('/binary.dat', binaryData);
-        // const readBinary = await fs.readFile('/binary.dat', { encoding: 'binary' }) as Uint8Array;
+        await fs.writeFile('/binary/demo.dat', binaryData);
+        log(`✅ Binary file: wrote ${ binaryData.length } bytes: [${ String(binaryData) }]`, ui);
 
-        // log(`✅ Binary file: wrote ${ binaryData.length } bytes, read ${ readBinary.length } bytes`, ui);
+        const readBinary = await fs.readFile('/binary/demo.dat', 'binary');
 
-        // // Directory operations
-        // log('\n📂 Testing directory operations...', ui);
+        log(`✅ Binary file: read ${ readBinary.length } bytes: [${ String(readBinary) }]`, ui);
 
-        // // Create directories
-        // await fs.mkdir('/test-dir/sub-dir', { recursive: true });
-        // log('✅ Created nested directories: /test-dir/sub-dir', ui);
+        // Directory operations
+        log('\n📂 Testing directory operations...', ui);
+
+        // Create directories
+        await fs.mkdir('/dir/sub-dir', { recursive: true });
+        log('✅ Created nested directories: /dir/sub-dir', ui);
 
         // // Create files in directories
-        // await fs.writeFile('/test-dir/file1.txt', 'File 1 content');
-        // await fs.writeFile('/test-dir/file2.txt', 'File 2 content');
-        // await fs.writeFile('/test-dir/sub-dir/nested.txt', 'Nested file content');
+        // await fs.writeFile('/dir/file1.txt', 'File 1 content');
+        // await fs.writeFile('/dir/file2.txt', 'File 2 content');
+        // await fs.writeFile('/dir/sub-dir/nested.txt', 'Nested file content');
         // log('✅ Created files in directories', ui);
 
         // // List directory contents
@@ -126,9 +129,9 @@ async function runDemo() {
 
         // log(`📋 Root directory contents: ${ rootContents.join(', ') }`, ui);
 
-        // const testDirContents = await fs.readdir('/test-dir');
+        // const testDirContents = await fs.readdir('/dir');
 
-        // log(`📋 /test-dir contents: ${ testDirContents.join(', ') }`, ui);
+        // log(`📋 /dir contents: ${ testDirContents.join(', ') }`, ui);
 
         // // File existence checks
         // log('\n🔍 Testing file existence...', ui);
@@ -182,11 +185,11 @@ async function runDemo() {
 
         // // Cleanup demonstration
         // log('\n🧹 Testing cleanup operations...', ui);
-        // await fs.unlink('/binary.dat');
-        // log('✅ Deleted /binary.dat', ui);
+        // await fs.unlink('/demo.dat');
+        // log('✅ Deleted /demo.dat', ui);
 
-        // await fs.rmdir('/test-dir', { recursive: true });
-        // log('✅ Recursively deleted /test-dir', ui);
+        // await fs.rmdir('/dir', { recursive: true });
+        // log('✅ Recursively deleted /dir', ui);
 
         // // Final summary
         // log('\n🎉 All tests completed successfully!', ui);
