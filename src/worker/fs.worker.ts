@@ -388,14 +388,19 @@ export default class OPFSFileSystem {
      * });
      * ```
      */
+    async readdir(path: string): Promise<string[]>;
+    async readdir(path: string, options: { withFileTypes: true }): Promise<DirentData[]>;
+    async readdir(path: string, options: { withFileTypes: false }): Promise<string[]>;
+    async readdir(path: string, options?: { withFileTypes?: boolean }): Promise<string[] | DirentData[]>;
     async readdir(path: string, options?: { withFileTypes?: boolean }): Promise<string[] | DirentData[]> {
         const withTypes = options?.withFileTypes ?? false;
         const dir = await this.getDirectoryHandle(path, false);
-        const results: (string | DirentData)[] = [];
 
         // Use type assertion to access the entries() method
-        for await (const [name, handle] of (dir as any).entries()) {
-            if (withTypes) {
+        if (withTypes) {
+            const results: DirentData[] = [];
+
+            for await (const [name, handle] of (dir as any).entries()) {
                 const isFile = handle.kind === 'file';
 
                 results.push({
@@ -405,12 +410,18 @@ export default class OPFSFileSystem {
                     isDirectory: !isFile,
                 });
             }
-            else {
+
+            return results;
+        }
+        else {
+            const results: string[] = [];
+
+            for await (const [name] of (dir as any).entries()) {
                 results.push(name);
             }
-        }
 
-        return results as string[] | DirentData[];
+            return results;
+        }
     }
 
     /**
@@ -495,7 +506,7 @@ export default class OPFSFileSystem {
      */
     async clear(path: string = '/'): Promise<void> {
         try {
-            const items = await this.readdir(path, { withFileTypes: true }) as DirentData[];
+            const items = await this.readdir(path, { withFileTypes: true });
 
             for (const item of items) {
                 const itemPath = `${ path === '/' ? '' : path }/${ item.name }`;
@@ -672,7 +683,7 @@ export default class OPFSFileSystem {
                 await this.mkdir(destination, { recursive: true });
 
                 // Copy all contents
-                const items = await this.readdir(source, { withFileTypes: true }) as DirentData[];
+                const items = await this.readdir(source, { withFileTypes: true });
 
                 for (const item of items) {
                     const sourceItemPath = `${ source }/${ item.name }`;
