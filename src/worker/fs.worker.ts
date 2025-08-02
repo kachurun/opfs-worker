@@ -598,20 +598,8 @@ export default class OPFSFileSystem {
                 throw new FileNotFoundError(oldPath);
             }
 
-            // Get source stats to determine if it's a file or directory
-            const sourceStats = await this.stat(oldPath);
-
-            if (sourceStats.isFile) {
-                // Handle file rename: read content, write to new location, remove original
-                const content = await this.readFile(oldPath, 'binary');
-
-                await this.writeFile(newPath, content);
-                await this.remove(oldPath);
-            }
-            else {
-                await this.copy(oldPath, newPath, { recursive: true });
-                await this.remove(oldPath, { recursive: true });
-            }
+            await this.copy(oldPath, newPath, { recursive: true });
+            await this.remove(oldPath, { recursive: true });
         }
         catch (error) {
             if (error instanceof OPFSError) {
@@ -652,7 +640,6 @@ export default class OPFSFileSystem {
             const recursive = options?.recursive ?? false;
             const force = options?.force ?? true;
 
-            // Check if source exists
             const sourceExists = await this.exists(source);
 
             if (!sourceExists) {
