@@ -9,6 +9,16 @@ export function checkOPFSSupport(): void {
     }
 }
 
+export function splitPath(path: string): string[] {
+    return path.split('/').filter(Boolean);
+}
+
+export function joinPath(segments: string[] | string): string {
+    return typeof segments === 'string'
+        ? segments
+        : segments.join('/');
+}
+
 export function createBuffer(data: string | Uint8Array | ArrayBuffer, encoding: BufferEncoding = 'utf-8'): Uint8Array {
     if (typeof data === 'string') {
         return encodeString(data, encoding);

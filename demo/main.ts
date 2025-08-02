@@ -70,10 +70,15 @@ async function runDemo() {
         log('🚀 Initializing OPFS file system...', ui);
         const fs = await createWorker();
 
-        const root = await fs.init('/demo');
+        log('✅ OPFS file system worker created', ui);
+
+        await fs.init('/demo');
 
         log('✅ File system initialized successfully', ui);
-        console.log('Root handler:', root);
+
+        log('🧹 Cleaning up previous demo data...', ui);
+        await fs.clear('/');
+        log('✅ Cleanup completed', ui);
 
         // Basic file operations
         log('\n📁 Testing basic file operations...', ui);
@@ -119,44 +124,48 @@ async function runDemo() {
         await fs.mkdir('/dir2', { recursive: false });
         log('✅ Created nested directories: /dir/sub-dir', ui);
 
-        // // Create files in directories
-        // await fs.writeFile('/dir/file1.txt', 'File 1 content');
-        // await fs.writeFile('/dir/file2.txt', 'File 2 content');
-        // await fs.writeFile('/dir/sub-dir/nested.txt', 'Nested file content');
-        // log('✅ Created files in directories', ui);
+        // Create files in directories
+        await fs.writeFile('/dir/file1.txt', 'File 1 content');
+        await fs.writeFile('/dir/file2.txt', 'File 2 content');
+        await fs.writeFile('/dir/sub-dir/nested.txt', 'Nested file content');
+        log('✅ Created files in directories', ui);
 
-        // // List directory contents
-        // const rootContents = await fs.readdir('/');
+        // List directory contents
+        const rootContents = await fs.readdir('/');
 
-        // log(`📋 Root directory contents: ${ rootContents.join(', ') }`, ui);
+        log(`📋 Root directory contents: ${ rootContents.join(', ') }`, ui);
 
-        // const testDirContents = await fs.readdir('/dir');
+        const testDirContents = await fs.readdir('/dir');
 
-        // log(`📋 /dir contents: ${ testDirContents.join(', ') }`, ui);
+        log(`📋 /dir contents: ${ testDirContents.join(', ') }`, ui);
 
-        // // File existence checks
-        // log('\n🔍 Testing file existence...', ui);
-        // log(`✅ /demo.txt exists: ${ await fs.exists('/demo.txt') }`, ui);
-        // log(`❌ /nonexistent.txt exists: ${ await fs.exists('/nonexistent.txt') }`, ui);
+        // File existence checks
+        log('\n🔍 Testing file existence...', ui);
+        log(`✅ /text/demo.txt exists: ${ await fs.exists('/text/demo.txt') }`, ui);
+        log(`✅ /dir/sub-dir exists: ${ await fs.exists('/dir/sub-dir/') }`, ui);
+        log(`❌ /nonexistent.txt exists: ${ await fs.exists('/nonexistent.txt') }`, ui);
+        log(`❌ /dir/nonexistent/ exists: ${ await fs.exists('/dir/nonexistent/') }`, ui);
 
-        // // Rename operations
-        // log('\n✏️ Testing rename operations...', ui);
-        // await fs.rename('/demo.txt', '/renamed-demo.txt');
-        // log('✅ Renamed /demo.txt to /renamed-demo.txt', ui);
-        // log(`❌ Original file exists: ${ await fs.exists('/demo.txt') }`, ui);
-        // log(`✅ Renamed file exists: ${ await fs.exists('/renamed-demo.txt') }`, ui);
+        // Copy operations
+        log('\n📋 Testing copy operations...', ui);
+        await fs.copy('/text/demo.txt', '/text/copied-demo.txt');
+        log('✅ Copied /text/demo.txt to /text/copied-demo.txt', ui);
+        log(`✅ Original file exists: ${ await fs.exists('/text/demo.txt') }`, ui);
+        log(`✅ Copied file exists: ${ await fs.exists('/text/copied-demo.txt') }`, ui);
 
-        // // Error handling demonstration
-        // log('\n⚠️ Testing error handling...', ui);
-        // try {
-        //     await fs.readFile('/definitely-does-not-exist.txt');
-        // }
-        // catch (error) {
-        //     if (error instanceof FileNotFoundError) {
-        //         log(`✅ Caught expected FileNotFoundError: ${ error.message }`, ui);
-        //         log(`   Error code: ${ error.code }, Path: ${ error.path }`, ui);
-        //     }
-        // }
+        // Copy directory
+        await fs.copy('/dir', '/dir-copy', { recursive: true });
+        log('✅ Copied directory /dir to /dir-copy recursively', ui);
+        const copiedDirContents = await fs.readdir('/dir-copy');
+
+        log(`📋 /dir-copy contents: ${ copiedDirContents.join(', ') }`, ui);
+
+        // Rename operations
+        log('\n✏️ Testing rename operations...', ui);
+        await fs.rename('/text/demo.txt', '/text/renamed-demo.txt');
+        log('✅ Renamed /text/demo.txt to /text/renamed-demo.txt', ui);
+        log(`❌ Original file exists: ${ await fs.exists('/text/demo.txt') }`, ui);
+        log(`✅ Renamed file exists: ${ await fs.exists('/text/renamed-demo.txt') }`, ui);
 
         // try {
         //     await fs.writeFile('../evil-path', 'malicious content');
@@ -184,17 +193,25 @@ async function runDemo() {
 
         // log('✅ File upload simulation completed', ui);
 
-        // // Cleanup demonstration
-        // log('\n🧹 Testing cleanup operations...', ui);
-        // await fs.unlink('/demo.dat');
-        // log('✅ Deleted /demo.dat', ui);
+        // Cleanup demonstration
+        log('\n🧹 Testing cleanup operations...', ui);
+        await fs.remove('/text/renamed-demo.txt');
+        log('✅ Deleted /text/renamed-demo.txt', ui);
 
-        // await fs.rmdir('/dir', { recursive: true });
-        // log('✅ Recursively deleted /dir', ui);
+        const exists = await fs.exists('/text/renamed-demo.txt');
 
-        // // Final summary
-        // log('\n🎉 All tests completed successfully!', ui);
-        // setStatus('🎉 Demo completed successfully! All features working.', false, ui);
+        log(`❌ /text/renamed-demo.txt exists: ${ exists }`, ui);
+
+        await fs.remove('/dir2', { recursive: true });
+        log('✅ Recursively deleted /dir2', ui);
+
+        const existsDir = await fs.exists('/dir2');
+
+        log(`❌ /dir2 exists: ${ existsDir }`, ui);
+
+        // Final summary
+        log('\n🎉 All tests completed successfully!', ui);
+        setStatus('🎉 Demo completed successfully! All features working.', false, ui);
     }
     catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
