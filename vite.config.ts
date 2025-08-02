@@ -5,8 +5,8 @@ export default defineConfig({
     build: {
         lib: {
             entry: {
-                'index': resolve(__dirname, 'src/opfs.worker.ts'),
-                'inline': resolve(__dirname, 'src/inline.ts')
+                'index': resolve(__dirname, 'src/index.ts'),
+                'raw': resolve(__dirname, 'src/worker.ts')
             },
             name: 'opfs-worker',
             formats: ['es', 'cjs'],

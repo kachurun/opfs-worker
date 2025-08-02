@@ -1,4 +1,4 @@
-import { createWorker } from '../src/inline';
+import { createWorker } from '../src';
 import { encodeString } from '../src/utils/encoder';
 
 async function createDemoUI() {

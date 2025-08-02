@@ -36,12 +36,21 @@ A robust TypeScript library for working with Origin Private File System (OPFS) t
 npm install opfs-worker
 ```
 
+**Dependencies:**
+
+- `comlink` - Required for both modes (automatically included with inline mode)
+- A bundler with Web Worker support (Vite, Webpack, Rollup, etc.) - Required for manual worker setup
+
 ## Quick Start
 
-### Basic Usage
+This library provides two ways to use OPFS with Web Workers:
+
+### Inline Worker (Recommended)
+
+The easiest way to get started - just import and use:
 
 ```typescript
-import { createWorker } from 'opfs-worker/inline';
+import { createWorker } from 'opfs-worker';
 
 async function example() {
     // Create a file system instance
@@ -59,10 +68,34 @@ async function example() {
 }
 ```
 
+### Manual Worker Setup
+
+For more control over the worker lifecycle, use the worker directly with your bundler:
+
+```typescript
+import OPFSWorker from 'opfs-worker/raw?worker';
+import { wrap } from 'comlink';
+
+async function example() {
+    // Create and wrap the worker
+    const worker = wrap(new OPFSWorker());
+
+    // Mount the file system
+    await worker.mount('/my-app');
+
+    // Use the file system
+    await worker.writeFile('/config.json', JSON.stringify({ theme: 'dark' }));
+    const config = await worker.readFile('/config.json');
+    console.log(JSON.parse(config));
+}
+```
+
+**Note:** Manual worker setup requires a bundler that supports Web Workers (like Vite, Webpack, or Rollup) and the `comlink` package for communication between the main thread and worker.
+
 ### Advanced Usage
 
 ```typescript
-import { createWorker } from 'opfs-worker/inline';
+import { createWorker } from 'opfs-worker';
 
 async function advancedExample() {
     const fs = await createWorker();
@@ -122,9 +155,9 @@ Check out the live demo powered by Vite and hosted on GitHub Pages.
 
 ### Entry Points
 
-### Create Worker
+#### Mode 1: Inline Worker
 
-#### `createWorker()`
+##### `createWorker()`
 
 Creates a new file system instance with an inline worker.
 
@@ -135,6 +168,21 @@ const fs = await createWorker();
 ```
 
 **Returns:** `Promise<RemoteOPFSWorker>` - A remote file system interface
+
+#### Mode 2: Manual Worker Setup
+
+##### `OPFSWorker`
+
+The worker class that can be imported directly.
+
+```typescript
+import OPFSWorker from 'opfs-worker/raw?worker';
+import { wrap } from 'comlink';
+
+const worker = wrap(new OPFSWorker());
+```
+
+**Note:** This approach requires a bundler that supports Web Workers (Vite, Webpack, Rollup, etc.) and the `comlink` package.
 
 ### Core Methods
 

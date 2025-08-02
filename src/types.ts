@@ -18,4 +18,4 @@ export interface DirentData {
     isDirectory: boolean;
 }
 
-export type * from './opfs.worker';
+export type * from './worker';
