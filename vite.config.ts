@@ -5,12 +5,12 @@ export default defineConfig({
     build: {
         lib: {
             entry: {
-                'index': resolve(__dirname, 'src/index.ts'),
-                'raw': resolve(__dirname, 'src/worker.ts')
+                index: resolve(__dirname, 'src/index.ts'),
+                raw: resolve(__dirname, 'src/worker.ts'),
             },
             name: 'opfs-worker',
             formats: ['es', 'cjs'],
-            fileName: (format, entryName) => `${entryName}.${format === 'es' ? 'js' : 'cjs'}`
+            fileName: (format, entryName) => `${ entryName }.${ format === 'es' ? 'js' : 'cjs' }`,
         },
         rollupOptions: {
             external: ['comlink'],

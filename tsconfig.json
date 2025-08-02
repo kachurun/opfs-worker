@@ -9,6 +9,7 @@
         "declaration": true,
         "declarationMap": true,
         "outDir": "dist",
+        "jsx": "react-jsx",
 
         "strict": true,
         "noUncheckedIndexedAccess": true,
@@ -23,6 +24,6 @@
         "verbatimModuleSyntax": true,
         "types": ["vite/client"]
     },
-    "include": ["src/**/*.ts", "src/**/*.d.ts", "demo/**/*.ts"],
+    "include": ["src/**/*.ts", "src/**/*.d.ts", "demo/**/*.ts", "demo/**/*.tsx", "vite.config.ts"],
     "exclude": ["node_modules", "dist", "**/*.test.ts", "**/*.spec.ts"]
 }

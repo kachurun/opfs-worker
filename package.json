@@ -76,7 +76,11 @@
     },
     "packageManager": "bun@1.1.29",
     "dependencies": {
-        "comlink": "^4.4.2"
+        "@types/react": "^19.1.9",
+        "@types/react-dom": "^19.1.7",
+        "comlink": "^4.4.2",
+        "react": "^19.1.1",
+        "react-dom": "^19.1.1"
     },
     "publishConfig": {
         "access": "public"
