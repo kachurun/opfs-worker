@@ -19,12 +19,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: oven-sh/setup-bun@v1
         with:
-          node-version: 20
-          cache: npm
-      - run: npm ci
-      - run: npx vite build demo --base=./
+          bun-version: latest
+      - run: bun install
+      - run: bun run build:demo
       - uses: actions/upload-pages-artifact@v3
         with:
           path: demo/dist
