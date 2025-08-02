@@ -7,7 +7,7 @@
     "types": "dist/index.d.ts",
     "exports": {
         ".": {
-            "types": "./dist/index.d.ts",
+            "types": "./dist/types.d.ts",
             "import": "./dist/opfs-worker.js",
             "require": "./dist/opfs-worker.cjs"
         },
@@ -23,7 +23,7 @@
         "LICENSE"
     ],
     "scripts": {
-        "build": "vite build && tsc --emitDeclarationOnly --outDir dist",
+        "build": "vite build && tsc -p tsconfig.build.json",
         "dev": "vite serve demo",
         "preview": "vite preview demo",
         "type-check": "tsc --noEmit",
@@ -65,7 +65,7 @@
         "vitest": "^1.6.1"
     },
     "engines": {
-        "node": ">=18.0.0"
+        "node": ">=20.0.0"
     },
     "peerDependencies": {
         "typescript": ">=5.0.0"

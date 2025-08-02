@@ -11,10 +11,11 @@ export interface FileStat {
     hash?: string;
 }
 
-
 export interface DirentData {
     name: string;
     kind: 'file' | 'directory';
     isFile: boolean;
     isDirectory: boolean;
 }
+
+export type * from './opfs.worker';

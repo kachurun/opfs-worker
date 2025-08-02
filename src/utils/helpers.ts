@@ -109,7 +109,9 @@ export async function writeFileData(
  */
 export async function calculateFileHash(buffer: Uint8Array, algorithm: string = 'SHA-1'): Promise<string> {
     try {
-        const hashBuffer = await crypto.subtle.digest(algorithm, buffer);
+        // Ensure buffer is properly typed for crypto.subtle.digest
+        const bufferSource = new Uint8Array(buffer);
+        const hashBuffer = await crypto.subtle.digest(algorithm, bufferSource);
         const hashArray = Array.from(new Uint8Array(hashBuffer));
 
         return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');

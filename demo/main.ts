@@ -1,6 +1,5 @@
-import { encodeString } from '../src/worker/encoder';
-import { createWorker } from '../src/worker/inline-worker';
-
+import { createWorker } from '../src/inline';
+import { encodeString } from '../src/utils/encoder';
 
 async function createDemoUI() {
     const container = document.createElement('div');
@@ -74,7 +73,9 @@ async function runDemo() {
 
         await fs.mount('/demo');
 
-        log('✅ File system initialized successfully', ui);
+        console.log(fs);
+
+        log('✅ File system mounted successfully', ui);
 
         log('🧹 Cleaning up previous demo data...', ui);
         await fs.clear('/');
@@ -202,11 +203,14 @@ async function runDemo() {
 
         // Index operation - list all files with stats
         log('\n📊 Testing file system indexing...', ui);
+
+        // First, index without hashes to see all files quickly
+        log('📋 Basic index (without hashes):', ui);
         const index = await fs.index();
 
-        log(`✅ Indexed file system - found ${ index.size } entries`, ui);
+        log(`✅ Found ${ index.size } entries`, ui);
 
-        // Display index contents
+        // Display basic index contents
         for (const [path, stat] of index) {
             const type = stat.isFile ? 'file' : 'directory';
             const size = stat.isFile ? ` (${ stat.size } bytes)` : '';
@@ -214,101 +218,60 @@ async function runDemo() {
             log(`  📄 ${ path }: ${ type }${ size }`, ui);
         }
 
-        // Show some specific lookups
-        const renamedFileStats = index.get('/text/renamed-demo.txt');
-
-        if (renamedFileStats) {
-            log(`📋 Renamed file stats: ${ renamedFileStats.size } bytes, modified: ${ renamedFileStats.mtime }`, ui);
-        }
-
-        const binaryFileStats = index.get('/binary/demo.dat');
-
-        if (binaryFileStats) {
-            log(`📋 Binary file stats: ${ binaryFileStats.size } bytes, modified: ${ binaryFileStats.mtime }`, ui);
-        }
-
-        // Test file hashing
-        log('\n🔐 Testing file hashing...', ui);
-        const hashStats = await fs.stat('/text/renamed-demo.txt', {
-            includeHash: true,
-        });
-
-        log('📊 File with hash:', ui);
-        log('  📁 Path: /text/renamed-demo.txt', ui);
-        log(`  📏 Size: ${ hashStats.size } bytes`, ui);
-        if (hashStats.hash) {
-            log(`  🔒 SHA-1: ${ hashStats.hash }`, ui);
-        }
-
-        // Test indexing with hashes (for smaller files only to avoid performance issues)
-        log('\n🔍 Testing index with hashes (small files only)...', ui);
+        // Now test indexing with hashes
+        log('\n🔐 Index with file hashes:', ui);
         const indexWithHashes = await fs.index({ includeHash: true });
         let hashedFileCount = 0;
 
         for (const [path, stat] of indexWithHashes) {
-            if (stat.isFile && stat.hash) {
+            if (stat.isFile) {
                 hashedFileCount++;
-                log(`  🔐 ${ path }: ${ stat.size } bytes, SHA-1: ${ stat.hash.substring(0, 16) }...`, ui);
+                if (stat.hash) {
+                    log(`  🔐 ${ path }: ${ stat.size } bytes, SHA-1: ${ stat.hash.substring(0, 16) }...`, ui);
+                }
+                else {
+                    log(`  📄 ${ path }: ${ stat.size } bytes (hash failed)`, ui);
+                }
+            }
+            else {
+                log(`  📁 ${ path }: directory`, ui);
             }
         }
 
-        log(`✅ Successfully hashed ${ hashedFileCount } files`, ui);
+        log(`✅ Successfully processed ${ hashedFileCount } files with hash calculation`, ui);
 
-        // Test sync with clean before to demonstrate clean functionality
-        log('\n🔄 Testing sync with clean before...', ui);
+        // Show some specific lookups
+        const syncConfigStats = index.get('/sync/config.json');
 
-        const beforeCleanIndex = await fs.index();
+        if (syncConfigStats) {
+            log(`📋 Synced config stats: ${ syncConfigStats.size } bytes, modified: ${ syncConfigStats.mtime }`, ui);
+        }
 
-        log(`📊 Files before clean sync: ${ beforeCleanIndex.size }`, ui);
+        const syncBinaryStats = index.get('/sync/binary.dat');
 
-        const cleanSyncEntries: [string, string | Uint8Array | Blob][] = [
-            ['/fresh/start.txt', 'Fresh start after clean'],
-            ['/fresh/data.json', JSON.stringify({ fresh: true, cleanedAndSynced: new Date().toISOString() })],
-        ];
-
-        await fs.sync(cleanSyncEntries, { cleanBefore: true });
-        log('✅ Synced with clean before option', ui);
-
-        const afterCleanIndex = await fs.index();
-
-        log(`📊 Files after clean sync: ${ afterCleanIndex.size }`, ui);
-
-        // Verify only the fresh files exist
-        const freshContent = await fs.readFile('/fresh/start.txt');
-
-        log(`✅ Fresh content: "${ freshContent }"`, ui);
-
-        const freshJson = await fs.readFile('/fresh/data.json');
-
-        log(`✅ Fresh JSON: ${ freshJson }`, ui);
+        if (syncBinaryStats) {
+            log(`📋 Synced binary stats: ${ syncBinaryStats.size } bytes, modified: ${ syncBinaryStats.mtime }`, ui);
+        }
 
 
         // Cleanup demonstration
         log('\n🧹 Testing cleanup operations...', ui);
 
-        // Try to remove a file that might not exist after clean sync
-        const fileExistsBeforeDelete = await fs.exists('/fresh/start.txt');
+        // Remove a synced file
+        await fs.remove('/sync/config.json');
+        log('✅ Deleted /sync/config.json', ui);
 
-        if (fileExistsBeforeDelete) {
-            await fs.remove('/fresh/start.txt');
-            log('✅ Deleted /fresh/start.txt', ui);
+        const exists = await fs.exists('/sync/config.json');
 
-            const exists = await fs.exists('/fresh/start.txt');
+        log(`❌ /sync/config.json exists: ${ exists }`, ui);
 
-            log(`❌ /fresh/start.txt exists: ${ exists }`, ui);
-        }
+        // Remove a directory and its contents
+        await fs.remove('/sync', { recursive: true });
+        log('✅ Recursively deleted /sync directory', ui);
 
-        // Remove a directory if it exists
-        const dirExistsBeforeDelete = await fs.exists('/fresh');
+        const existsDir = await fs.exists('/sync');
 
-        if (dirExistsBeforeDelete) {
-            await fs.remove('/fresh', { recursive: true });
-            log('✅ Recursively deleted /fresh', ui);
-
-            const existsDir = await fs.exists('/fresh');
-
-            log(`❌ /fresh exists: ${ existsDir }`, ui);
-        }
+        log(`❌ /sync exists: ${ existsDir }`, ui);
 
         // Final summary
         log('\n🎉 All tests completed successfully!', ui);

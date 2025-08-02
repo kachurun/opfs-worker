@@ -17,6 +17,16 @@ export class OPFSNotSupportedError extends OPFSError {
     }
 }
 
+
+/**
+ * Error thrown when OPFS is not mounted
+ */
+export class OPFSNotMountedError extends OPFSError {
+    constructor() {
+        super('OPFS is not mounted', 'OPFS_NOT_MOUNTED');
+    }
+}
+
 /**
  * Error thrown for invalid paths or path traversal attempts
  */

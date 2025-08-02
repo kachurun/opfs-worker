@@ -1,13 +1,14 @@
 import { expose } from 'comlink';
 
-import { decodeBuffer } from './encoder';
+import { decodeBuffer } from './utils/encoder';
 import {
     FileNotFoundError,
     OPFSError,
+    OPFSNotMountedError,
     PathError
-} from './errors';
+} from './utils/errors';
 
-import { calculateFileHash, checkOPFSSupport, joinPath, readFileData, splitPath, writeFileData } from './helpers';
+import { calculateFileHash, checkOPFSSupport, joinPath, readFileData, splitPath, writeFileData } from './utils/helpers';
 
 import type { DirentData, FileStat } from './types';
 import type { BufferEncoding } from 'typescript';
@@ -27,12 +28,9 @@ import type { BufferEncoding } from 'typescript';
  * const config = await fs.readFile('/data/config.json');
  * ```
  */
-export default class OPFSFileSystem {
+export class OPFSWorker {
     /** Root directory handle for the file system */
-    private root!: FileSystemDirectoryHandle;
-
-    /** Storage API instance for accessing OPFS */
-    private storage = navigator.storage!;
+    private root: FileSystemDirectoryHandle | null = null;
 
     /**
      * Creates a new OPFSFileSystem instance
@@ -61,7 +59,7 @@ export default class OPFSFileSystem {
      */
     async mount(root: string = '/'): Promise<boolean> {
         try {
-            const rootDir = await this.storage.getDirectory();
+            const rootDir = await navigator.storage.getDirectory();
 
             this.root = await this.getDirectoryHandle(root, true, rootDir);
 
@@ -92,7 +90,11 @@ export default class OPFSFileSystem {
      * const docsDir2 = await fs.getDirectoryHandle(['users', 'john', 'documents'], true);
      * ```
      */
-    private async getDirectoryHandle(path: string | string[], create: boolean = false, from: FileSystemDirectoryHandle = this.root): Promise<FileSystemDirectoryHandle> {
+    private async getDirectoryHandle(path: string | string[], create: boolean = false, from: FileSystemDirectoryHandle | null = this.root): Promise<FileSystemDirectoryHandle> {
+        if (!from) {
+            throw new OPFSNotMountedError();
+        }
+
         const segments = Array.isArray(path) ? path : splitPath(path);
         let current = from;
 
@@ -122,7 +124,11 @@ export default class OPFSFileSystem {
      * const fileHandle2 = await fs.getFileHandle(['config', 'settings.json'], true);
      * ```
      */
-    private async getFileHandle(path: string | string[], create = false, from: FileSystemDirectoryHandle = this.root): Promise<FileSystemFileHandle> {
+    private async getFileHandle(path: string | string[], create = false, from: FileSystemDirectoryHandle | null = this.root): Promise<FileSystemFileHandle> {
+        if (!from) {
+            throw new OPFSNotMountedError();
+        }
+
         const segments = splitPath(path);
 
         if (segments.length === 0) {
@@ -348,6 +354,10 @@ export default class OPFSFileSystem {
      * ```
      */
     async mkdir(path: string, options?: { recursive?: boolean }): Promise<void> {
+        if (!this.root) {
+            throw new OPFSNotMountedError();
+        }
+
         const recursive = options?.recursive ?? false;
         const segments = splitPath(path);
 
@@ -936,7 +946,4 @@ export default class OPFSFileSystem {
     }
 }
 
-// Create instance and expose methods
-const fs = new OPFSFileSystem();
-
-expose(fs);
+expose(new OPFSWorker());
