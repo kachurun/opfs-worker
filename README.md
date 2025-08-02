@@ -1,26 +1,10 @@
 # OPFS Worker
 
-[![npm version](https://img.shields.io/npm/v/opfs-worker)](https://www.npmjs.com/package/opfs-worker)
-
 A robust TypeScript library for working with Origin Private File System (OPFS) through Web Workers, providing a Node.js-like file system API for browser environments.
-
-## Table of Contents
-
-- [Features](#features)
-- [Installation](#installation)
-- [Quick Start](#quick-start)
-- [Demo](#demo)
-- [API Reference](#api-reference)
-- [Types](#types)
-- [Error Types](#error-types)
-- [Browser Support](#browser-support)
-- [Development](#development)
-- [License](#license)
-- [Contributing](#contributing)
 
 ## Features
 
-- 🌐 **Cross-browser compatible**: Works in all modern browsers including Safari, Firefox, Chrome, and Edge
+- 🌐 **Cross-browser compatible**: Works in all modern browsers including Safari, Firefox, Chrome
 - 🚀 **Web Worker-based**: Runs in a separate thread for better performance
 - 📁 **Node.js-like API**: Familiar file system operations (`readFile`, `writeFile`, `mkdir`, etc.)
 - 🔒 **Type-safe**: Full TypeScript support with comprehensive type definitions
@@ -93,17 +77,9 @@ async function advancedExample() {
 }
 ```
 
-## Demo
-
-Check out the live demo powered by Vite and hosted on GitHub Pages.
-
-[Live Demo](https://kachurun.github.io/opfs-worker/)
-
 ## API Reference
 
 ### Entry Points
-
-### Create Worker
 
 #### `createWorker()`
 
@@ -118,8 +94,6 @@ const fs = await createWorker();
 **Returns:** `Promise<RemoteOPFSWorker>` - A remote file system interface
 
 ### Core Methods
-
-### Mount
 
 #### `mount(root?: string): Promise<boolean>`
 
@@ -136,8 +110,6 @@ await fs.mount('/my-app');
 **Returns:** `Promise<boolean>` - True if initialization was successful
 
 **Throws:** `OPFSError` if initialization fails
-
-### Read File
 
 #### `readFile(path: string, encoding?: BufferEncoding | 'binary'): Promise<string | Uint8Array>`
 
@@ -163,8 +135,6 @@ const utf8Content = await fs.readFile('/data/utf8.txt', 'utf-8');
 
 **Throws:** `FileNotFoundError` if the file doesn't exist
 
-### Write File
-
 #### `writeFile(path: string, data: string | Uint8Array | ArrayBuffer, encoding?: BufferEncoding): Promise<void>`
 
 Write data to a file, creating or overwriting it.
@@ -187,8 +157,6 @@ await fs.writeFile('/data/utf16.txt', 'Hello World', 'utf-16le');
 - `data`: The data to write (string, Uint8Array, or ArrayBuffer)
 - `encoding` (optional): The encoding to use when writing string data
 
-### Append File
-
 #### `appendFile(path: string, data: string | Uint8Array | ArrayBuffer, encoding?: BufferEncoding): Promise<void>`
 
 Append data to the end of a file.
@@ -201,8 +169,6 @@ await fs.appendFile('/logs/app.log', `[${new Date().toISOString()}] User logged 
 const additionalData = new Uint8Array([6, 7, 8]);
 await fs.appendFile('/data/binary.dat', additionalData);
 ```
-
-### Create Directory
 
 #### `mkdir(path: string, options?: { recursive?: boolean }): Promise<void>`
 
@@ -220,8 +186,6 @@ await fs.mkdir('/users/john/documents/projects', { recursive: true });
 
 - `path`: The path where the directory should be created
 - `options.recursive` (optional): Whether to create parent directories if they don't exist
-
-### Read Directory
 
 #### `readdir(path: string, options?: { withFileTypes?: boolean }): Promise<string[] | DirentData[]>`
 
@@ -243,8 +207,6 @@ detailed.forEach(item => {
 
 - `Promise<string[]>` when `withFileTypes` is false or undefined
 - `Promise<DirentData[]>` when `withFileTypes` is true
-
-### Get Stats
 
 #### `stat(path: string, options?: { includeHash?: boolean; hashAlgorithm?: string }): Promise<FileStat>`
 
@@ -273,8 +235,6 @@ console.log(`Hash: ${statsWithHash.hash}`);
 
 **Returns:** `Promise<FileStat>` - File/directory statistics
 
-### Check Existence
-
 #### `exists(path: string): Promise<boolean>`
 
 Check if a file or directory exists.
@@ -285,8 +245,6 @@ console.log(`File exists: ${exists}`);
 ```
 
 **Returns:** `Promise<boolean>` - True if the file or directory exists
-
-### Remove Path
 
 #### `remove(path: string, options?: { recursive?: boolean; force?: boolean }): Promise<void>`
 
@@ -308,8 +266,6 @@ await fs.remove('/maybe/exists', { force: true });
 - `path`: The path to remove
 - `options.recursive` (optional): Whether to remove directories recursively (default: false)
 - `options.force` (optional): Whether to ignore errors if the path doesn't exist (default: false)
-
-### Copy Path
 
 #### `copy(source: string, destination: string, options?: { recursive?: boolean; force?: boolean }): Promise<void>`
 
@@ -333,8 +289,6 @@ await fs.copy('/source', '/dest', { recursive: true, force: false });
 - `options.recursive` (optional): Whether to copy directories recursively (default: false)
 - `options.force` (optional): Whether to overwrite existing files (default: true)
 
-### Rename Path
-
 #### `rename(oldPath: string, newPath: string): Promise<void>`
 
 Rename a file or directory.
@@ -347,8 +301,6 @@ await fs.rename('/old/path/file.txt', '/new/path/renamed.txt');
 
 - `oldPath`: The current path of the file or directory
 - `newPath`: The new path for the file or directory
-
-### Clear Directory
 
 #### `clear(path?: string): Promise<void>`
 
@@ -365,8 +317,6 @@ await fs.clear('/data');
 **Parameters:**
 
 - `path` (optional): The path to the directory to clear (default: '/')
-
-### Index File System
 
 #### `index(options?: { includeHash?: boolean; hashAlgorithm?: string }): Promise<Map<string, FileStat>>`
 
@@ -403,8 +353,6 @@ if (fileStats) {
 
 **Returns:** `Promise<Map<string, FileStat>>` - Map of path => FileStat
 
-### Sync File System
-
 #### `sync(entries: [string, string | Uint8Array | Blob][], options?: { cleanBefore?: boolean }): Promise<void>`
 
 Synchronize the file system with external data.
@@ -428,8 +376,6 @@ await fs.sync(entries, { cleanBefore: true });
 
 - `entries`: Array of [path, data] tuples to sync
 - `options.cleanBefore` (optional): Whether to clear the file system before syncing (default: false)
-
-### Resolve Path
 
 #### `realpath(path: string): Promise<string>`
 
