@@ -79,6 +79,25 @@ async function advancedExample() {
 
 ## API Reference
 
+- [Entry Points](#entry-points)
+  - [`createWorker()`](#createworker)
+- [Core Methods](#core-methods)
+  - [Mount](#mountroot-string-promiseboolean)
+  - [Read File](#readfilepath-string-encoding-bufferencoding--binary-promisestring--uint8array)
+  - [Write File](#writefilepath-string-data-string--uint8array--arraybuffer-encoding-bufferencoding-promisevoid)
+  - [Append File](#appendfilepath-string-data-string--uint8array--arraybuffer-encoding-bufferencoding-promisevoid)
+  - [Make Directory](#mkdirpath-string-options--recursive-boolean--promisevoid)
+  - [Read Directory](#readdirpath-string-options--withfiletypes-boolean--promisestring--direntdata)
+  - [File Stat](#statpath-string-options--includehash-boolean-hashalgorithm-string--promisefilestat)
+  - [Exists](#existspath-string-promiseboolean)
+  - [Remove](#removepath-string-options--recursive-boolean-force-boolean--promisevoid)
+  - [Copy](#copysource-string-destination-string-options--recursive-boolean-force-boolean--promisevoid)
+  - [Rename](#renameoldpath-string-newpath-string-promisevoid)
+  - [Clear](#clearpath-string-promisevoid)
+  - [Index](#indexoptions--includehash-boolean-hashalgorithm-string--promisemapstring-filestat)
+  - [Sync](#syncentries-string-string--uint8array--blob-options--cleanbefore-boolean--promisevoid)
+  - [Real Path](#realpathpath-string-promisestring)
+
 ### Entry Points
 
 #### `createWorker()`
