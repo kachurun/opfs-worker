@@ -56,7 +56,7 @@ async function example() {
     // Create a file system instance
     const fs = await createWorker();
 
-    // Mount the file system
+    // Mount the file system (required, even for '/')
     await fs.mount('/my-app');
 
     // Write a file
@@ -67,6 +67,11 @@ async function example() {
     console.log(JSON.parse(config));
 }
 ```
+
+> **Note:** The `mount` call defines the directory that becomes the root of your
+> file system. This call is mandatory before any file operations. For example,
+> after `fs.mount('/dir')`, calling `fs.readFile('/text.txt')` accesses the file
+> located at `/dir/text.txt` inside OPFS.
 
 ### Manual Worker Setup
 
@@ -80,7 +85,7 @@ async function example() {
     // Create and wrap the worker
     const worker = wrap(new OPFSWorker());
 
-    // Mount the file system
+    // Mount the file system (required, even for '/')
     await worker.mount('/my-app');
 
     // Use the file system
@@ -191,6 +196,13 @@ const worker = wrap(new OPFSWorker());
 #### `mount(root?: string): Promise<boolean>`
 
 Initialize the file system within a given directory.
+Calling `mount` is required before performing any file operations, even if
+you're using the root directory (`'/'`).
+
+The `root` parameter defines where in OPFS the file system's root will be
+created. All file paths passed to the API are relative to this mount point. For
+example, after `fs.mount('/dir')`, calling `fs.readFile('/text.txt')` accesses
+`/dir/text.txt` in OPFS.
 
 ```typescript
 await fs.mount('/my-app');
