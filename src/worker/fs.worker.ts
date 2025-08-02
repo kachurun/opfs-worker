@@ -7,7 +7,7 @@ import {
     PathError
 } from './errors';
 
-import { checkOPFSSupport, joinPath, readFileData, splitPath, writeFileData } from './helpers';
+import { calculateFileHash, checkOPFSSupport, joinPath, readFileData, splitPath, writeFileData } from './helpers';
 
 import type { DirentData, FileStat } from './types';
 import type { BufferEncoding } from 'typescript';
@@ -59,7 +59,7 @@ export default class OPFSFileSystem {
      * const success = await fs.init('/my-app');
      * ```
      */
-    async init(root: string = '/'): Promise<boolean> {
+    async mount(root: string = '/'): Promise<boolean> {
         try {
             const rootDir = await this.storage.getDirectory();
 
@@ -123,7 +123,7 @@ export default class OPFSFileSystem {
      * ```
      */
     private async getFileHandle(path: string | string[], create = false, from: FileSystemDirectoryHandle = this.root): Promise<FileSystemFileHandle> {
-        const segments = Array.isArray(path) ? [...path] : splitPath(path);
+        const segments = splitPath(path);
 
         if (segments.length === 0) {
             throw new PathError('Path must not be empty', Array.isArray(path) ? path.join('/') : path);
@@ -133,6 +133,83 @@ export default class OPFSFileSystem {
         const dir = await this.getDirectoryHandle(segments, create, from);
 
         return dir.getFileHandle(fileName, { create });
+    }
+
+
+    /**
+     * Recursively list all files and directories with their stats
+     * 
+     * Traverses the entire file system starting from the root and returns
+     * a Map containing all paths and their corresponding file statistics.
+     * 
+     * @param options - Options for indexing
+     * @param options.includeHash - Whether to calculate file hash (default: false)
+     * @param options.hashAlgorithm - Hash algorithm to use (default: 'SHA-1', fastest)
+     * @returns Promise that resolves to a Map of path => FileStat
+     * @throws {OPFSError} If the indexing operation fails
+     * 
+     * @example
+     * ```typescript
+     * // Basic index without hash
+     * const index = await fs.index();
+     * 
+     * // Index with file hash
+     * const indexWithHash = await fs.index({ 
+     *   includeHash: true,
+     *   hashAlgorithm: 'SHA-1'
+     * });
+     * 
+     * // Iterate through all files and directories
+     * for (const [path, stat] of index) {
+     *   console.log(`${path}: ${stat.isFile ? 'file' : 'directory'} (${stat.size} bytes)`);
+     *   if (stat.hash) console.log(`  Hash: ${stat.hash}`);
+     * }
+     * 
+     * // Get specific file stats
+     * const fileStats = index.get('/data/config.json');
+     * if (fileStats) {
+     *   console.log(`File size: ${fileStats.size} bytes`);
+     *   if (fileStats.hash) console.log(`Hash: ${fileStats.hash}`);
+     * }
+     * ```
+     */
+    async index(options?: { includeHash?: boolean; hashAlgorithm?: 'SHA-1' | 'SHA-256' | 'SHA-384' | 'SHA-512' }): Promise<Map<string, FileStat>> {
+        const result = new Map<string, FileStat>();
+
+        const walk = async(dirPath: string) => {
+            const items = await this.readdir(dirPath, { withFileTypes: true });
+
+            for (const item of items) {
+                const fullPath = `${ dirPath === '/' ? '' : dirPath }/${ item.name }`;
+
+                try {
+                    const stat = await this.stat(fullPath, options);
+
+                    result.set(fullPath, stat);
+
+                    if (stat.isDirectory) {
+                        await walk(fullPath);
+                    }
+                }
+                catch (err) {
+                    console.warn(`Skipping broken entry: ${ fullPath }`, err);
+                }
+            }
+        };
+
+        // Add root directory
+        result.set('/', {
+            kind: 'directory',
+            size: 0,
+            mtime: new Date(0).toISOString(),
+            ctime: new Date(0).toISOString(),
+            isFile: false,
+            isDirectory: true,
+        });
+
+        await walk('/');
+
+        return result;
     }
 
     /**
@@ -285,7 +362,7 @@ export default class OPFSFileSystem {
             catch (e: any) {
                 if (e.name === 'NotFoundError') {
                     throw new OPFSError(
-                        `Parent directory does not exist: /${ joinPath(segments.slice(0, i + 1)) }`,
+                        `Parent directory does not exist: ${ joinPath(segments.slice(0, i + 1)) }`,
                         'ENOENT'
                     );
                 }
@@ -303,31 +380,44 @@ export default class OPFSFileSystem {
      * Get file or directory stats
      * 
      * Retrieves metadata about a file or directory, including size, modification time,
-     * and type information.
+     * type information, and optionally file hashes.
      * 
      * @param path - The path to the file or directory
+     * @param options - Options for stat operation
+     * @param options.includeHash - Whether to calculate file hash (default: false, only for files)
+     * @param options.hashAlgorithm - Hash algorithm to use (default: 'SHA-1', fastest)
      * @returns Promise that resolves to file/directory statistics
      * @throws {OPFSError} If the file or directory does not exist or cannot be accessed
      * 
      * @example
      * ```typescript
+     * // Basic stats
      * const stats = await fs.stat('/config/settings.json');
      * console.log(`File size: ${stats.size} bytes`);
      * console.log(`Is file: ${stats.isFile}`);
      * console.log(`Modified: ${stats.mtime}`);
+     * 
+     * // Stats with hash (SHA-1 is fastest)
+     * const statsWithHash = await fs.stat('/config/settings.json', { 
+     *   includeHash: true,
+     *   hashAlgorithm: 'SHA-1'
+     * });
+     * console.log(`Hash: ${statsWithHash.hash}`);
      * ```
      */
-    async stat(path: string): Promise<FileStat> {
+    async stat(path: string, options?: { includeHash?: boolean; hashAlgorithm?: 'SHA-1' | 'SHA-256' | 'SHA-384' | 'SHA-512' }): Promise<FileStat> {
         const segments = splitPath(path);
         const name = segments.pop();
         const parentDir = await this.getDirectoryHandle(segments, false);
+        const includeHash = options?.includeHash ?? false;
+        const hashAlgorithm = options?.hashAlgorithm ?? 'SHA-1';
 
         // Get as file first
         try {
             const fileHandle = await parentDir.getFileHandle(name!, { create: false });
             const file = await fileHandle.getFile();
 
-            return {
+            const baseStat: FileStat = {
                 kind: 'file',
                 size: file.size,
                 mtime: new Date(file.lastModified).toISOString(),
@@ -335,6 +425,21 @@ export default class OPFSFileSystem {
                 isFile: true,
                 isDirectory: false,
             };
+
+            // Calculate hash if requested
+            if (includeHash) {
+                try {
+                    const buffer = new Uint8Array(await file.arrayBuffer());
+                    const hash = await calculateFileHash(buffer, hashAlgorithm);
+
+                    baseStat.hash = hash;
+                }
+                catch (error) {
+                    console.warn(`Failed to calculate hash for ${ path }:`, error);
+                }
+            }
+
+            return baseStat;
         }
         catch (e: any) {
             if (e.name !== 'TypeMismatchError' && e.name !== 'NotFoundError') {
@@ -353,6 +458,7 @@ export default class OPFSFileSystem {
                 ctime: new Date(0).toISOString(),
                 isFile: false,
                 isDirectory: true,
+                // Directories don't have hashes
             };
         }
         catch (e: any) {
@@ -391,7 +497,6 @@ export default class OPFSFileSystem {
     async readdir(path: string): Promise<string[]>;
     async readdir(path: string, options: { withFileTypes: true }): Promise<DirentData[]>;
     async readdir(path: string, options: { withFileTypes: false }): Promise<string[]>;
-    async readdir(path: string, options?: { withFileTypes?: boolean }): Promise<string[] | DirentData[]>;
     async readdir(path: string, options?: { withFileTypes?: boolean }): Promise<string[] | DirentData[]> {
         const withTypes = options?.withFileTypes ?? false;
         const dir = await this.getDirectoryHandle(path, false);
@@ -581,8 +686,67 @@ export default class OPFSFileSystem {
         }
     }
 
-    // ..........................................................................
-    // ..........................................................................
+    /**
+     * Resolve a path to an absolute path
+     * 
+     * Resolves relative paths and normalizes path segments (like '..' and '.').
+     * Similar to Node.js fs.realpath() but without symlink resolution since OPFS doesn't support symlinks.
+     * 
+     * @param path - The path to resolve
+     * @returns Promise that resolves to the absolute normalized path
+     * @throws {FileNotFoundError} If the path does not exist
+     * @throws {OPFSError} If path resolution fails
+     * 
+     * @example
+     * ```typescript
+     * // Resolve relative path
+     * const absolute = await fs.realpath('./config/../data/file.txt');
+     * console.log(absolute); // '/data/file.txt'
+     * ```
+     */
+    async realpath(path: string): Promise<string> {
+        try {
+            const segments = splitPath(path);
+            const normalizedSegments: string[] = [];
+
+            for (const segment of segments) {
+                if (segment === '.' || segment === '') {
+                // Skip current directory references and empty segments
+                    continue;
+                }
+                else if (segment === '..') {
+                    if (normalizedSegments.length === 0) {
+                        throw new OPFSError('Path escapes root', 'EINVAL');
+                    }
+
+                    // Go up one directory
+                    if (normalizedSegments.length > 0) {
+                        normalizedSegments.pop();
+                    }
+                }
+                else {
+                // Regular segment
+                    normalizedSegments.push(segment);
+                }
+            }
+
+            const normalizedPath = joinPath(normalizedSegments);
+            const exists = await this.exists(normalizedPath);
+
+            if (!exists) {
+                throw new FileNotFoundError(normalizedPath);
+            }
+
+            return normalizedPath;
+        }
+        catch (error) {
+            if (error instanceof OPFSError) {
+                throw error;
+            }
+
+            throw new OPFSError(`Failed to resolve path: ${ path }`, 'REALPATH_FAILED');
+        }
+    }
 
     /**
      * Rename a file or directory
@@ -700,6 +864,74 @@ export default class OPFSFileSystem {
             }
 
             throw new OPFSError(`Failed to copy from ${ source } to ${ destination }`, 'CP_FAILED');
+        }
+    }
+
+    /**
+     * Synchronize the file system with external data
+     * 
+     * Syncs the file system with an array of entries containing paths and data.
+     * This is useful for importing data from external sources or syncing with remote data.
+     * 
+     * @param entries - Array of [path, data] tuples to sync
+     * @param options - Options for synchronization
+     * @param options.cleanBefore - Whether to clear the file system before syncing (default: false)
+     * @returns Promise that resolves when synchronization is complete
+     * @throws {OPFSError} If the synchronization fails
+     * 
+     * @example
+     * ```typescript
+     * // Sync with external data
+     * const entries: [string, string | Uint8Array | Blob][] = [
+     *   ['/config.json', JSON.stringify({ theme: 'dark' })],
+     *   ['/data/binary.dat', new Uint8Array([1, 2, 3, 4])],
+     *   ['/upload.txt', new Blob(['file content'], { type: 'text/plain' })]
+     * ];
+     * 
+     * // Sync without clearing existing files
+     * await fs.sync(entries);
+     * 
+     * // Clean file system and then sync
+     * await fs.sync(entries, { cleanBefore: true });
+     * ```
+     */
+    async sync(entries: [string, string | Uint8Array | Blob][], options?: { cleanBefore?: boolean }): Promise<void> {
+        try {
+            const cleanBefore = options?.cleanBefore ?? false;
+
+            // Clear file system if requested
+            if (cleanBefore) {
+                await this.clear('/');
+            }
+
+            // Process each entry
+            for (const [path, data] of entries) {
+                // Normalize path to ensure it starts with /
+                const normalizedPath = path.startsWith('/') ? path : `/${ path }`;
+
+                // Convert data to appropriate format
+                let fileData: string | Uint8Array;
+
+                if (data instanceof Blob) {
+                    // Convert Blob to Uint8Array
+                    const arrayBuffer = await data.arrayBuffer();
+
+                    fileData = new Uint8Array(arrayBuffer);
+                }
+                else {
+                    fileData = data;
+                }
+
+                // Write the file (this will create directories as needed)
+                await this.writeFile(normalizedPath, fileData);
+            }
+        }
+        catch (error) {
+            if (error instanceof OPFSError) {
+                throw error;
+            }
+
+            throw new OPFSError('Failed to sync file system', 'SYNC_FAILED');
         }
     }
 }

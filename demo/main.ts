@@ -72,13 +72,46 @@ async function runDemo() {
 
         log('✅ OPFS file system worker created', ui);
 
-        await fs.init('/demo');
+        await fs.mount('/demo');
 
         log('✅ File system initialized successfully', ui);
 
         log('🧹 Cleaning up previous demo data...', ui);
         await fs.clear('/');
         log('✅ Cleanup completed', ui);
+
+        // Test sync operation
+        log('\n🔄 Testing sync operation...', ui);
+
+        // Prepare some external data to sync
+        const externalEntries: [string, string | Uint8Array | Blob][] = [
+            ['/sync/config.json', JSON.stringify({ version: '1.0', synced: true })],
+            ['/sync/binary.dat', new Uint8Array([10, 20, 30, 40, 50])],
+            ['/sync/blob.txt', new Blob(['This is blob content'], { type: 'text/plain' })],
+            ['sync/relative-path.txt', 'This path will be normalized'], // Test path normalization
+        ];
+
+        // Sync without cleaning
+        await fs.sync(externalEntries);
+        log('✅ Synced external data without cleaning', ui);
+
+        // Verify synced files exist
+        const syncedConfig = await fs.readFile('/sync/config.json');
+
+        log(`✅ Synced config content: ${ syncedConfig }`, ui);
+
+        const syncedBinary = await fs.readFile('/sync/binary.dat', 'binary');
+
+        log(`✅ Synced binary data: [${ Array.from(syncedBinary).join(', ') }]`, ui);
+
+        const syncedBlob = await fs.readFile('/sync/blob.txt');
+
+        log(`✅ Synced blob content: "${ syncedBlob }"`, ui);
+
+        const normalizedPath = await fs.readFile('/sync/relative-path.txt');
+
+        log(`✅ Normalized path content: "${ normalizedPath }"`, ui);
+
 
         // Basic file operations
         log('\n📁 Testing basic file operations...', ui);
@@ -131,11 +164,11 @@ async function runDemo() {
         log('✅ Created files in directories', ui);
 
         // List directory contents
-        const rootContents = await fs.readdir('/');
+        const rootContents = await fs.readdir('/', { withFileTypes: false });
 
         log(`📋 Root directory contents: ${ rootContents.join(', ') }`, ui);
 
-        const testDirContents = await fs.readdir('/dir');
+        const testDirContents = await fs.readdir('/dir', { withFileTypes: false });
 
         log(`📋 /dir contents: ${ testDirContents.join(', ') }`, ui);
 
@@ -156,7 +189,7 @@ async function runDemo() {
         // Copy directory
         await fs.copy('/dir', '/dir-copy', { recursive: true });
         log('✅ Copied directory /dir to /dir-copy recursively', ui);
-        const copiedDirContents = await fs.readdir('/dir-copy');
+        const copiedDirContents = await fs.readdir('/dir-copy', { withFileTypes: false });
 
         log(`📋 /dir-copy contents: ${ copiedDirContents.join(', ') }`, ui);
 
@@ -167,47 +200,115 @@ async function runDemo() {
         log(`❌ Original file exists: ${ await fs.exists('/text/demo.txt') }`, ui);
         log(`✅ Renamed file exists: ${ await fs.exists('/text/renamed-demo.txt') }`, ui);
 
-        // try {
-        //     await fs.writeFile('../evil-path', 'malicious content');
-        // }
-        // catch (error) {
-        //     if (error instanceof PathError) {
-        //         log(`✅ Caught expected PathError: ${ error.message }`, ui);
-        //     }
-        // }
+        // Index operation - list all files with stats
+        log('\n📊 Testing file system indexing...', ui);
+        const index = await fs.index();
 
-        // // File upload simulation
-        // log('\n📤 Testing file upload simulation...', ui);
-        // const simulatedFiles = [
-        //     new File(['Content of file 1'], 'upload1.txt'),
-        //     new File(['Content of file 2'], 'upload2.txt'),
-        //     new File(['Binary content'], 'upload3.bin'),
-        // ];
+        log(`✅ Indexed file system - found ${ index.size } entries`, ui);
 
-        // let uploadProgress = 0;
+        // Display index contents
+        for (const [path, stat] of index) {
+            const type = stat.isFile ? 'file' : 'directory';
+            const size = stat.isFile ? ` (${ stat.size } bytes)` : '';
 
-        // await fs.uploadFiles(simulatedFiles, '/uploads', (completed, total, currentFile) => {
-        //     uploadProgress = (completed / total) * 100;
-        //     log(`📤 Upload progress: ${ uploadProgress.toFixed(0) }% (${ currentFile })`, ui);
-        // });
+            log(`  📄 ${ path }: ${ type }${ size }`, ui);
+        }
 
-        // log('✅ File upload simulation completed', ui);
+        // Show some specific lookups
+        const renamedFileStats = index.get('/text/renamed-demo.txt');
+
+        if (renamedFileStats) {
+            log(`📋 Renamed file stats: ${ renamedFileStats.size } bytes, modified: ${ renamedFileStats.mtime }`, ui);
+        }
+
+        const binaryFileStats = index.get('/binary/demo.dat');
+
+        if (binaryFileStats) {
+            log(`📋 Binary file stats: ${ binaryFileStats.size } bytes, modified: ${ binaryFileStats.mtime }`, ui);
+        }
+
+        // Test file hashing
+        log('\n🔐 Testing file hashing...', ui);
+        const hashStats = await fs.stat('/text/renamed-demo.txt', {
+            includeHash: true,
+        });
+
+        log('📊 File with hash:', ui);
+        log('  📁 Path: /text/renamed-demo.txt', ui);
+        log(`  📏 Size: ${ hashStats.size } bytes`, ui);
+        if (hashStats.hash) {
+            log(`  🔒 SHA-1: ${ hashStats.hash }`, ui);
+        }
+
+        // Test indexing with hashes (for smaller files only to avoid performance issues)
+        log('\n🔍 Testing index with hashes (small files only)...', ui);
+        const indexWithHashes = await fs.index({ includeHash: true });
+        let hashedFileCount = 0;
+
+        for (const [path, stat] of indexWithHashes) {
+            if (stat.isFile && stat.hash) {
+                hashedFileCount++;
+                log(`  🔐 ${ path }: ${ stat.size } bytes, SHA-1: ${ stat.hash.substring(0, 16) }...`, ui);
+            }
+        }
+
+        log(`✅ Successfully hashed ${ hashedFileCount } files`, ui);
+
+        // Test sync with clean before to demonstrate clean functionality
+        log('\n🔄 Testing sync with clean before...', ui);
+
+        const beforeCleanIndex = await fs.index();
+
+        log(`📊 Files before clean sync: ${ beforeCleanIndex.size }`, ui);
+
+        const cleanSyncEntries: [string, string | Uint8Array | Blob][] = [
+            ['/fresh/start.txt', 'Fresh start after clean'],
+            ['/fresh/data.json', JSON.stringify({ fresh: true, cleanedAndSynced: new Date().toISOString() })],
+        ];
+
+        await fs.sync(cleanSyncEntries, { cleanBefore: true });
+        log('✅ Synced with clean before option', ui);
+
+        const afterCleanIndex = await fs.index();
+
+        log(`📊 Files after clean sync: ${ afterCleanIndex.size }`, ui);
+
+        // Verify only the fresh files exist
+        const freshContent = await fs.readFile('/fresh/start.txt');
+
+        log(`✅ Fresh content: "${ freshContent }"`, ui);
+
+        const freshJson = await fs.readFile('/fresh/data.json');
+
+        log(`✅ Fresh JSON: ${ freshJson }`, ui);
+
 
         // Cleanup demonstration
         log('\n🧹 Testing cleanup operations...', ui);
-        await fs.remove('/text/renamed-demo.txt');
-        log('✅ Deleted /text/renamed-demo.txt', ui);
 
-        const exists = await fs.exists('/text/renamed-demo.txt');
+        // Try to remove a file that might not exist after clean sync
+        const fileExistsBeforeDelete = await fs.exists('/fresh/start.txt');
 
-        log(`❌ /text/renamed-demo.txt exists: ${ exists }`, ui);
+        if (fileExistsBeforeDelete) {
+            await fs.remove('/fresh/start.txt');
+            log('✅ Deleted /fresh/start.txt', ui);
 
-        await fs.remove('/dir2', { recursive: true });
-        log('✅ Recursively deleted /dir2', ui);
+            const exists = await fs.exists('/fresh/start.txt');
 
-        const existsDir = await fs.exists('/dir2');
+            log(`❌ /fresh/start.txt exists: ${ exists }`, ui);
+        }
 
-        log(`❌ /dir2 exists: ${ existsDir }`, ui);
+        // Remove a directory if it exists
+        const dirExistsBeforeDelete = await fs.exists('/fresh');
+
+        if (dirExistsBeforeDelete) {
+            await fs.remove('/fresh', { recursive: true });
+            log('✅ Recursively deleted /fresh', ui);
+
+            const existsDir = await fs.exists('/fresh');
+
+            log(`❌ /fresh exists: ${ existsDir }`, ui);
+        }
 
         // Final summary
         log('\n🎉 All tests completed successfully!', ui);

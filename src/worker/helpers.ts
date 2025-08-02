@@ -9,14 +9,18 @@ export function checkOPFSSupport(): void {
     }
 }
 
-export function splitPath(path: string): string[] {
+export function splitPath(path: string | string[]): string[] {
+    if (Array.isArray(path)) {
+        return path;
+    }
+
     return path.split('/').filter(Boolean);
 }
 
 export function joinPath(segments: string[] | string): string {
     return typeof segments === 'string'
-        ? segments
-        : segments.join('/');
+        ? (segments ?? '/')
+        : `/${ segments.join('/') }`;
 }
 
 export function createBuffer(data: string | Uint8Array | ArrayBuffer, encoding: BufferEncoding = 'utf-8'): Uint8Array {
@@ -93,5 +97,26 @@ export async function writeFileData(
             }
             catch { /* ~ */ }
         }
+    }
+}
+
+/**
+ * Calculate file hash using Web Crypto API
+ * 
+ * @param buffer - The file content as Uint8Array
+ * @param algorithm - Hash algorithm to use (default: 'SHA-1')
+ * @returns Promise that resolves to the hash string
+ */
+export async function calculateFileHash(buffer: Uint8Array, algorithm: string = 'SHA-1'): Promise<string> {
+    try {
+        const hashBuffer = await crypto.subtle.digest(algorithm, buffer);
+        const hashArray = Array.from(new Uint8Array(hashBuffer));
+
+        return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+    }
+    catch (error) {
+        console.warn(`Failed to calculate ${ algorithm } hash:`, error);
+
+        throw error;
     }
 }

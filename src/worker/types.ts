@@ -7,6 +7,8 @@ export interface FileStat {
     ctime: string; // ISO string
     isFile: boolean;
     isDirectory: boolean;
+    /** Hash of file content (only for files, undefined for directories) */
+    hash?: string;
 }
 
 
