@@ -1,6 +1,6 @@
 {
     "name": "opfs-worker",
-    "version": "0.1.0",
+    "version": "0.1.1",
     "description": "A robust TypeScript library for working with Origin Private File System (OPFS) through Web Workers",
     "type": "module",
     "main": "dist/index.js",
@@ -31,7 +31,9 @@
         "lint:fix": "eslint src --ext .ts,.tsx --fix",
         "test": "vitest",
         "test:coverage": "vitest --coverage",
-        "prepublishOnly": "npm run build"
+        "prepublishOnly": "npm run build",
+        "version": "changeset && changeset version",
+        "release": "changeset publish"
     },
     "keywords": [
         "opfs",
@@ -53,6 +55,7 @@
     },
     "homepage": "https://github.com/your-username/opfs-worker#readme",
     "devDependencies": {
+        "@changesets/cli": "^2.29.5",
         "@flexbe/eslint-config": "^1.0.11",
         "@types/node": "^20.19.9",
         "@typescript-eslint/eslint-plugin": "^7.18.0",
@@ -73,5 +76,8 @@
     "packageManager": "bun@1.1.29",
     "dependencies": {
         "comlink": "^4.4.2"
+    },
+    "publishConfig": {
+        "access": "public"
     }
 }
