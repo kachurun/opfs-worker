@@ -9,7 +9,6 @@
  * import { createWorker, type OPFSWorker } from 'opfs-worker';
  *
  * const fs = await createWorker();
- * // Optional: mount to a custom root directory
  * await fs.mount('/my-app');
  * await fs.writeFile('/test.txt', 'Hello World');
  * ```

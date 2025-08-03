@@ -32,8 +32,6 @@ export class OPFSWorker {
     /** Root directory handle for the file system */
     private root: FileSystemDirectoryHandle | null = null;
 
-    /** Pending mount operation */
-    private mountPromise: Promise<boolean> | null = null;
 
     /**
      * Creates a new OPFSFileSystem instance
@@ -61,30 +59,17 @@ export class OPFSWorker {
      * ```
      */
     async mount(root: string = '/'): Promise<boolean> {
-        const run = async () => {
-            try {
-                const rootDir = await navigator.storage.getDirectory();
+        try {
+            const rootDir = await navigator.storage.getDirectory();
 
-                this.root = await this.getDirectoryHandle(root, true, rootDir);
+            this.root = await this.getDirectoryHandle(root, true, rootDir);
 
-                return true;
-            }
-            catch (error) {
-                console.error(error);
+            return true;
+        }
+        catch (error) {
+            console.error(error);
 
-                throw new OPFSError('Failed to initialize OPFS', 'INIT_FAILED');
-            }
-            finally {
-                this.mountPromise = null;
-            }
-        };
-
-        return (this.mountPromise ??= run());
-    }
-
-    private async ensureRoot(): Promise<void> {
-        if (!this.root) {
-            await this.mount('/');
+            throw new OPFSError('Failed to initialize OPFS', 'INIT_FAILED');
         }
     }
 
@@ -108,12 +93,10 @@ export class OPFSWorker {
      */
     private async getDirectoryHandle(path: string | string[], create: boolean = false, from: FileSystemDirectoryHandle | null = this.root): Promise<FileSystemDirectoryHandle> {
         if (!from) {
-            await this.ensureRoot();
+            if (!this.root) {
+                throw new OPFSNotMountedError();
+            }
             from = this.root;
-        }
-
-        if (!from) {
-            throw new OPFSNotMountedError();
         }
 
         const segments = Array.isArray(path) ? path : splitPath(path);
@@ -147,12 +130,10 @@ export class OPFSWorker {
      */
     private async getFileHandle(path: string | string[], create = false, from: FileSystemDirectoryHandle | null = this.root): Promise<FileSystemFileHandle> {
         if (!from) {
-            await this.ensureRoot();
+            if (!this.root) {
+                throw new OPFSNotMountedError();
+            }
             from = this.root;
-        }
-
-        if (!from) {
-            throw new OPFSNotMountedError();
         }
 
         const segments = splitPath(path);
@@ -380,12 +361,14 @@ export class OPFSWorker {
      * ```
      */
     async mkdir(path: string, options?: { recursive?: boolean }): Promise<void> {
-        await this.ensureRoot();
+        if (!this.root) {
+            throw new OPFSNotMountedError();
+        }
 
         const recursive = options?.recursive ?? false;
         const segments = splitPath(path);
 
-        let current = this.root!;
+        let current = this.root;
 
         for (let i = 0; i < segments.length; i++) {
             const segment = segments[i];

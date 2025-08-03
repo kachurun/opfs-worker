@@ -56,7 +56,7 @@ async function example() {
     // Create a file system instance
     const fs = await createWorker();
 
-    // Optional: mount to a custom root directory
+    // Mount the file system (required, even for '/')
     await fs.mount('/my-app');
 
     // Write a file
@@ -68,10 +68,10 @@ async function example() {
 }
 ```
 
-> **Note:** By default, the file system automatically mounts to `'/'` on first use.
-> Call `mount` to specify a different root directory. After `fs.mount('/dir')`,
-> calling `fs.readFile('/text.txt')` accesses the file located at `/dir/text.txt`
-> inside OPFS.
+> **Note:** The `mount` call defines the directory that becomes the root of your
+> file system. This call is mandatory before any file operations. For example,
+> after `fs.mount('/dir')`, calling `fs.readFile('/text.txt')` accesses the file
+> located at `/dir/text.txt` inside OPFS.
 
 To work with binary data, write using `Uint8Array`/`ArrayBuffer` and read with `'binary'` encoding:
 
@@ -94,7 +94,7 @@ async function example() {
     // Create and wrap the worker
     const worker = wrap(new OPFSWorker());
 
-    // Optional: mount to a custom root directory
+    // Mount the file system (required, even for '/')
     await worker.mount('/my-app');
 
     // Use the file system
@@ -113,8 +113,6 @@ import { createWorker } from 'opfs-worker';
 
 async function advancedExample() {
     const fs = await createWorker();
-
-    // Optional: mount to a custom root directory
     await fs.mount('/my-app');
 
     // Create directories
@@ -207,8 +205,8 @@ const worker = wrap(new OPFSWorker());
 #### `mount(root?: string): Promise<boolean>`
 
 Initialize the file system within a given directory.
-If omitted, the file system automatically mounts to `'/'` on first use.
-Use `mount` when you need a different root directory.
+Calling `mount` is required before performing any file operations, even if
+you're using the root directory (`'/'`).
 
 The `root` parameter defines where in OPFS the file system's root will be
 created. All file paths passed to the API are relative to this mount point. For
@@ -587,7 +585,7 @@ The library provides comprehensive error handling with specific error types:
 
 - `OPFSError` - Base error class for all OPFS-related errors
 - `OPFSNotSupportedError` - Thrown when OPFS is not supported in the browser
-- `OPFSNotMountedError` - Thrown when OPFS is not mounted and automatic mounting fails
+- `OPFSNotMountedError` - Thrown when OPFS is not mounted
 - `PathError` - Thrown for invalid paths or path traversal attempts
 - `FileNotFoundError` - Thrown when a requested file doesn't exist
 - `DirectoryNotFoundError` - Thrown when a requested directory doesn't exist
