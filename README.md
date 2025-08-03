@@ -56,7 +56,7 @@ async function example() {
     // Create a file system instance
     const fs = await createWorker();
 
-    // Mount the file system
+    // Optional: mount to a custom root directory
     await fs.mount('/my-app');
 
     // Write a file
@@ -66,6 +66,20 @@ async function example() {
     const config = await fs.readFile('/config.json');
     console.log(JSON.parse(config));
 }
+```
+
+> **Note:** By default, the file system automatically mounts to `'/'` on first use.
+> Call `mount` to specify a different root directory. After `fs.mount('/dir')`,
+> calling `fs.readFile('/text.txt')` accesses the file located at `/dir/text.txt`
+> inside OPFS.
+
+To work with binary data, write using `Uint8Array`/`ArrayBuffer` and read with `'binary'` encoding:
+
+```typescript
+const bytes = new Uint8Array([0xde, 0xad, 0xbe, 0xef]);
+await fs.writeFile('/data.bin', bytes);
+
+const data = await fs.readFile('/data.bin', 'binary'); // Uint8Array
 ```
 
 ### Manual Worker Setup
@@ -80,7 +94,7 @@ async function example() {
     // Create and wrap the worker
     const worker = wrap(new OPFSWorker());
 
-    // Mount the file system
+    // Optional: mount to a custom root directory
     await worker.mount('/my-app');
 
     // Use the file system
@@ -99,6 +113,8 @@ import { createWorker } from 'opfs-worker';
 
 async function advancedExample() {
     const fs = await createWorker();
+
+    // Optional: mount to a custom root directory
     await fs.mount('/my-app');
 
     // Create directories
@@ -191,6 +207,13 @@ const worker = wrap(new OPFSWorker());
 #### `mount(root?: string): Promise<boolean>`
 
 Initialize the file system within a given directory.
+If omitted, the file system automatically mounts to `'/'` on first use.
+Use `mount` when you need a different root directory.
+
+The `root` parameter defines where in OPFS the file system's root will be
+created. All file paths passed to the API are relative to this mount point. For
+example, after `fs.mount('/dir')`, calling `fs.readFile('/text.txt')` accesses
+`/dir/text.txt` in OPFS.
 
 ```typescript
 await fs.mount('/my-app');
@@ -378,7 +401,7 @@ await fs.remove('/maybe/exists', { force: true });
 
 ### Copy Path
 
-#### `copy(source: string, destination: string, options?: { recursive?: boolean; force?: boolean }): Promise<void>`
+#### `copy(source: string, destination: string, options?: { recursive?: boolean; force?: boolean; filter?: (source: string, destination: string, exists: boolean) => boolean | Promise<boolean> }): Promise<void>`
 
 Copy files and directories.
 
@@ -391,6 +414,12 @@ await fs.copy('/source/dir', '/dest/dir', { recursive: true });
 
 // Copy without overwriting existing files
 await fs.copy('/source', '/dest', { recursive: true, force: false });
+
+// Skip existing files using a filter
+await fs.copy('/src', '/dest', {
+    recursive: true,
+    filter: (_src, _dest, exists) => !exists
+});
 ```
 
 **Parameters:**
@@ -399,6 +428,7 @@ await fs.copy('/source', '/dest', { recursive: true, force: false });
 - `destination`: The destination path to copy to
 - `options.recursive` (optional): Whether to copy directories recursively (default: false)
 - `options.force` (optional): Whether to overwrite existing files (default: true)
+- `options.filter` (optional): Predicate returning `true` to copy a path. Receives `(source, destination, exists)`
 
 ### Rename Path
 
@@ -557,7 +587,7 @@ The library provides comprehensive error handling with specific error types:
 
 - `OPFSError` - Base error class for all OPFS-related errors
 - `OPFSNotSupportedError` - Thrown when OPFS is not supported in the browser
-- `OPFSNotMountedError` - Thrown when OPFS is not mounted
+- `OPFSNotMountedError` - Thrown when OPFS is not mounted and automatic mounting fails
 - `PathError` - Thrown for invalid paths or path traversal attempts
 - `FileNotFoundError` - Thrown when a requested file doesn't exist
 - `DirectoryNotFoundError` - Thrown when a requested directory doesn't exist

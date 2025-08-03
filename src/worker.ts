@@ -32,6 +32,9 @@ export class OPFSWorker {
     /** Root directory handle for the file system */
     private root: FileSystemDirectoryHandle | null = null;
 
+    /** Pending mount operation */
+    private mountPromise: Promise<boolean> | null = null;
+
     /**
      * Creates a new OPFSFileSystem instance
      * 
@@ -58,17 +61,30 @@ export class OPFSWorker {
      * ```
      */
     async mount(root: string = '/'): Promise<boolean> {
-        try {
-            const rootDir = await navigator.storage.getDirectory();
+        const run = async () => {
+            try {
+                const rootDir = await navigator.storage.getDirectory();
 
-            this.root = await this.getDirectoryHandle(root, true, rootDir);
+                this.root = await this.getDirectoryHandle(root, true, rootDir);
 
-            return true;
-        }
-        catch (error) {
-            console.error(error);
+                return true;
+            }
+            catch (error) {
+                console.error(error);
 
-            throw new OPFSError('Failed to initialize OPFS', 'INIT_FAILED');
+                throw new OPFSError('Failed to initialize OPFS', 'INIT_FAILED');
+            }
+            finally {
+                this.mountPromise = null;
+            }
+        };
+
+        return (this.mountPromise ??= run());
+    }
+
+    private async ensureRoot(): Promise<void> {
+        if (!this.root) {
+            await this.mount('/');
         }
     }
 
@@ -91,6 +107,11 @@ export class OPFSWorker {
      * ```
      */
     private async getDirectoryHandle(path: string | string[], create: boolean = false, from: FileSystemDirectoryHandle | null = this.root): Promise<FileSystemDirectoryHandle> {
+        if (!from) {
+            await this.ensureRoot();
+            from = this.root;
+        }
+
         if (!from) {
             throw new OPFSNotMountedError();
         }
@@ -125,6 +146,11 @@ export class OPFSWorker {
      * ```
      */
     private async getFileHandle(path: string | string[], create = false, from: FileSystemDirectoryHandle | null = this.root): Promise<FileSystemFileHandle> {
+        if (!from) {
+            await this.ensureRoot();
+            from = this.root;
+        }
+
         if (!from) {
             throw new OPFSNotMountedError();
         }
@@ -354,14 +380,12 @@ export class OPFSWorker {
      * ```
      */
     async mkdir(path: string, options?: { recursive?: boolean }): Promise<void> {
-        if (!this.root) {
-            throw new OPFSNotMountedError();
-        }
+        await this.ensureRoot();
 
         const recursive = options?.recursive ?? false;
         const segments = splitPath(path);
 
-        let current = this.root;
+        let current = this.root!;
 
         for (let i = 0; i < segments.length; i++) {
             const segment = segments[i];
@@ -805,25 +829,41 @@ export class OPFSWorker {
      * @param options - Options for copying
      * @param options.recursive - Whether to copy directories recursively (default: false)
      * @param options.force - Whether to overwrite existing files (default: true)
+     * @param options.filter - A predicate to determine if a path should be copied
      * @returns Promise that resolves when the copy operation is complete
      * @throws {OPFSError} If the copy operation fails
-     * 
+     *
      * @example
      * ```typescript
      * // Copy a file
-     * await fs.cp('/source/file.txt', '/dest/file.txt');
-     * 
+     * await fs.copy('/source/file.txt', '/dest/file.txt');
+     *
      * // Copy a directory and all its contents
-     * await fs.cp('/source/dir', '/dest/dir', { recursive: true });
-     * 
+     * await fs.copy('/source/dir', '/dest/dir', { recursive: true });
+     *
      * // Copy without overwriting existing files
-     * await fs.cp('/source', '/dest', { recursive: true, force: false });
+     * await fs.copy('/source', '/dest', { recursive: true, force: false });
+     *
+     * // Skip existing files
+     * await fs.copy('/src', '/dest', {
+     *     recursive: true,
+     *     filter: (_src, _dest, exists) => !exists
+     * });
      * ```
      */
-    async copy(source: string, destination: string, options?: { recursive?: boolean; force?: boolean }): Promise<void> {
+    async copy(
+        source: string,
+        destination: string,
+        options?: {
+            recursive?: boolean;
+            force?: boolean;
+            filter?: (source: string, destination: string, exists: boolean) => boolean | Promise<boolean>;
+        }
+    ): Promise<void> {
         try {
             const recursive = options?.recursive ?? false;
             const force = options?.force ?? true;
+            const filter = options?.filter;
 
             const sourceExists = await this.exists(source);
 
@@ -831,8 +871,15 @@ export class OPFSWorker {
                 throw new OPFSError(`Source does not exist: ${ source }`, 'ENOENT');
             }
 
-            // Check if destination exists and handle accordingly
+            // Check if destination exists
             const destExists = await this.exists(destination);
+
+            if (filter) {
+                const shouldCopy = await filter(source, destination, destExists);
+                if (!shouldCopy) {
+                    return;
+                }
+            }
 
             if (destExists && !force) {
                 throw new OPFSError(`Destination already exists: ${ destination }`, 'EEXIST');
@@ -864,7 +911,7 @@ export class OPFSWorker {
                     const destItemPath = `${ destination }/${ item.name }`;
 
                     // Recursively copy each item
-                    await this.copy(sourceItemPath, destItemPath, { recursive: true, force });
+                    await this.copy(sourceItemPath, destItemPath, { recursive: true, force, filter });
                 }
             }
         }
