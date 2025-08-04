@@ -8,7 +8,19 @@ import {
     PathError
 } from './utils/errors';
 
-import { calculateFileHash, checkOPFSSupport, joinPath, readFileData, splitPath, writeFileData } from './utils/helpers';
+import { 
+    calculateFileHash, 
+    checkOPFSSupport, 
+    joinPath, 
+    readFileData, 
+    splitPath, 
+    writeFileData,
+    basename,
+    dirname,
+    normalizePath,
+    resolvePath,
+    convertBlobToUint8Array
+} from './utils/helpers';
 
 import type { DirentData, FileStat, WatchEvent } from './types';
 import type { BufferEncoding } from 'typescript';
@@ -225,7 +237,6 @@ export class OPFSWorker {
             }
         };
 
-        // Add root directory
         result.set('/', {
             kind: 'directory',
             size: 0,
@@ -438,13 +449,11 @@ export class OPFSWorker {
      * ```
      */
     async stat(path: string, options?: { includeHash?: boolean; hashAlgorithm?: 'SHA-1' | 'SHA-256' | 'SHA-384' | 'SHA-512' }): Promise<FileStat> {
-        const segments = splitPath(path);
-        const name = segments.pop();
-        const parentDir = await this.getDirectoryHandle(segments, false);
+        const name = basename(path);
+        const parentDir = await this.getDirectoryHandle(dirname(path), false);
         const includeHash = options?.includeHash ?? false;
         const hashAlgorithm = options?.hashAlgorithm ?? 'SHA-1';
 
-        // Get as file first
         try {
             const fileHandle = await parentDir.getFileHandle(name!, { create: false });
             const file = await fileHandle.getFile();
@@ -458,7 +467,6 @@ export class OPFSWorker {
                 isDirectory: false,
             };
 
-            // Calculate hash if requested
             if (includeHash) {
                 try {
                     const buffer = new Uint8Array(await file.arrayBuffer());
@@ -479,7 +487,6 @@ export class OPFSWorker {
             }
         }
 
-        // Get as directory
         try {
             await parentDir.getDirectoryHandle(name!, { create: false });
 
@@ -490,7 +497,6 @@ export class OPFSWorker {
                 ctime: new Date(0).toISOString(),
                 isFile: false,
                 isDirectory: true,
-                // Directories don't have hashes
             };
         }
         catch (e: any) {
@@ -533,7 +539,6 @@ export class OPFSWorker {
         const withTypes = options?.withFileTypes ?? false;
         const dir = await this.getDirectoryHandle(path, false);
 
-        // Use type assertion to access the entries() method
         if (withTypes) {
             const results: DirentData[] = [];
 
@@ -576,12 +581,11 @@ export class OPFSWorker {
      * ```
      */
     async exists(path: string): Promise<boolean> {
-        const segments = splitPath(path);
-        const name = segments.pop();
+        const name = basename(path);
         let dir: FileSystemDirectoryHandle | null = null;
 
         try {
-            dir = await this.getDirectoryHandle(segments, false);
+            dir = await this.getDirectoryHandle(dirname(path), false);
         }
         catch (e: any) {
             if (e.name === 'NotFoundError' || e.name === 'TypeMismatchError') {
@@ -595,7 +599,6 @@ export class OPFSWorker {
             return false;
         }
 
-        // Get as file
         try {
             await dir.getFileHandle(name, { create: false });
 
@@ -607,7 +610,6 @@ export class OPFSWorker {
             }
         }
 
-        // Get as directory
         try {
             await dir.getDirectoryHandle(name, { create: false });
 
@@ -688,14 +690,13 @@ export class OPFSWorker {
         const recursive = options?.recursive ?? false;
         const force = options?.force ?? false;
 
-        const segments = splitPath(path);
-        const name = segments.pop();
+        const name = basename(path);
 
         if (!name) {
             throw new PathError('Invalid path', path);
         }
 
-        const parent = await this.getDirectoryHandle(segments, false);
+        const parent = await this.getDirectoryHandle(dirname(path), false);
 
         try {
             await parent.removeEntry(name, { recursive });
@@ -738,31 +739,7 @@ export class OPFSWorker {
      */
     async realpath(path: string): Promise<string> {
         try {
-            const segments = splitPath(path);
-            const normalizedSegments: string[] = [];
-
-            for (const segment of segments) {
-                if (segment === '.' || segment === '') {
-                // Skip current directory references and empty segments
-                    continue;
-                }
-                else if (segment === '..') {
-                    if (normalizedSegments.length === 0) {
-                        throw new OPFSError('Path escapes root', 'EINVAL');
-                    }
-
-                    // Go up one directory
-                    if (normalizedSegments.length > 0) {
-                        normalizedSegments.pop();
-                    }
-                }
-                else {
-                // Regular segment
-                    normalizedSegments.push(segment);
-                }
-            }
-
-            const normalizedPath = joinPath(normalizedSegments);
+            const normalizedPath = resolvePath(path);
             const exists = await this.exists(normalizedPath);
 
             if (!exists) {
@@ -798,7 +775,6 @@ export class OPFSWorker {
      */
     async rename(oldPath: string, newPath: string): Promise<void> {
         try {
-            // Check if source exists
             const sourceExists = await this.exists(oldPath);
 
             if (!sourceExists) {
@@ -853,39 +829,32 @@ export class OPFSWorker {
                 throw new OPFSError(`Source does not exist: ${ source }`, 'ENOENT');
             }
 
-            // Check if destination exists and handle accordingly
             const destExists = await this.exists(destination);
 
             if (destExists && !force) {
                 throw new OPFSError(`Destination already exists: ${ destination }`, 'EEXIST');
             }
 
-            // Get source stats to determine if it's a file or directory
             const sourceStats = await this.stat(source);
 
             if (sourceStats.isFile) {
-                // Copy file
                 const content = await this.readFile(source, 'binary');
 
                 await this.writeFile(destination, content);
             }
             else {
-                // Copy directory
                 if (!recursive) {
                     throw new OPFSError(`Cannot copy directory without recursive option: ${ source }`, 'EISDIR');
                 }
 
-                // Create destination directory
                 await this.mkdir(destination, { recursive: true });
 
-                // Copy all contents
                 const items = await this.readdir(source, { withFileTypes: true });
 
                 for (const item of items) {
                     const sourceItemPath = `${ source }/${ item.name }`;
                     const destItemPath = `${ destination }/${ item.name }`;
 
-                    // Recursively copy each item
                     await this.copy(sourceItemPath, destItemPath, { recursive: true, force });
                 }
             }
@@ -903,7 +872,7 @@ export class OPFSWorker {
      * Start watching a file or directory for changes
      */
     async watch(path: string): Promise<void> {
-        const normalizedPath = path.startsWith('/') ? path : `/${ path }`;
+        const normalizedPath = normalizePath(path);
         const snapshot = await this.buildSnapshot(normalizedPath);
         this.watchers.set(normalizedPath, snapshot);
 
@@ -918,7 +887,7 @@ export class OPFSWorker {
      * Stop watching a previously watched path
      */
     unwatch(path: string): void {
-        const normalizedPath = path.startsWith('/') ? path : `/${ path }`;
+        const normalizedPath = normalizePath(path);
         this.watchers.delete(normalizedPath);
 
         if (this.watchers.size === 0 && this.watchTimer) {
@@ -1031,30 +1000,22 @@ export class OPFSWorker {
         try {
             const cleanBefore = options?.cleanBefore ?? false;
 
-            // Clear file system if requested
             if (cleanBefore) {
                 await this.clear('/');
             }
 
-            // Process each entry
             for (const [path, data] of entries) {
-                // Normalize path to ensure it starts with /
-                const normalizedPath = path.startsWith('/') ? path : `/${ path }`;
+                const normalizedPath = normalizePath(path);
 
-                // Convert data to appropriate format
                 let fileData: string | Uint8Array;
 
                 if (data instanceof Blob) {
-                    // Convert Blob to Uint8Array
-                    const arrayBuffer = await data.arrayBuffer();
-
-                    fileData = new Uint8Array(arrayBuffer);
+                    fileData = await convertBlobToUint8Array(data);
                 }
                 else {
                     fileData = data;
                 }
 
-                // Write the file (this will create directories as needed)
                 await this.writeFile(normalizedPath, fileData);
             }
         }

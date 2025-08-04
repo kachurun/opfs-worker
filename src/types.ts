@@ -1,3 +1,6 @@
+import type { Remote } from 'comlink';
+import type { OPFSWorker } from './worker';
+
 export type Kind = 'file' | 'directory';
 
 export interface FileStat {
@@ -23,4 +26,5 @@ export interface WatchEvent {
     type: 'create' | 'change' | 'delete';
 }
 
-export type * from './worker';
+export type { OPFSWorker };
+export type RemoteOPFSWorker = Remote<OPFSWorker>;

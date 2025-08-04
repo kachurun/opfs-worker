@@ -1,33 +1,13 @@
-/**
- * Main export for OPFS Worker library
- * 
- * This is the main entry point for the library, providing both the inline worker
- * functionality and all the necessary types and interfaces.
- * 
- * @example
- * ```typescript
- * import { createWorker, type OPFSWorker } from 'opfs-worker';
- * 
- * const fs = await createWorker();
- * await fs.mount('/my-app');
- * await fs.writeFile('/test.txt', 'Hello World');
- * ```
- */
-
-import { wrap, type Remote } from 'comlink';
+import { wrap } from 'comlink';
 
 import WorkerCtor from './worker?worker&inline';
 
-import type { OPFSWorker } from './types';
+import type { OPFSWorker, RemoteOPFSWorker } from './types';
 
-// Export all types
 export * from './types';
-
-// Export the worker class type
-export type { OPFSWorker };
-
-// Export the remote worker type
-export type RemoteOPFSWorker = Remote<OPFSWorker>;
+export * from './utils/errors';
+export * from './utils/helpers';
+export * from './utils/encoder';
 
 /**
  * Creates a new file system instance with inline worker
