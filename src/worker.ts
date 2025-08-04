@@ -10,7 +10,7 @@ import {
 
 import { calculateFileHash, checkOPFSSupport, joinPath, readFileData, splitPath, writeFileData } from './utils/helpers';
 
-import type { DirentData, FileStat } from './types';
+import type { DirentData, FileStat, WatchEvent } from './types';
 import type { BufferEncoding } from 'typescript';
 
 /**
@@ -31,6 +31,21 @@ import type { BufferEncoding } from 'typescript';
 export class OPFSWorker {
     /** Root directory handle for the file system */
     private root: FileSystemDirectoryHandle | null = null;
+
+    /** Watch event callback */
+    private watchCallback: ((event: WatchEvent) => void) | null = null;
+
+    /** Map of watched paths to their last known state */
+    private watchers = new Map<string, Map<string, FileStat>>();
+
+    /** Interval handle for polling watched paths */
+    private watchTimer: ReturnType<typeof setInterval> | null = null;
+
+    /** Polling interval in milliseconds */
+    private watchInterval = 1000;
+
+    /** Flag to avoid concurrent scans */
+    private scanning = false;
 
     /**
      * Creates a new OPFSFileSystem instance
@@ -57,11 +72,18 @@ export class OPFSWorker {
      * const success = await fs.init('/my-app');
      * ```
      */
-    async mount(root: string = '/'): Promise<boolean> {
+    async mount(root: string = '/', watchCallback?: (event: WatchEvent) => void, options?: { watchInterval?: number }): Promise<boolean> {
         try {
             const rootDir = await navigator.storage.getDirectory();
 
             this.root = await this.getDirectoryHandle(root, true, rootDir);
+
+            if (watchCallback) {
+                this.watchCallback = watchCallback;
+                if (options?.watchInterval) {
+                    this.watchInterval = options.watchInterval;
+                }
+            }
 
             return true;
         }
@@ -874,6 +896,106 @@ export class OPFSWorker {
             }
 
             throw new OPFSError(`Failed to copy from ${ source } to ${ destination }`, 'CP_FAILED');
+        }
+    }
+
+    /**
+     * Start watching a file or directory for changes
+     */
+    async watch(path: string): Promise<void> {
+        const normalizedPath = path.startsWith('/') ? path : `/${ path }`;
+        const snapshot = await this.buildSnapshot(normalizedPath);
+        this.watchers.set(normalizedPath, snapshot);
+
+        if (!this.watchTimer) {
+            this.watchTimer = setInterval(() => {
+                void this.scanWatches();
+            }, this.watchInterval);
+        }
+    }
+
+    /**
+     * Stop watching a previously watched path
+     */
+    unwatch(path: string): void {
+        const normalizedPath = path.startsWith('/') ? path : `/${ path }`;
+        this.watchers.delete(normalizedPath);
+
+        if (this.watchers.size === 0 && this.watchTimer) {
+            clearInterval(this.watchTimer);
+            this.watchTimer = null;
+        }
+    }
+
+    private async buildSnapshot(rootPath: string): Promise<Map<string, FileStat>> {
+        const result = new Map<string, FileStat>();
+
+        const walk = async (current: string) => {
+            const stat = await this.stat(current);
+            result.set(current, stat);
+
+            if (stat.isDirectory) {
+                const entries = await this.readdir(current, { withFileTypes: true });
+                for (const entry of entries) {
+                    const child = `${ current === '/' ? '' : current }/${ entry.name }`;
+                    await walk(child);
+                }
+            }
+        };
+
+        await walk(rootPath);
+        return result;
+    }
+
+    private async scanWatches(): Promise<void> {
+        if (this.scanning) {
+            return;
+        }
+
+        this.scanning = true;
+
+        try {
+            await Promise.all(
+                [...this.watchers.entries()].map(async ([rootPath, prev]) => {
+                    let next: Map<string, FileStat>;
+
+                    try {
+                        next = await this.buildSnapshot(rootPath);
+                    }
+                    catch {
+                        next = new Map();
+                    }
+
+                    const events: WatchEvent[] = [];
+
+                    for (const [p, stat] of next) {
+                        const old = prev.get(p);
+                        if (!old) {
+                            events.push({ path: p, type: 'create' });
+                        }
+                        else if (old.mtime !== stat.mtime || old.size !== stat.size) {
+                            events.push({ path: p, type: 'change' });
+                        }
+                    }
+
+                    for (const p of prev.keys()) {
+                        if (!next.has(p)) {
+                            events.push({ path: p, type: 'delete' });
+                        }
+                    }
+
+                    if (events.length && this.watchCallback) {
+                        for (const event of events) {
+                            this.watchCallback(event);
+                        }
+                    }
+
+                    this.watchers.set(rootPath, next);
+                })
+            );
+        }
+        finally {
+            this.scanning = false;
         }
     }
 
