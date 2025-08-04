@@ -1068,4 +1068,7 @@ export class OPFSWorker {
     }
 }
 
-expose(new OPFSWorker());
+// Only expose the worker when running in a Web Worker environment
+if (typeof self !== 'undefined' && self.constructor.name === 'DedicatedWorkerGlobalScope') {
+  expose(new OPFSWorker());
+}

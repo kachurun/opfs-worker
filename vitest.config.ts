@@ -2,9 +2,9 @@ import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
   test: {
-    environment: 'happy-dom',
+    environment: 'node',
     globals: true,
-    setupFiles: ['./src/test/setup.ts'],
+    setupFiles: ['./test/setup.ts'],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json', 'html'],
@@ -16,5 +16,8 @@ export default defineConfig({
         '**/*.config.*'
       ]
     }
+  },
+  esbuild: {
+    target: 'es2022'
   }
 }); 

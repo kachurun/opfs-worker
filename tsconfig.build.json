@@ -22,7 +22,7 @@
         "resolveJsonModule": true,
         "isolatedModules": true,
         "verbatimModuleSyntax": true,
-        "types": ["vite/client"]
+        "types": ["vite/client", "node"]
     },
     "include": ["src/**/*.ts", "src/**/*.d.ts"],
     "exclude": ["node_modules", "dist", "demo", "**/*.test.ts", "**/*.spec.ts"]

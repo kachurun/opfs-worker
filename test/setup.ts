@@ -48,7 +48,7 @@ class NodeFileHandle {
   async getFile(): Promise<File> {
     const data = await fsp.readFile(this.path);
     const stat = await fsp.stat(this.path);
-    return new File([data], path.basename(this.path), { lastModified: stat.mtimeMs });
+    return new File([new Uint8Array(data)], path.basename(this.path), { lastModified: stat.mtimeMs });
   }
 }
 
@@ -126,10 +126,16 @@ class NodeDirectoryHandle {
 const rootDir = mkdtempSync(path.join(tmpdir(), 'opfs-worker-'));
 
 (globalThis as any).__OPFS_ROOT__ = rootDir;
-(globalThis as any).navigator = {
-  storage: {
-    getDirectory: async () => new NodeDirectoryHandle(rootDir)
-  }
-} as any;
 
-export {}
+// Mock navigator.storage.getDirectory for Node.js environment
+Object.defineProperty(globalThis, 'navigator', {
+  value: {
+    storage: {
+      getDirectory: async () => new NodeDirectoryHandle(rootDir)
+    }
+  },
+  writable: true,
+  configurable: true
+});
+
+export {} 

@@ -1,6 +1,6 @@
 {
     "name": "opfs-worker",
-    "version": "0.1.1",
+    "version": "0.2.0",
     "description": "A robust TypeScript library for working with Origin Private File System (OPFS) through Web Workers",
     "type": "module",
     "main": "dist/index.js",
@@ -58,15 +58,15 @@
     "devDependencies": {
         "@changesets/cli": "^2.29.5",
         "@flexbe/eslint-config": "^1.0.11",
-        "@types/node": "^20.19.9",
-        "@typescript-eslint/eslint-plugin": "^7.18.0",
-        "@typescript-eslint/parser": "^7.18.0",
-        "@vitest/coverage-v8": "^1.6.1",
-        "eslint": "^8.57.1",
-        "happy-dom": "^13.10.1",
+        "@types/node": "^24.2.0",
+        "@typescript-eslint/eslint-plugin": "^8.39.0",
+        "@typescript-eslint/parser": "^8.39.0",
+        "@vitest/coverage-v8": "^3.2.4",
+        "eslint": "^9.32.0",
+        "happy-dom": "^18.0.1",
         "typescript": "^5.9.2",
         "vite": "^7.0.6",
-        "vitest": "^1.6.1"
+        "vitest": "^3.2.4"
     },
     "engines": {
         "node": ">=20.0.0"
@@ -74,7 +74,7 @@
     "peerDependencies": {
         "typescript": ">=5.0.0"
     },
-    "packageManager": "bun@1.1.29",
+    "packageManager": "bun@1.2.19",
     "dependencies": {
         "@types/react": "^19.1.9",
         "@types/react-dom": "^19.1.7",
