@@ -87,4 +87,25 @@ describe('OPFSWorker', () => {
     expect(await fsw.readFile('/new.txt')).toBe('new');
     expect(await fsw.readFile('/relative.txt')).toBe('rel');
   });
+
+  it('watches for file changes', async () => {
+    const events: any[] = [];
+    await fsw.mount('/', e => events.push(e), { watchInterval: 50 });
+    await fsw.mkdir('/watched', { recursive: true });
+    await fsw.watch('/watched');
+
+    await fsw.writeFile('/watched/a.txt', '1');
+    await new Promise(r => setTimeout(r, 100));
+    expect(events.some(e => e.type === 'create' && e.path === '/watched/a.txt')).toBe(true);
+
+    await fsw.writeFile('/watched/a.txt', '2');
+    await new Promise(r => setTimeout(r, 100));
+    expect(events.some(e => e.type === 'change' && e.path === '/watched/a.txt')).toBe(true);
+
+    await fsw.remove('/watched/a.txt');
+    await new Promise(r => setTimeout(r, 100));
+    expect(events.some(e => e.type === 'delete' && e.path === '/watched/a.txt')).toBe(true);
+
+    fsw.unwatch('/watched');
+  });
 });

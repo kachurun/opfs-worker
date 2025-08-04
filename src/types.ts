@@ -18,4 +18,9 @@ export interface DirentData {
     isDirectory: boolean;
 }
 
+export interface WatchEvent {
+    path: string;
+    type: 'create' | 'change' | 'delete';
+}
+
 export type * from './worker';

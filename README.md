@@ -28,6 +28,7 @@ A robust TypeScript library for working with Origin Private File System (OPFS) t
 - 🔐 **Hash support**: Built-in file hash calculation (SHA-1, SHA-256, SHA-384, SHA-512)
 - 📊 **File indexing**: Complete file system indexing with metadata
 - 🔄 **Sync operations**: Bulk file synchronization from external data
+- 👀 **File watching**: Polling-based change detection for files and directories
 - 🛡️ **Error handling**: Comprehensive error types and handling
 
 ## Installation
@@ -142,7 +143,7 @@ Check out the live demo powered by Vite and hosted on GitHub Pages.
 - [Entry Points](#entry-points)
   - [`createWorker()`](#createworker)
 - [Core Methods](#core-methods)
-  - [Mount](#mountroot-string-promiseboolean)
+  - [Mount](#mountroot-string-watch-event-watch-event--void-options--watchinterval-number--promiseboolean)
   - [Read File](#readfilepath-string-encoding-bufferencoding--binary-promisestring--uint8array)
   - [Write File](#writefilepath-string-data-string--uint8array--arraybuffer-encoding-bufferencoding-promisevoid)
   - [Append File](#appendfilepath-string-data-string--uint8array--arraybuffer-encoding-bufferencoding-promisevoid)
@@ -156,6 +157,8 @@ Check out the live demo powered by Vite and hosted on GitHub Pages.
   - [Clear](#clearpath-string-promisevoid)
   - [Index](#indexoptions--includehash-boolean-hashalgorithm-string--promisemapstring-filestat)
   - [Sync](#syncentries-string-string--uint8array--blob-options--cleanbefore-boolean--promisevoid)
+  - [Watch](#watchpath-string-promisevoid)
+  - [Unwatch](#unwatchpath-string-void)
   - [Real Path](#realpathpath-string-promisestring)
 
 ### Entry Points
@@ -193,11 +196,11 @@ const worker = wrap(new OPFSWorker());
 
 ### Mount
 
-#### `mount(root?: string): Promise<boolean>`
+#### `mount(root?: string, watch?: (event: WatchEvent) => void, options?: { watchInterval?: number }): Promise<boolean>`
 
-Initialize the file system within a given directory.
-Calling `mount` is required before performing any file operations, even if
-you're using the root directory (`'/'`).
+Initialize the file system within a given directory and optionally register a
+watch callback. Calling `mount` is required before performing any file
+operations, even if you're using the root directory (`'/'`).
 
 The `root` parameter defines where in OPFS the file system's root will be
 created. All file paths passed to the API are relative to this mount point. For
@@ -205,12 +208,16 @@ example, after `fs.mount('/dir')`, calling `fs.readFile('/text.txt')` accesses
 `/dir/text.txt` in OPFS.
 
 ```typescript
-await fs.mount('/my-app');
+await fs.mount('/my-app', event => console.log(event), { watchInterval: 500 });
 ```
 
 **Parameters:**
 
 - `root` (optional): The root path for the file system (default: '/')
+- `watch` (optional): Callback invoked with `WatchEvent` objects when watched
+  paths change
+- `options.watchInterval` (optional): Polling interval in milliseconds
+  (default: `1000`)
 
 **Returns:** `Promise<boolean>` - True if initialization was successful
 
@@ -507,6 +514,32 @@ await fs.sync(entries, { cleanBefore: true });
 
 - `entries`: Array of [path, data] tuples to sync
 - `options.cleanBefore` (optional): Whether to clear the file system before syncing (default: false)
+
+### Watch
+
+#### `watch(path: string): Promise<void>`
+
+Start watching a file or directory for changes. Detected changes are sent to the
+callback provided to `mount`. The polling interval is configured globally when
+calling `mount`.
+
+```typescript
+await fs.watch('/docs');
+```
+
+**Parameters:**
+
+- `path`: File or directory to watch
+
+### Unwatch
+
+#### `unwatch(path: string): void`
+
+Stop watching a previously watched path.
+
+```typescript
+fs.unwatch('/docs');
+```
 
 ### Resolve Path
 
