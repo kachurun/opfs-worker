@@ -108,4 +108,35 @@ describe('OPFSWorker', () => {
 
     fsw.unwatch('/watched');
   });
+
+  it('watches root folder for changes', async () => {
+    const events: any[] = [];
+    fsw.setWatchCallback(e => events.push(e), { watchInterval: 50 });
+    await fsw.watch('/');
+
+    await fsw.writeFile('/root-file.txt', 'test');
+    await new Promise(r => setTimeout(r, 100));
+    expect(events.some(e => e.type === 'create' && e.path === '/root-file.txt')).toBe(true);
+
+    await fsw.remove('/root-file.txt');
+    await new Promise(r => setTimeout(r, 100));
+    expect(events.some(e => e.type === 'delete' && e.path === '/root-file.txt')).toBe(true);
+
+    fsw.unwatch('/');
+  });
+
+  it('provides root directory stats', async () => {
+    const stat = await fsw.stat('/');
+    expect(stat.isDirectory).toBe(true);
+    expect(stat.isFile).toBe(false);
+    expect(stat.kind).toBe('directory');
+  });
+
+  it('checks root directory existence', async () => {
+    expect(await fsw.exists('/')).toBe(true);
+  });
+
+  it('prevents removal of root directory', async () => {
+    await expect(fsw.remove('/')).rejects.toThrow('Cannot remove root directory');
+  });
 });

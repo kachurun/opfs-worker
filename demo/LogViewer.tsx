@@ -244,6 +244,34 @@ export const LogViewer: React.FC = () => {
 
                 log(`❌ /sync exists: ${ existsDir }`);
 
+                // Test watch functionality
+                log('\n👀 Testing watch functionality...');
+                
+                const watchEvents: any[] = [];
+                fs.setWatchCallback((event) => {
+                    watchEvents.push(event);
+                    log(`👀 Watch event: ${event.type} - ${event.path}`);
+                }, { watchInterval: 100 });
+
+                // Watch the root directory
+                await fs.watch('/');
+                log('✅ Started watching root directory');
+
+                // Create a file to trigger watch event
+                await fs.writeFile('/watch-test.txt', 'Watch test content');
+                await new Promise(r => setTimeout(r, 150)); // Wait for watch to detect
+                log(`✅ Watch detected ${watchEvents.length} events`);
+
+                // Modify the file
+                await fs.writeFile('/watch-test.txt', 'Modified content');
+                await new Promise(r => setTimeout(r, 150));
+                log(`✅ Watch detected ${watchEvents.length} events total`);
+
+                // Clean up
+                fs.unwatch('/');
+                await fs.remove('/watch-test.txt');
+                log('✅ Stopped watching and cleaned up');
+
                 // Final summary
                 log('\n🎉 All tests completed successfully!');
                 setStatusMessage('🎉 Demo completed successfully! All features working.', false);

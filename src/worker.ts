@@ -529,6 +529,18 @@ export class OPFSWorker {
     async stat(path: string, options?: { includeHash?: boolean; hashAlgorithm?: 'SHA-1' | 'SHA-256' | 'SHA-384' | 'SHA-512' }): Promise<FileStat> {
         await this.ensureMounted();
         
+        // Special handling for root directory
+        if (path === '/') {
+            return {
+                kind: 'directory',
+                size: 0,
+                mtime: new Date(0).toISOString(),
+                ctime: new Date(0).toISOString(),
+                isFile: false,
+                isDirectory: true,
+            };
+        }
+        
         const name = basename(path);
         const parentDir = await this.getDirectoryHandle(dirname(path), false);
         const includeHash = options?.includeHash ?? false;
@@ -665,6 +677,10 @@ export class OPFSWorker {
     async exists(path: string): Promise<boolean> {
         await this.ensureMounted();
         
+        if (path === '/') {
+            return true;
+        }
+        
         const name = basename(path);
         let dir: FileSystemDirectoryHandle | null = null;
 
@@ -777,6 +793,11 @@ export class OPFSWorker {
         
         const recursive = options?.recursive ?? false;
         const force = options?.force ?? false;
+
+        // Special handling for root directory
+        if (path === '/') {
+            throw new OPFSError('Cannot remove root directory', 'EROOT');
+        }
 
         const name = basename(path);
 

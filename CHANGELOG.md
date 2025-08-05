@@ -1,5 +1,11 @@
 # opfs-worker
 
+## 0.2.3
+
+### Patch Changes
+
+-   Fix watch for root folder
+
 ## 0.2.2
 
 ### Patch Changes
