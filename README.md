@@ -57,22 +57,34 @@ async function example() {
     // Create a file system instance
     const fs = await createWorker();
 
-    // Mount the file system (required, even for '/')
-    await fs.mount('/my-app');
+    // Mount is optional - OPFS root is used by default
+    // await fs.mount('/my-app'); // Uses custom subdirectory
 
-    // Write a file
+    // Write a file (auto-mounts if not mounted)
     await fs.writeFile('/config.json', JSON.stringify({ theme: 'dark' }));
 
     // Read the file back
     const config = await fs.readFile('/config.json');
     console.log(JSON.parse(config));
+
+    // Handle binary files
+    const imageData = new Uint8Array([/* binary data */]);
+    await fs.writeFile('/image.png', imageData);
+    const binaryData = await fs.readFile('/image.png', 'binary');
+}
+
+// With watch callbacks
+async function exampleWithWatch() {
+    const fs = await createWorker(
+        (event) => console.log('File changed:', event),
+        { watchInterval: 500 }
+    );
+
+    await fs.watch('/docs');
 }
 ```
 
-> **Note:** The `mount` call defines the directory that becomes the root of your
-> file system. This call is mandatory before any file operations. For example,
-> after `fs.mount('/dir')`, calling `fs.readFile('/text.txt')` accesses the file
-> located at `/dir/text.txt` inside OPFS.
+> **Note:** The `mount` call is now optional. If not called, the OPFS root directory is used automatically. For custom subdirectories, call `fs.mount('/my-app')` to create a subdirectory in OPFS. All file operations will auto-mount if needed.
 
 ### Manual Worker Setup
 
@@ -86,17 +98,31 @@ async function example() {
     // Create and wrap the worker
     const worker = wrap(new OPFSWorker());
 
-    // Mount the file system (required, even for '/')
-    await worker.mount('/my-app');
+    // Mount is optional - OPFS root is used by default
+    // await worker.mount(); // Uses OPFS root directory
+    // await worker.mount('/my-app'); // Uses custom subdirectory
 
-    // Use the file system
+    // Use the file system (auto-mounts if not mounted)
     await worker.writeFile('/config.json', JSON.stringify({ theme: 'dark' }));
     const config = await worker.readFile('/config.json');
     console.log(JSON.parse(config));
 }
+
+// With watch callbacks
+async function exampleWithWatch() {
+    const worker = wrap(new OPFSWorker(
+        (event) => console.log('File changed:', event),
+        { watchInterval: 500 }
+    ));
+
+    await worker.mount('/my-app');
+    await worker.watch('/docs');
+}
 ```
 
 **Note:** Manual worker setup requires a bundler that supports Web Workers (like Vite, Webpack, or Rollup) and the `comlink` package for communication between the main thread and worker.
+
+**Watch Callbacks:** File watching with callbacks is available with both `createWorker()` and raw worker usage. The `createWorker()` function uses Comlink.proxy to handle function serialization across worker boundaries.
 
 ### Advanced Usage
 
@@ -105,7 +131,8 @@ import { createWorker } from 'opfs-worker';
 
 async function advancedExample() {
     const fs = await createWorker();
-    await fs.mount('/my-app');
+    // Mount is optional - auto-mounts to OPFS root if not called
+    // await fs.mount('/my-app'); // For custom subdirectory
 
     // Create directories
     await fs.mkdir('/data/logs', { recursive: true });
@@ -113,6 +140,11 @@ async function advancedExample() {
     // Write multiple files
     await fs.writeFile('/data/config.json', JSON.stringify({ version: '1.0' }));
     await fs.writeFile('/data/logs/app.log', 'Application started\n');
+
+    // Handle binary files
+    const imageData = new Uint8Array([/* binary data */]);
+    await fs.writeFile('/data/image.png', imageData);
+    const binaryData = await fs.readFile('/data/image.png', 'binary');
 
     // Append to a file
     await fs.appendFile('/data/logs/app.log', `${new Date().toISOString()}: User logged in\n`);
@@ -129,6 +161,8 @@ async function advancedExample() {
     files.forEach(item => {
         console.log(`${item.name} - ${item.isFile ? 'file' : 'directory'}`);
     });
+
+
 }
 ```
 
@@ -160,6 +194,8 @@ Check out the live demo powered by Vite and hosted on GitHub Pages.
   - [Watch](#watchpath-string-promisevoid)
   - [Unwatch](#unwatchpath-string-void)
   - [Real Path](#realpathpath-string-promisestring)
+- [Binary File Handling](#binary-file-handling)
+- [Utility Functions](#utility-functions)
 
 ### Entry Points
 
@@ -196,11 +232,9 @@ const worker = wrap(new OPFSWorker());
 
 ### Mount
 
-#### `mount(root?: string, watch?: (event: WatchEvent) => void, options?: { watchInterval?: number }): Promise<boolean>`
+#### `mount(root?: string): Promise<boolean>`
 
-Initialize the file system within a given directory and optionally register a
-watch callback. Calling `mount` is required before performing any file
-operations, even if you're using the root directory (`'/'`).
+Initialize the file system within a given directory. **Mount is now optional** - if not called, the OPFS root directory is used automatically.
 
 The `root` parameter defines where in OPFS the file system's root will be
 created. All file paths passed to the API are relative to this mount point. For
@@ -208,26 +242,30 @@ example, after `fs.mount('/dir')`, calling `fs.readFile('/text.txt')` accesses
 `/dir/text.txt` in OPFS.
 
 ```typescript
-await fs.mount('/my-app', event => console.log(event), { watchInterval: 500 });
+// Use OPFS root (default behavior)
+await fs.mount();
+
+// Use custom subdirectory
+await fs.mount('/my-app');
 ```
 
 **Parameters:**
 
 - `root` (optional): The root path for the file system (default: '/')
-- `watch` (optional): Callback invoked with `WatchEvent` objects when watched
-  paths change
-- `options.watchInterval` (optional): Polling interval in milliseconds
-  (default: `1000`)
 
 **Returns:** `Promise<boolean>` - True if initialization was successful
 
 **Throws:** `OPFSError` if initialization fails
 
+**Note:** All file operations will automatically mount the OPFS root if no explicit mount has been performed.
+
+**Watch Callbacks:** File watching with callbacks is only available when using the raw worker directly. The `createWorker()` function does not support watch callbacks due to Comlink limitations with function serialization.
+
 ### Read File
 
 #### `readFile(path: string, encoding?: BufferEncoding | 'binary'): Promise<string | Uint8Array>`
 
-Read a file from the file system.
+Read a file from the file system. Supports both text and binary files.
 
 ```typescript
 // Read as text (default)
@@ -238,22 +276,32 @@ const binaryData = await fs.readFile('/images/logo.png', 'binary');
 
 // Read with specific encoding
 const utf8Content = await fs.readFile('/data/utf8.txt', 'utf-8');
+
+// Handle binary data
+const imageBuffer = await fs.readFile('/image.png', 'binary');
+const blob = new Blob([imageBuffer], { type: 'image/png' });
+const url = URL.createObjectURL(blob);
 ```
 
 **Parameters:**
 
 - `path`: The path to the file to read
-- `encoding` (optional): The encoding to use ('utf-8', 'binary', etc.)
+- `encoding` (optional): The encoding to use ('utf-8', 'binary', 'utf-16le', 'ascii', 'latin1', 'base64', 'hex')
 
-**Returns:** `Promise<string | Uint8Array>` - File contents
+**Returns:** `Promise<string | Uint8Array>` - File contents as string or binary data
 
 **Throws:** `FileNotFoundError` if the file doesn't exist
+
+**Binary File Handling:**
+- Use `'binary'` encoding to read files as `Uint8Array`
+- Binary data can be converted to `Blob` for use with `URL.createObjectURL()`
+- Supports various encodings for text files
 
 ### Write File
 
 #### `writeFile(path: string, data: string | Uint8Array | ArrayBuffer, encoding?: BufferEncoding): Promise<void>`
 
-Write data to a file, creating or overwriting it.
+Write data to a file, creating or overwriting it. Supports both text and binary data.
 
 ```typescript
 // Write text data
@@ -265,13 +313,31 @@ await fs.writeFile('/data/binary.dat', binaryData);
 
 // Write with specific encoding
 await fs.writeFile('/data/utf16.txt', 'Hello World', 'utf-16le');
+
+// Write binary data from file input
+const fileInput = document.getElementById('file') as HTMLInputElement;
+const file = fileInput.files?.[0];
+if (file) {
+    const arrayBuffer = await file.arrayBuffer();
+    await fs.writeFile('/uploaded-file', new Uint8Array(arrayBuffer));
+}
+
+// Write binary data from fetch
+const response = await fetch('/api/image.png');
+const arrayBuffer = await response.arrayBuffer();
+await fs.writeFile('/downloaded-image.png', new Uint8Array(arrayBuffer));
 ```
 
 **Parameters:**
 
 - `path`: The path to the file to write
 - `data`: The data to write (string, Uint8Array, or ArrayBuffer)
-- `encoding` (optional): The encoding to use when writing string data
+- `encoding` (optional): The encoding to use when writing string data ('utf-8', 'utf-16le', 'ascii', 'latin1', 'base64', 'hex')
+
+**Binary File Handling:**
+- Pass `Uint8Array` or `ArrayBuffer` directly for binary data
+- Use with file uploads, image processing, or any binary content
+- Supports various text encodings for string data
 
 ### Append File
 
@@ -520,8 +586,8 @@ await fs.sync(entries, { cleanBefore: true });
 #### `watch(path: string): Promise<void>`
 
 Start watching a file or directory for changes. Detected changes are sent to the
-callback provided to `mount`. The polling interval is configured globally when
-calling `mount`.
+callback provided to the constructor. The polling interval is configured globally when
+creating the worker instance.
 
 ```typescript
 await fs.watch('/docs');
@@ -530,6 +596,8 @@ await fs.watch('/docs');
 **Parameters:**
 
 - `path`: File or directory to watch
+
+**Note:** Watch callbacks are available with both `createWorker()` and raw worker usage. The `createWorker()` function uses Comlink.proxy to handle function serialization across worker boundaries.
 
 ### Unwatch
 
@@ -556,6 +624,171 @@ console.log(absolute); // '/data/file.txt'
 **Returns:** `Promise<string>` - The absolute normalized path
 
 **Throws:** `FileNotFoundError` if the path doesn't exist
+
+## Binary File Handling
+
+This library provides comprehensive support for binary files, making it easy to work with images, documents, and other binary data.
+
+### Reading Binary Files
+
+```typescript
+// Read as binary data
+const imageData = await fs.readFile('/image.png', 'binary');
+const documentData = await fs.readFile('/document.pdf', 'binary');
+
+// Convert to Blob for use with URLs
+const imageBuffer = await fs.readFile('/image.png', 'binary');
+const blob = new Blob([imageBuffer], { type: 'image/png' });
+const url = URL.createObjectURL(blob);
+
+// Display image
+const img = document.createElement('img');
+img.src = url;
+document.body.appendChild(img);
+```
+
+### Writing Binary Files
+
+```typescript
+// Write binary data directly
+const binaryData = new Uint8Array([1, 2, 3, 4, 5]);
+await fs.writeFile('/data.bin', binaryData);
+
+// From file input
+const fileInput = document.getElementById('file') as HTMLInputElement;
+const file = fileInput.files?.[0];
+if (file) {
+    const arrayBuffer = await file.arrayBuffer();
+    await fs.writeFile('/uploaded-file', new Uint8Array(arrayBuffer));
+}
+
+// From fetch response
+const response = await fetch('/api/download/file.pdf');
+const arrayBuffer = await response.arrayBuffer();
+await fs.writeFile('/downloaded-file.pdf', new Uint8Array(arrayBuffer));
+
+// From canvas
+const canvas = document.createElement('canvas');
+const ctx = canvas.getContext('2d');
+// ... draw something ...
+canvas.toBlob(async (blob) => {
+    if (blob) {
+        const arrayBuffer = await blob.arrayBuffer();
+        await fs.writeFile('/canvas-image.png', new Uint8Array(arrayBuffer));
+    }
+});
+```
+
+### Working with Different Data Types
+
+```typescript
+// Convert between different binary formats
+const uint8Array = new Uint8Array([1, 2, 3, 4, 5]);
+const arrayBuffer = uint8Array.buffer;
+
+// All of these work the same way
+await fs.writeFile('/data1.bin', uint8Array);
+await fs.writeFile('/data2.bin', arrayBuffer);
+await fs.writeFile('/data3.bin', new Uint8Array(arrayBuffer));
+
+// Read back as binary
+const data = await fs.readFile('/data1.bin', 'binary');
+console.log(data); // Uint8Array
+```
+
+### File Upload and Download
+
+```typescript
+// Handle file uploads
+const handleFileUpload = async (file: File) => {
+    const arrayBuffer = await file.arrayBuffer();
+    await fs.writeFile(`/uploads/${file.name}`, new Uint8Array(arrayBuffer));
+};
+
+// Create downloadable files
+const createDownloadLink = async (filePath: string, fileName: string) => {
+    const data = await fs.readFile(filePath, 'binary');
+    const blob = new Blob([data]);
+    const url = URL.createObjectURL(blob);
+    
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = fileName;
+    a.click();
+    
+    URL.revokeObjectURL(url);
+};
+```
+
+### Supported Encodings
+
+The library supports various encodings for text files:
+
+- `'utf-8'` (default) - UTF-8 encoding
+- `'utf-16le'` - UTF-16 little-endian
+- `'ascii'` - ASCII encoding
+- `'latin1'` - Latin-1 encoding
+- `'base64'` - Base64 encoding
+- `'hex'` - Hexadecimal encoding
+- `'binary'` - Raw binary data (returns Uint8Array)
+
+## Utility Functions
+
+The library exports several utility functions that can be used independently:
+
+### Path Utilities
+
+```typescript
+import { basename, dirname, normalizePath, resolvePath, extname } from 'opfs-worker';
+
+// Extract filename from path
+basename('/path/to/file.txt'); // 'file.txt'
+basename('/path/to/directory/'); // ''
+
+// Extract directory path
+dirname('/path/to/file.txt'); // '/path/to'
+dirname('file.txt'); // '/'
+
+// Normalize path to start with '/'
+normalizePath('path/to/file'); // '/path/to/file'
+normalizePath('/path/to/file'); // '/path/to/file'
+
+// Resolve relative paths
+resolvePath('./config/../data/file.txt'); // '/data/file.txt'
+resolvePath('/path/to/../file.txt'); // '/path/file.txt'
+
+// Get file extension
+extname('/path/to/file.txt'); // '.txt'
+extname('/path/to/file'); // ''
+extname('/path/to/file.name.ext'); // '.ext'
+```
+
+### Data Conversion
+
+```typescript
+import { convertBlobToUint8Array } from 'opfs-worker';
+
+// Convert Blob to Uint8Array
+const fileInput = document.getElementById('file') as HTMLInputElement;
+const file = fileInput.files?.[0];
+if (file) {
+    const data = await convertBlobToUint8Array(file);
+    await fs.writeFile('/uploaded-file', data);
+}
+```
+
+### File System Utilities
+
+```typescript
+import { checkOPFSSupport, splitPath, joinPath } from 'opfs-worker';
+
+// Check if browser supports OPFS
+checkOPFSSupport(); // Throws error if not supported
+
+// Path manipulation
+splitPath('/path/to/file'); // ['path', 'to', 'file']
+joinPath(['path', 'to', 'file']); // '/path/to/file'
+```
 
 ## Types
 

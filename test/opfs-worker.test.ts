@@ -90,7 +90,7 @@ describe('OPFSWorker', () => {
 
   it('watches for file changes', async () => {
     const events: any[] = [];
-    await fsw.mount('/', e => events.push(e), { watchInterval: 50 });
+    fsw.setWatchCallback(e => events.push(e), { watchInterval: 50 });
     await fsw.mkdir('/watched', { recursive: true });
     await fsw.watch('/watched');
 

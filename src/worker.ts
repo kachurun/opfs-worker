@@ -59,20 +59,37 @@ export class OPFSWorker {
     /** Flag to avoid concurrent scans */
     private scanning = false;
 
+    /** Promise to prevent concurrent mount operations */
+    private mountingPromise: Promise<boolean> | null = null;
+
     /**
      * Creates a new OPFSFileSystem instance
      * 
+     * @param watchCallback - Optional callback for file change events
+     * @param watchOptions - Optional configuration for watching
      * @throws {OPFSError} If OPFS is not supported in the current browser
      */
-    constructor() {
+    constructor(
+        watchCallback?: (event: WatchEvent) => void,
+        watchOptions?: { watchInterval?: number }
+    ) {
         checkOPFSSupport();
+        
+        if (watchCallback) {
+            this.watchCallback = watchCallback;
+            if (watchOptions?.watchInterval) {
+                this.watchInterval = watchOptions.watchInterval;
+            }
+        }
+        
+        void this.mount('/');
     }
 
     /**
      * Initialize the file system within a given directory
      * 
      * This method sets up the root directory for all subsequent operations.
-     * It must be called before any other file system operations.
+     * If no root is specified, it will use the OPFS root directory.
      * 
      * @param root - The root path for the file system (default: '/')
      * @returns Promise that resolves to true if initialization was successful
@@ -81,29 +98,82 @@ export class OPFSWorker {
      * @example
      * ```typescript
      * const fs = new OPFSFileSystem();
-     * const success = await fs.init('/my-app');
+     * 
+     * // Use OPFS root (default)
+     * await fs.mount();
+     * 
+     * // Use custom directory
+     * await fs.mount('/my-app');
      * ```
      */
-    async mount(root: string = '/', watchCallback?: (event: WatchEvent) => void, options?: { watchInterval?: number }): Promise<boolean> {
-        try {
-            const rootDir = await navigator.storage.getDirectory();
+    async mount(root: string = '/'): Promise<boolean> {
+        // If already mounting, wait for previous operation to complete first
+        if (this.mountingPromise) {
+            await this.mountingPromise;
+        }
 
-            this.root = await this.getDirectoryHandle(root, true, rootDir);
-
-            if (watchCallback) {
-                this.watchCallback = watchCallback;
-                if (options?.watchInterval) {
-                    this.watchInterval = options.watchInterval;
+        this.mountingPromise = new Promise<boolean>(async(resolve, reject) => {
+            this.root = null;
+    
+            try {
+                const rootDir = await navigator.storage.getDirectory();
+    
+                if (root === '/') {
+                    this.root = rootDir;
+                } 
+                else {
+                    this.root = await this.getDirectoryHandle(root, true, rootDir);
                 }
+                resolve(true);
             }
+            catch (error) {
+                console.error(error);
+                reject(new OPFSError('Failed to initialize OPFS', 'INIT_FAILED'));
+            }
+            finally {
+                this.mountingPromise = null;
+            }
+        });
 
-            return true;
-        }
-        catch (error) {
-            console.error(error);
+        return this.mountingPromise;
+    }
 
-            throw new OPFSError('Failed to initialize OPFS', 'INIT_FAILED');
+    /**
+     * Set the watch callback for file change events
+     * 
+     * @param callback - The callback function to invoke when files change
+     * @param options - Optional configuration for watching
+     */
+    setWatchCallback(callback: (event: WatchEvent) => void, options?: { watchInterval?: number }): void {
+        this.watchCallback = callback;
+
+        if (options?.watchInterval) {
+            this.watchInterval = options.watchInterval;
         }
+    }
+
+    /**
+     * Automatically mount the OPFS root if not already mounted
+     * 
+     * This method is called internally when file operations are performed
+     * without explicitly mounting first.
+     * 
+     * @returns Promise that resolves when auto-mount is complete
+     * @throws {OPFSError} If auto-mount fails
+     */
+    private async ensureMounted(): Promise<void> {
+        // If already mounted, return immediately
+        if (this.root) {
+            return;
+        }
+
+        // If already mounting, wait for that operation to complete
+        if (this.mountingPromise) {
+            await this.mountingPromise;
+            return;
+        }
+
+        throw new OPFSError('OPFS not mounted', 'NOT_MOUNTED');
     }
 
     /**
@@ -281,6 +351,8 @@ export class OPFSWorker {
         path: string,
         encoding: BufferEncoding | 'binary' = 'utf-8'
     ): Promise<string | Uint8Array> {
+        await this.ensureMounted();
+        
         try {
             const fileHandle = await this.getFileHandle(path, false);
             const buffer = await readFileData(fileHandle);
@@ -328,6 +400,8 @@ export class OPFSWorker {
         data: string | Uint8Array | ArrayBuffer,
         encoding?: BufferEncoding
     ): Promise<void> {
+        await this.ensureMounted();
+        
         const fileHandle = await this.getFileHandle(path, true);
 
         await writeFileData(fileHandle, data, encoding, { truncate: true });
@@ -360,6 +434,8 @@ export class OPFSWorker {
         data: string | Uint8Array | ArrayBuffer,
         encoding?: BufferEncoding
     ): Promise<void> {
+        await this.ensureMounted();
+        
         const fileHandle = await this.getFileHandle(path, true);
 
         await writeFileData(fileHandle, data, encoding, { append: true });
@@ -387,6 +463,8 @@ export class OPFSWorker {
      * ```
      */
     async mkdir(path: string, options?: { recursive?: boolean }): Promise<void> {
+        await this.ensureMounted();
+
         if (!this.root) {
             throw new OPFSNotMountedError();
         }
@@ -449,6 +527,8 @@ export class OPFSWorker {
      * ```
      */
     async stat(path: string, options?: { includeHash?: boolean; hashAlgorithm?: 'SHA-1' | 'SHA-256' | 'SHA-384' | 'SHA-512' }): Promise<FileStat> {
+        await this.ensureMounted();
+        
         const name = basename(path);
         const parentDir = await this.getDirectoryHandle(dirname(path), false);
         const includeHash = options?.includeHash ?? false;
@@ -536,6 +616,8 @@ export class OPFSWorker {
     async readdir(path: string, options: { withFileTypes: true }): Promise<DirentData[]>;
     async readdir(path: string, options: { withFileTypes: false }): Promise<string[]>;
     async readdir(path: string, options?: { withFileTypes?: boolean }): Promise<string[] | DirentData[]> {
+        await this.ensureMounted();
+        
         const withTypes = options?.withFileTypes ?? false;
         const dir = await this.getDirectoryHandle(path, false);
 
@@ -581,6 +663,8 @@ export class OPFSWorker {
      * ```
      */
     async exists(path: string): Promise<boolean> {
+        await this.ensureMounted();
+        
         const name = basename(path);
         let dir: FileSystemDirectoryHandle | null = null;
 
@@ -644,6 +728,8 @@ export class OPFSWorker {
      * ```
      */
     async clear(path: string = '/'): Promise<void> {
+        await this.ensureMounted();
+        
         try {
             const items = await this.readdir(path, { withFileTypes: true });
 
@@ -687,6 +773,8 @@ export class OPFSWorker {
      * ```
      */
     async remove(path: string, options?: { recursive?: boolean; force?: boolean }): Promise<void> {
+        await this.ensureMounted();
+        
         const recursive = options?.recursive ?? false;
         const force = options?.force ?? false;
 
@@ -738,6 +826,8 @@ export class OPFSWorker {
      * ```
      */
     async realpath(path: string): Promise<string> {
+        await this.ensureMounted();
+        
         try {
             const normalizedPath = resolvePath(path);
             const exists = await this.exists(normalizedPath);
@@ -774,6 +864,8 @@ export class OPFSWorker {
      * ```
      */
     async rename(oldPath: string, newPath: string): Promise<void> {
+        await this.ensureMounted();
+        
         try {
             const sourceExists = await this.exists(oldPath);
 
@@ -809,16 +901,18 @@ export class OPFSWorker {
      * @example
      * ```typescript
      * // Copy a file
-     * await fs.cp('/source/file.txt', '/dest/file.txt');
+     * await fs.copy('/source/file.txt', '/dest/file.txt');
      * 
      * // Copy a directory and all its contents
-     * await fs.cp('/source/dir', '/dest/dir', { recursive: true });
+     * await fs.copy('/source/dir', '/dest/dir', { recursive: true });
      * 
      * // Copy without overwriting existing files
-     * await fs.cp('/source', '/dest', { recursive: true, force: false });
+     * await fs.copy('/source', '/dest', { recursive: true, force: false });
      * ```
      */
     async copy(source: string, destination: string, options?: { recursive?: boolean; force?: boolean }): Promise<void> {
+        await this.ensureMounted();
+        
         try {
             const recursive = options?.recursive ?? false;
             const force = options?.force ?? true;
@@ -839,7 +933,7 @@ export class OPFSWorker {
 
             if (sourceStats.isFile) {
                 const content = await this.readFile(source, 'binary');
-
+                
                 await this.writeFile(destination, content);
             }
             else {
@@ -872,6 +966,8 @@ export class OPFSWorker {
      * Start watching a file or directory for changes
      */
     async watch(path: string): Promise<void> {
+        await this.ensureMounted();
+        
         const normalizedPath = normalizePath(path);
         const snapshot = await this.buildSnapshot(normalizedPath);
         this.watchers.set(normalizedPath, snapshot);
@@ -997,6 +1093,8 @@ export class OPFSWorker {
      * ```
      */
     async sync(entries: [string, string | Uint8Array | Blob][], options?: { cleanBefore?: boolean }): Promise<void> {
+        await this.ensureMounted();
+        
         try {
             const cleanBefore = options?.cleanBefore ?? false;
 

@@ -26,6 +26,11 @@ export default defineConfig({
     worker: {
         format: 'es',
         plugins: () => [],
+        rollupOptions: {
+            output: {
+                inlineDynamicImports: true,
+            },
+        },
     },
     define: {
         'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV || 'development'),

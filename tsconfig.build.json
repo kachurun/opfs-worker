@@ -11,6 +11,7 @@
         "declarationMap": true,
         "outDir": "dist",
         "rootDir": "src",
+        "emitDeclarationOnly": true,
 
         "strict": true,
         "noUncheckedIndexedAccess": true,

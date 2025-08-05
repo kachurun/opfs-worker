@@ -1,5 +1,17 @@
 # opfs-worker
 
+## 0.2.2
+
+### Patch Changes
+
+-   Fix broken types export
+
+## 0.2.1
+
+### Patch Changes
+
+-   Export helpers
+
 ## 0.2.0
 
 ### Minor Changes
