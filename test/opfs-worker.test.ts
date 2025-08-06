@@ -139,4 +139,59 @@ describe('OPFSWorker', () => {
   it('prevents removal of root directory', async () => {
     await expect(fsw.remove('/')).rejects.toThrow('Cannot remove root directory');
   });
+
+  it('notifies about internal changes even when not watching', async () => {
+    const events: any[] = [];
+    fsw.setWatchCallback(e => events.push(e), { watchInterval: 50 });
+    
+    // Don't watch any paths, but still expect notifications from internal changes
+    await fsw.writeFile('/internal-test.txt', 'test');
+    await new Promise(r => setTimeout(r, 50));
+    expect(events.some(e => e.type === 'change' && e.path === '/internal-test.txt')).toBe(true);
+
+    await fsw.mkdir('/internal-dir', { recursive: true });
+    await new Promise(r => setTimeout(r, 50));
+    expect(events.some(e => e.type === 'create' && e.path === '/internal-dir')).toBe(true);
+
+    await fsw.remove('/internal-test.txt');
+    await new Promise(r => setTimeout(r, 50));
+    expect(events.some(e => e.type === 'delete' && e.path === '/internal-test.txt')).toBe(true);
+  });
+
+  it('avoids duplicate events when path is already being watched', async () => {
+    const events: any[] = [];
+    fsw.setWatchCallback(e => events.push(e), { watchInterval: 50 });
+    
+    // Watch a specific path
+    await fsw.mkdir('/watched-path', { recursive: true });
+    await fsw.watch('/watched-path');
+    
+    // Make changes to the watched path
+    await fsw.writeFile('/watched-path/file.txt', 'test');
+    await new Promise(r => setTimeout(r, 100));
+    
+    // Should only get one event from the watch mechanism, not duplicate from internal notification
+    const createEvents = events.filter(e => e.type === 'create' && e.path === '/watched-path/file.txt');
+    expect(createEvents.length).toBe(1);
+    
+    await fsw.unwatch('/watched-path');
+  });
+
+  it('notifies about copy operations', async () => {
+    const events: any[] = [];
+    fsw.setWatchCallback(e => events.push(e), { watchInterval: 50 });
+    
+    // Create a source file
+    await fsw.writeFile('/source.txt', 'source content');
+    
+    // Copy the file
+    await fsw.copy('/source.txt', '/dest.txt');
+    await new Promise(r => setTimeout(r, 50));
+    
+    // Should get notification about the new file
+    expect(events.some(e => e.type === 'create' && e.path === '/dest.txt')).toBe(true);
+    
+    // Verify the copy worked
+    expect(await fsw.readFile('/dest.txt')).toBe('source content');
+  });
 });

@@ -63,6 +63,27 @@ export class OPFSWorker {
     private mountingPromise: Promise<boolean> | null = null;
 
     /**
+     * Notify about internal changes to the file system
+     * 
+     * This method is called by internal operations to notify clients about
+     * changes, even when no specific paths are being watched.
+     * 
+     * @param path - The path that was changed
+     * @param type - The type of change (create, change, delete)
+     */
+    private notifyInternalChange(path: string, type: 'create' | 'change' | 'delete'): void {
+        if (!this.watchCallback) {
+            return;
+        }
+
+        // Notify about the change immediately
+        this.watchCallback({
+            path,
+            type
+        });
+    }
+
+    /**
      * Creates a new OPFSFileSystem instance
      * 
      * @param watchCallback - Optional callback for file change events
@@ -405,6 +426,7 @@ export class OPFSWorker {
         const fileHandle = await this.getFileHandle(path, true);
 
         await writeFileData(fileHandle, data, encoding, { truncate: true });
+        this.notifyInternalChange(path, 'change');
     }
 
     /**
@@ -439,6 +461,7 @@ export class OPFSWorker {
         const fileHandle = await this.getFileHandle(path, true);
 
         await writeFileData(fileHandle, data, encoding, { append: true });
+        this.notifyInternalChange(path, 'change');
     }
 
     /**
@@ -495,6 +518,7 @@ export class OPFSWorker {
                 throw new OPFSError('Failed to create directory', 'MKDIR_FAILED');
             }
         }
+        this.notifyInternalChange(path, 'create');
     }
 
     /**
@@ -754,6 +778,9 @@ export class OPFSWorker {
 
                 await this.remove(itemPath, { recursive: true });
             }
+            
+            // Notify about the clear operation
+            this.notifyInternalChange(path, 'change');
         }
         catch (error: any) {
             if (error instanceof OPFSError) {
@@ -826,6 +853,7 @@ export class OPFSWorker {
                 throw new OPFSError(`Failed to remove path: ${ path }`, 'RM_FAILED');
             }
         }
+        this.notifyInternalChange(path, 'delete');
     }
 
     /**
@@ -896,6 +924,10 @@ export class OPFSWorker {
 
             await this.copy(oldPath, newPath, { recursive: true });
             await this.remove(oldPath, { recursive: true });
+            
+            // Notify about the rename operation
+            this.notifyInternalChange(oldPath, 'delete');
+            this.notifyInternalChange(newPath, 'create');
         }
         catch (error) {
             if (error instanceof OPFSError) {
@@ -973,6 +1005,9 @@ export class OPFSWorker {
                     await this.copy(sourceItemPath, destItemPath, { recursive: true, force });
                 }
             }
+            
+            // Notify about the copy operation
+            this.notifyInternalChange(destination, 'create');
         }
         catch (error) {
             if (error instanceof OPFSError) {
@@ -1042,7 +1077,7 @@ export class OPFSWorker {
 
         try {
             await Promise.all(
-                [...this.watchers.entries()].map(async ([rootPath, prev]) => {
+                [...this.watchers.entries()].map(async([rootPath, prev]) => {
                     let next: Map<string, FileStat>;
 
                     try {
@@ -1137,6 +1172,9 @@ export class OPFSWorker {
 
                 await this.writeFile(normalizedPath, fileData);
             }
+            
+            // Notify about the sync operation
+            this.notifyInternalChange('/', 'change');
         }
         catch (error) {
             if (error instanceof OPFSError) {
