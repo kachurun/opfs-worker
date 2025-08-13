@@ -114,7 +114,10 @@ async function example() {
 async function exampleWithWatch() {
     const worker = wrap(new OPFSWorker(
         (event) => console.log('File changed:', event),
-        { watchInterval: 500 }
+        { 
+            watchInterval: 500,
+            hashAlgorithm: 'SHA-1'
+        }
     ));
 
     await worker.mount('/my-app');
@@ -122,7 +125,7 @@ async function exampleWithWatch() {
 }
 ```
 
-**Note:** Manual worker setup requires a bundler that supports Web Workers (like Vite, Webpack, or Rollup) and the `comlink` package for communication between the main thread and worker.
+**Note:** Manual worker setup requires a bundler that supports Web Workers (like Vite, Webpack, Rollup, etc.) and the `comlink` package for communication between the main thread and worker.
 
 **Watch Callbacks:** File watching with callbacks is available with both `createWorker()` and raw worker usage. The `createWorker()` function uses Comlink.proxy to handle function serialization across worker boundaries.
 
@@ -152,11 +155,12 @@ async function advancedExample() {
     await fs.appendFile('/data/logs/app.log', `${new Date().toISOString()}: User logged in\n`);
 
     // Get file statistics with hash
-    const stats = await fs.stat('/data/config.json', {
-        includeHash: true,
-        hashAlgorithm: 'SHA-1'
-    });
-    console.log(`File size: ${stats.size} bytes, Hash: ${stats.hash}`);
+    const stats = await fs.stat('/data/config.json');
+    
+    console.log(`File size: ${stats.size} bytes`);
+    if (stats.hash) {
+        console.log(`Hash: ${stats.hash}`);
+    }
 
     // List directory contents
     const files = await fs.readdir('/data', { withFileTypes: true });
@@ -167,6 +171,55 @@ async function advancedExample() {
 
 }
 ```
+
+### Hash Algorithm Configuration
+
+The file system now supports global hash algorithm configuration. Instead of passing hash options to individual methods, you can set the hash algorithm once and it will be used for all file operations that support hashing.
+
+```typescript
+import { createWorker } from 'opfs-worker';
+
+async function hashExample() {
+    const fs = await createWorker();
+    
+    // Enable SHA-256 hashing globally
+    fs.setOptions({ hashAlgorithm: 'SHA-256' });
+    
+    // Write a file
+    await fs.writeFile('/data.txt', 'Hello World');
+    
+    // Get stats - hash will be included automatically
+    const stats = await fs.stat('/data.txt');
+    console.log(`Hash: ${stats.hash}`); // SHA-256 hash
+    
+    // Get file system index - all files will include hashes
+    const index = await fs.index();
+    for (const [path, stat] of index) {
+        if (stat.isFile && stat.hash) {
+            console.log(`${path}: ${stat.hash}`);
+        }
+    }
+    
+    // Watch events will also include hash information
+    fs.setWatchCallback((event) => {
+        if (event.hash) {
+            console.log(`File ${event.path} changed, hash: ${event.hash}`);
+        }
+    });
+    
+    // Disable hashing for better performance
+    fs.setOptions({ hashAlgorithm: null });
+}
+```
+
+**Supported Hash Algorithms:**
+- `'SHA-1'` - Fastest, good for general use (default)
+- `'SHA-256'` - More secure, widely supported
+- `'SHA-384'` - Higher security
+- `'SHA-512'` - Highest security
+- `null` - Disable hashing for maximum performance
+
+**Note:** When hashing is enabled, it affects all file operations including `stat()`, `index()`, and watch events. Set to `null` when you don't need hash information to improve performance.
 
 ## Demo
 
@@ -185,16 +238,17 @@ Check out the live demo powered by Vite and hosted on GitHub Pages.
   - [Append File](#appendfilepath-string-data-string--uint8array--arraybuffer-encoding-bufferencoding-promisevoid)
   - [Make Directory](#mkdirpath-string-options--recursive-boolean--promisevoid)
   - [Read Directory](#readdirpath-string-options--withfiletypes-boolean--promisestring--direntdata)
-  - [File Stat](#statpath-string-options--includehash-boolean-hashalgorithm-string--promisefilestat)
+  - [File Stat](#statpath-string-promisefilestat)
   - [Exists](#existspath-string-promiseboolean)
   - [Remove](#removepath-string-options--recursive-boolean-force-boolean--promisevoid)
   - [Copy](#copysource-string-destination-string-options--recursive-boolean-force-boolean--promisevoid)
   - [Rename](#renameoldpath-string-newpath-string-promisevoid)
   - [Clear](#clearpath-string-promisevoid)
-  - [Index](#indexoptions--includehash-boolean-hashalgorithm-string--promisemapstring-filestat)
+  - [Index](#index-promisemapstring-filestat)
   - [Sync](#syncentries-string-string--uint8array--blob-options--cleanbefore-boolean--promisevoid)
   - [Watch](#watchpath-string-promisevoid)
   - [Unwatch](#unwatchpath-string-void)
+  - [Configuration](#configuration)
   - [Real Path](#realpathpath-string-promisestring)
 - [Binary File Handling](#binary-file-handling)
 - [Utility Functions](#utility-functions)
@@ -203,15 +257,32 @@ Check out the live demo powered by Vite and hosted on GitHub Pages.
 
 #### Mode 1: Inline Worker
 
-##### `createWorker()`
+##### `createWorker(watchCallback?: (event: WatchEvent) => void, options?: { watchInterval?: number; hashAlgorithm?: 'SHA-1' | 'SHA-256' | 'SHA-384' | 'SHA-512' })`
 
 Creates a new file system instance with an inline worker.
 
 ```typescript
 import { createWorker } from 'opfs-worker/inline';
 
+// Basic usage
 const fs = await createWorker();
+
+// With watch callback and options
+const fs = await createWorker(
+    (event) => console.log('File changed:', event),
+    { 
+        watchInterval: 500,
+        hashAlgorithm: 'SHA-256'
+    }
+);
 ```
+
+**Parameters:**
+
+- `watchCallback` (optional): Callback function for file change events
+- `options` (optional): Configuration options
+  - `watchInterval` (optional): Polling interval in milliseconds for file watching
+  - `hashAlgorithm` (optional): Hash algorithm for file hashing
 
 **Returns:** `Promise<RemoteOPFSWorker>` - A remote file system interface
 
@@ -400,9 +471,9 @@ detailed.forEach(item => {
 
 ### Get Stats
 
-#### `stat(path: string, options?: { includeHash?: boolean; hashAlgorithm?: string }): Promise<FileStat>`
+#### `stat(path: string): Promise<FileStat>`
 
-Get file or directory statistics.
+Get file or directory statistics. If hashing is enabled globally, file hashes will be included automatically.
 
 ```typescript
 // Basic stats
@@ -411,21 +482,19 @@ console.log(`File size: ${stats.size} bytes`);
 console.log(`Is file: ${stats.isFile}`);
 console.log(`Modified: ${stats.mtime}`);
 
-// Stats with hash
-const statsWithHash = await fs.stat('/config/settings.json', {
-    includeHash: true,
-    hashAlgorithm: 'SHA-1'
-});
-console.log(`Hash: ${statsWithHash.hash}`);
+// If hashing is enabled globally, hash will be included
+if (stats.hash) {
+    console.log(`Hash: ${stats.hash}`);
+}
 ```
 
 **Parameters:**
 
 - `path`: The path to the file or directory
-- `options.includeHash` (optional): Whether to calculate file hash (default: false)
-- `options.hashAlgorithm` (optional): Hash algorithm to use ('SHA-1', 'SHA-256', 'SHA-384', 'SHA-512', default: 'SHA-1')
 
 **Returns:** `Promise<FileStat>` - File/directory statistics
+
+**Note:** File hashing is controlled globally via the constructor options or `setOptions()` method. When enabled, all file stats will automatically include hash information.
 
 ### Check Existence
 
@@ -522,19 +591,13 @@ await fs.clear('/data');
 
 ### Index File System
 
-#### `index(options?: { includeHash?: boolean; hashAlgorithm?: string }): Promise<Map<string, FileStat>>`
+#### `index(): Promise<Map<string, FileStat>>`
 
-Recursively list all files and directories with their stats.
+Recursively list all files and directories with their stats. If hashing is enabled globally, file hashes will be included automatically.
 
 ```typescript
-// Basic index without hash
+// Get complete file system index
 const index = await fs.index();
-
-// Index with file hash
-const indexWithHash = await fs.index({
-    includeHash: true,
-    hashAlgorithm: 'SHA-1'
-});
 
 // Iterate through all files and directories
 for (const [path, stat] of index) {
@@ -550,12 +613,9 @@ if (fileStats) {
 }
 ```
 
-**Parameters:**
-
-- `options.includeHash` (optional): Whether to calculate file hash (default: false)
-- `options.hashAlgorithm` (optional): Hash algorithm to use (default: 'SHA-1')
-
 **Returns:** `Promise<Map<string, FileStat>>` - Map of path => FileStat
+
+**Note:** File hashing is controlled globally via the constructor options or `setOptions()` method. When enabled, all file stats in the index will automatically include hash information.
 
 ### Sync File System
 
@@ -610,6 +670,36 @@ Stop watching a previously watched path.
 ```typescript
 fs.unwatch('/docs');
 ```
+
+### Configuration
+
+#### `setOptions(options: { watchInterval?: number; hashAlgorithm?: null | 'SHA-1' | 'SHA-256' | 'SHA-384' | 'SHA-512' }): void`
+
+Update configuration options for the file system, including watch interval and hash algorithm.
+
+```typescript
+// Enable SHA-256 hashing for all file operations
+fs.setOptions({ hashAlgorithm: 'SHA-256' });
+
+// Change watch interval to 100ms for faster change detection
+fs.setOptions({ watchInterval: 100 });
+
+// Disable hashing
+fs.setOptions({ hashAlgorithm: null });
+
+// Update multiple options at once
+fs.setOptions({ 
+    watchInterval: 200, 
+    hashAlgorithm: 'SHA-1' 
+});
+```
+
+**Parameters:**
+
+- `options.watchInterval` (optional): Polling interval in milliseconds for file watching
+- `options.hashAlgorithm` (optional): Hash algorithm to use, or `null` to disable hashing
+
+**Note:** When a hash algorithm is set, all file operations (`stat`, `index`, watch events) will automatically include hash information. Set to `null` to disable hashing and improve performance.
 
 ### Resolve Path
 
