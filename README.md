@@ -76,7 +76,9 @@ async function example() {
 // With watch callbacks
 async function exampleWithWatch() {
     const fs = await createWorker(
-        (event) => console.log('File changed:', event),
+        (event) => {
+            console.log('File changed:', event);
+        },
         { watchInterval: 500 }
     );
 
@@ -84,7 +86,7 @@ async function exampleWithWatch() {
 }
 ```
 
-> **Note:** The `mount` call is now optional. If not called, the OPFS root directory is used automatically. For custom subdirectories, call `fs.mount('/my-app')` to create a subdirectory in OPFS. All file operations will auto-mount if needed.
+> **Note:** The onChange callback will be called for all internal file changes (made by the worker itself), not just for watched paths. You only need to call `fs.watch` to start watching for changes from external sources.
 
 ### Manual Worker Setup
 
@@ -234,7 +236,7 @@ const worker = wrap(new OPFSWorker());
 
 #### `mount(root?: string): Promise<boolean>`
 
-Initialize the file system within a given directory. **Mount is now optional** - if not called, the OPFS root directory is used automatically.
+Initialize the file system within a given directory. **Mount is optional** - if not called, the OPFS root directory is used automatically.
 
 The `root` parameter defines where in OPFS the file system's root will be
 created. All file paths passed to the API are relative to this mount point. For
