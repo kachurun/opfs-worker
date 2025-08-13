@@ -47,6 +47,22 @@ describe('OPFSWorker', () => {
     expect(stat.hash).toMatch(/^[0-9a-f]+$/);
   });
 
+  it('respects maxFileSize option for hashing', async () => {
+    // Create a file larger than the default 50MB limit
+    const largeData = 'x'.repeat(51 * 1024 * 1024); // 51MB
+    await fsw.writeFile('/large.txt', largeData);
+    
+    // Should not have hash with default 50MB limit
+    fsw.setOptions({ hashAlgorithm: 'SHA-1' });
+    const statWithoutHash = await fsw.stat('/large.txt');
+    expect(statWithoutHash.hash).toBeUndefined();
+    
+    // Should work with increased limit
+    fsw.setOptions({ maxFileSize: 100 * 1024 * 1024 }); // 100MB
+    const statWithHash = await fsw.stat('/large.txt');
+    expect(statWithHash.hash).toMatch(/^[0-9a-f]+$/);
+  });
+
   it('provides directory stats', async () => {
     await fsw.mkdir('/dir', { recursive: true });
     const stat = await fsw.stat('/dir');

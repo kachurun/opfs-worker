@@ -31,3 +31,12 @@ export interface WatchEvent {
 
 export type { OPFSWorker };
 export type RemoteOPFSWorker = Remote<OPFSWorker>;
+
+export interface OPFSOptions {
+    /** Polling interval in milliseconds for file watching (default: 1000) */
+    watchInterval?: number;
+    /** Hash algorithm for file hashing, or null to disable (default: null) */
+    hashAlgorithm?: null | 'SHA-1' | 'SHA-256' | 'SHA-384' | 'SHA-512';
+    /** Maximum file size in bytes for hashing (default: 50MB) */
+    maxFileSize?: number;
+}

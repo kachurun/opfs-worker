@@ -241,27 +241,31 @@ export async function writeFileData(
 /**
  * Calculate file hash using Web Crypto API
  * 
- * @param buffer - The file content as Uint8Array
+ * @param buffer - The file content as File, ArrayBuffer, or Uint8Array
  * @param algorithm - Hash algorithm to use (default: 'SHA-1')
+ * @param maxSize - Maximum file size in bytes. If file is larger, throws error (default: 50MB)
  * @returns Promise that resolves to the hash string
+ * @throws Error if file size exceeds maxSize
  */
-export async function calculateFileHash(buffer: File | ArrayBuffer | Uint8Array, algorithm: string = 'SHA-1'): Promise<string> {
+export async function calculateFileHash(
+    buffer: File | ArrayBuffer | Uint8Array, 
+    algorithm: string = 'SHA-1',
+    maxSize: number = 50 * 1024 * 1024 // 50MB default
+): Promise<string> {
     if (buffer instanceof File) {
         buffer = await buffer.arrayBuffer();
     }
-
-    try {
-        const bufferSource = new Uint8Array(buffer);
-        const hashBuffer = await crypto.subtle.digest(algorithm, bufferSource);
-        const hashArray = Array.from(new Uint8Array(hashBuffer));
-
-        return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+    
+    // Check file size before processing
+    if (buffer.byteLength > maxSize) {
+        throw new Error(`File size ${buffer.byteLength} bytes exceeds maximum allowed size ${maxSize} bytes`);
     }
-    catch (error) {
-        console.warn(`Failed to calculate ${ algorithm } hash:`, error);
 
-        throw error;
-    }
+    const bufferSource = new Uint8Array(buffer);
+    const hashBuffer = await crypto.subtle.digest(algorithm, bufferSource);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+
+    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
 /**

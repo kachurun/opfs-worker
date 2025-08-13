@@ -22,7 +22,7 @@ import {
     convertBlobToUint8Array
 } from './utils/helpers';
 
-import type { DirentData, FileStat, WatchEvent } from './types';
+import type { DirentData, FileStat, WatchEvent, OPFSOptions } from './types';
 import type { BufferEncoding } from 'typescript';
 
 /**
@@ -53,18 +53,19 @@ export class OPFSWorker {
     /** Interval handle for polling watched paths */
     private watchTimer: ReturnType<typeof setInterval> | null = null;
 
-    /** Polling interval in milliseconds */
-    private watchInterval = 1000;
-
     /** Flag to avoid concurrent scans */
     private scanning = false;
 
     /** Promise to prevent concurrent mount operations */
     private mountingPromise: Promise<boolean> | null = null;
 
-    /** Hash algorithm for file hashing (null means no hashing) */
-    private hashAlgorithm: null | 'SHA-1' | 'SHA-256' | 'SHA-384' | 'SHA-512' = null;
-
+    /** Configuration options */
+    private options: Required<OPFSOptions> = {
+        watchInterval: 1000,
+        maxFileSize: 50 * 1024 * 1024,
+        hashAlgorithm: null,
+    };
+    
     /**
      * Notify about internal changes to the file system
      * 
@@ -81,7 +82,8 @@ export class OPFSWorker {
 
         // Calculate hash if hashing is enabled and this is a file operation
         let hash: string | undefined;
-        if (this.hashAlgorithm && !event.isDirectory && event.type !== 'removed') {
+        
+        if (this.options.hashAlgorithm && !event.isDirectory && event.type !== 'removed') {
             try {
                 const stats = await this.stat(event.path);
 
@@ -109,14 +111,12 @@ export class OPFSWorker {
      * @param options - Optional configuration options
      * @param options.watchInterval - Polling interval in milliseconds for file watching
      * @param options.hashAlgorithm - Hash algorithm for file hashing
+     * @param options.maxFileSize - Maximum file size for hashing in bytes (default: 50MB)
      * @throws {OPFSError} If OPFS is not supported in the current browser
      */
     constructor(
         watchCallback?: (event: WatchEvent) => void,
-        options?: { 
-            watchInterval?: number;
-            hashAlgorithm?: 'SHA-1' | 'SHA-256' | 'SHA-384' | 'SHA-512';
-        }
+        options?: OPFSOptions
     ) {
         checkOPFSSupport();
         
@@ -196,22 +196,24 @@ export class OPFSWorker {
     }
 
     /**
-     * Set configuration options for the file system
+     * Update configuration options
      * 
      * @param options - Configuration options to update
      * @param options.watchInterval - Polling interval in milliseconds for file watching
      * @param options.hashAlgorithm - Hash algorithm for file hashing
+     * @param options.maxFileSize - Maximum file size for hashing in bytes
      */
-    setOptions(options: { 
-        watchInterval?: number;
-        hashAlgorithm?: null | 'SHA-1' | 'SHA-256' | 'SHA-384' | 'SHA-512';
-    }): void {
+    setOptions(options: OPFSOptions): void {
         if (options.watchInterval !== undefined) {
-            this.watchInterval = options.watchInterval;
+            this.options.watchInterval = options.watchInterval;
         }
 
         if (options.hashAlgorithm !== undefined) {
-            this.hashAlgorithm = options.hashAlgorithm;
+            this.options.hashAlgorithm = options.hashAlgorithm;
+        }
+
+        if (options.maxFileSize !== undefined) {
+            this.options.maxFileSize = options.maxFileSize;
         }
     }
 
@@ -584,7 +586,7 @@ export class OPFSWorker {
         
         const name = basename(path);
         const parentDir = await this.getDirectoryHandle(dirname(path), false);
-        const includeHash = this.hashAlgorithm !== null;
+        const includeHash = this.options.hashAlgorithm !== null;
 
         try {
             const fileHandle = await parentDir.getFileHandle(name!, { create: false });
@@ -599,9 +601,9 @@ export class OPFSWorker {
                 isDirectory: false,
             };
 
-            if (includeHash && this.hashAlgorithm) {
+            if (includeHash && this.options.hashAlgorithm) {
                 try {
-                    const hash = await calculateFileHash(file, this.hashAlgorithm);
+                    const hash = await calculateFileHash(file, this.options.hashAlgorithm, this.options.maxFileSize);
 
                     baseStat.hash = hash;
                 }
@@ -1048,7 +1050,7 @@ export class OPFSWorker {
         if (!this.watchTimer) {
             this.watchTimer = setInterval(() => {
                 void this.scanWatches();
-            }, this.watchInterval);
+            }, this.options.watchInterval);
         }
     }
 

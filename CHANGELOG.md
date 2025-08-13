@@ -1,5 +1,11 @@
 # opfs-worker
 
+## 0.2.6
+
+### Patch Changes
+
+-   Add maxFileSize option for file hashing
+
 ## 0.2.5
 
 ### Patch Changes

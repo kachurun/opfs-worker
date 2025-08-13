@@ -210,6 +210,26 @@ async function hashExample() {
     // Disable hashing for better performance
     fs.setOptions({ hashAlgorithm: null });
 }
+
+// Configure maximum file size for hashing
+async function maxFileSizeExample() {
+    const fs = await createWorker();
+    
+    // Set custom maximum file size (100MB instead of default 50MB)
+    fs.setOptions({ 
+        hashAlgorithm: 'SHA-256',
+        maxFileSize: 100 * 1024 * 1024 // 100MB
+    });
+    
+    // Now files up to 100MB will be hashed
+    // Files larger than this will not have hash information
+    const stats = await fs.stat('/large-file.dat');
+    if (stats.hash) {
+        console.log(`Hash: ${stats.hash}`);
+    } else {
+        console.log('File too large for hashing');
+    }
+}
 ```
 
 **Supported Hash Algorithms:**
@@ -673,9 +693,9 @@ fs.unwatch('/docs');
 
 ### Configuration
 
-#### `setOptions(options: { watchInterval?: number; hashAlgorithm?: null | 'SHA-1' | 'SHA-256' | 'SHA-384' | 'SHA-512' }): void`
+#### `setOptions(options: { watchInterval?: number; hashAlgorithm?: null | 'SHA-1' | 'SHA-256' | 'SHA-384' | 'SHA-512'; maxFileSize?: number }): void`
 
-Update configuration options for the file system, including watch interval and hash algorithm.
+Update configuration options for the file system, including watch interval, hash algorithm, and maximum file size for hashing.
 
 ```typescript
 // Enable SHA-256 hashing for all file operations
@@ -684,13 +704,17 @@ fs.setOptions({ hashAlgorithm: 'SHA-256' });
 // Change watch interval to 100ms for faster change detection
 fs.setOptions({ watchInterval: 100 });
 
+// Set custom maximum file size for hashing (100MB)
+fs.setOptions({ maxFileSize: 100 * 1024 * 1024 });
+
 // Disable hashing
 fs.setOptions({ hashAlgorithm: null });
 
 // Update multiple options at once
 fs.setOptions({ 
     watchInterval: 200, 
-    hashAlgorithm: 'SHA-1' 
+    hashAlgorithm: 'SHA-1',
+    maxFileSize: 50 * 1024 * 1024 // 50MB
 });
 ```
 
@@ -698,8 +722,9 @@ fs.setOptions({
 
 - `options.watchInterval` (optional): Polling interval in milliseconds for file watching
 - `options.hashAlgorithm` (optional): Hash algorithm to use, or `null` to disable hashing
+- `options.maxFileSize` (optional): Maximum file size in bytes for hashing (default: 50MB)
 
-**Note:** When a hash algorithm is set, all file operations (`stat`, `index`, watch events) will automatically include hash information. Set to `null` to disable hashing and improve performance.
+**Note:** When a hash algorithm is set, all file operations (`stat`, `index`, watch events) will automatically include hash information for files within the size limit. Files exceeding `maxFileSize` will not have hash information. Set `hashAlgorithm` to `null` to disable hashing and improve performance.
 
 ### Resolve Path
 
