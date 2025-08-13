@@ -1,5 +1,11 @@
 # opfs-worker
 
+## 0.2.5
+
+### Patch Changes
+
+-   Refactor file change events and add hash support to watch event
+
 ## 0.2.4
 
 ### Patch Changes

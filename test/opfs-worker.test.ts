@@ -1,6 +1,7 @@
 import { promises as fsp } from 'node:fs';
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { OPFSWorker } from '../src/worker';
+import type { WatchEvent } from '../src/types';
 
 const rootDir = (globalThis as any).__OPFS_ROOT__ as string;
 
@@ -10,7 +11,7 @@ describe('OPFSWorker', () => {
   beforeEach(async () => {
     await fsp.rm(rootDir, { recursive: true, force: true });
     await fsp.mkdir(rootDir, { recursive: true });
-    fsw = new OPFSWorker();
+    fsw = new OPFSWorker(undefined, { watchInterval: 50 });
     await fsw.mount('/');
   });
 
@@ -39,7 +40,8 @@ describe('OPFSWorker', () => {
 
   it('provides file stats and hash', async () => {
     await fsw.writeFile('/hash.txt', 'data');
-    const stat = await fsw.stat('/hash.txt', { includeHash: true });
+    fsw.setOptions({ hashAlgorithm: 'SHA-1' });
+    const stat = await fsw.stat('/hash.txt');
     expect(stat.isFile).toBe(true);
     expect(stat.size).toBe(4);
     expect(stat.hash).toMatch(/^[0-9a-f]+$/);
@@ -89,38 +91,39 @@ describe('OPFSWorker', () => {
   });
 
   it('watches for file changes', async () => {
-    const events: any[] = [];
-    fsw.setWatchCallback(e => events.push(e), { watchInterval: 50 });
+    const events: WatchEvent[] = [];
+    fsw.setWatchCallback(e => events.push(e));
+    
     await fsw.mkdir('/watched', { recursive: true });
     await fsw.watch('/watched');
 
     await fsw.writeFile('/watched/a.txt', '1');
     await new Promise(r => setTimeout(r, 100));
-    expect(events.some(e => e.type === 'create' && e.path === '/watched/a.txt')).toBe(true);
+    expect(events.some(e => e.type === 'added' && e.path === '/watched/a.txt')).toBe(true);
 
     await fsw.writeFile('/watched/a.txt', '2');
     await new Promise(r => setTimeout(r, 100));
-    expect(events.some(e => e.type === 'change' && e.path === '/watched/a.txt')).toBe(true);
+    expect(events.some(e => e.type === 'changed' && e.path === '/watched/a.txt')).toBe(true);
 
     await fsw.remove('/watched/a.txt');
     await new Promise(r => setTimeout(r, 100));
-    expect(events.some(e => e.type === 'delete' && e.path === '/watched/a.txt')).toBe(true);
+    expect(events.some(e => e.type === 'removed' && e.path === '/watched/a.txt')).toBe(true);
 
     fsw.unwatch('/watched');
   });
 
   it('watches root folder for changes', async () => {
-    const events: any[] = [];
-    fsw.setWatchCallback(e => events.push(e), { watchInterval: 50 });
+    const events: WatchEvent[] = [];
+    fsw.setWatchCallback(e => events.push(e));
     await fsw.watch('/');
 
     await fsw.writeFile('/root-file.txt', 'test');
     await new Promise(r => setTimeout(r, 100));
-    expect(events.some(e => e.type === 'create' && e.path === '/root-file.txt')).toBe(true);
+    expect(events.some(e => e.type === 'added' && e.path === '/root-file.txt')).toBe(true);
 
     await fsw.remove('/root-file.txt');
     await new Promise(r => setTimeout(r, 100));
-    expect(events.some(e => e.type === 'delete' && e.path === '/root-file.txt')).toBe(true);
+    expect(events.some(e => e.type === 'removed' && e.path === '/root-file.txt')).toBe(true);
 
     fsw.unwatch('/');
   });
@@ -141,26 +144,26 @@ describe('OPFSWorker', () => {
   });
 
   it('notifies about internal changes even when not watching', async () => {
-    const events: any[] = [];
-    fsw.setWatchCallback(e => events.push(e), { watchInterval: 50 });
+    const events: WatchEvent[] = [];
+    fsw.setWatchCallback(e => events.push(e));
     
     // Don't watch any paths, but still expect notifications from internal changes
     await fsw.writeFile('/internal-test.txt', 'test');
     await new Promise(r => setTimeout(r, 50));
-    expect(events.some(e => e.type === 'change' && e.path === '/internal-test.txt')).toBe(true);
+    expect(events.some(e => e.type === 'changed' && e.path === '/internal-test.txt')).toBe(true);
 
     await fsw.mkdir('/internal-dir', { recursive: true });
     await new Promise(r => setTimeout(r, 50));
-    expect(events.some(e => e.type === 'create' && e.path === '/internal-dir')).toBe(true);
+    expect(events.some(e => e.type === 'added' && e.path === '/internal-dir')).toBe(true);
 
     await fsw.remove('/internal-test.txt');
     await new Promise(r => setTimeout(r, 50));
-    expect(events.some(e => e.type === 'delete' && e.path === '/internal-test.txt')).toBe(true);
+    expect(events.some(e => e.type === 'removed' && e.path === '/internal-test.txt')).toBe(true);
   });
 
   it('avoids duplicate events when path is already being watched', async () => {
-    const events: any[] = [];
-    fsw.setWatchCallback(e => events.push(e), { watchInterval: 50 });
+    const events: WatchEvent[] = [];
+    fsw.setWatchCallback(e => events.push(e));
     
     // Watch a specific path
     await fsw.mkdir('/watched-path', { recursive: true });
@@ -171,15 +174,15 @@ describe('OPFSWorker', () => {
     await new Promise(r => setTimeout(r, 100));
     
     // Should only get one event from the watch mechanism, not duplicate from internal notification
-    const createEvents = events.filter(e => e.type === 'create' && e.path === '/watched-path/file.txt');
+    const createEvents = events.filter(e => e.type === 'added' && e.path === '/watched-path/file.txt');
     expect(createEvents.length).toBe(1);
     
     await fsw.unwatch('/watched-path');
   });
 
   it('notifies about copy operations', async () => {
-    const events: any[] = [];
-    fsw.setWatchCallback(e => events.push(e), { watchInterval: 50 });
+    const events: WatchEvent[] = [];
+    fsw.setWatchCallback(e => events.push(e));
     
     // Create a source file
     await fsw.writeFile('/source.txt', 'source content');
@@ -189,7 +192,7 @@ describe('OPFSWorker', () => {
     await new Promise(r => setTimeout(r, 50));
     
     // Should get notification about the new file
-    expect(events.some(e => e.type === 'create' && e.path === '/dest.txt')).toBe(true);
+    expect(events.some(e => e.type === 'added' && e.path === '/dest.txt')).toBe(true);
     
     // Verify the copy worked
     expect(await fsw.readFile('/dest.txt')).toBe('source content');

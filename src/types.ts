@@ -23,7 +23,10 @@ export interface DirentData {
 
 export interface WatchEvent {
     path: string;
-    type: 'create' | 'change' | 'delete';
+    type: 'added' | 'changed' | 'removed';
+    isDirectory: boolean;
+    timestamp: string;
+    hash?: string;
 }
 
 export type { OPFSWorker };

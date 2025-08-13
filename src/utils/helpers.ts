@@ -245,7 +245,11 @@ export async function writeFileData(
  * @param algorithm - Hash algorithm to use (default: 'SHA-1')
  * @returns Promise that resolves to the hash string
  */
-export async function calculateFileHash(buffer: Uint8Array, algorithm: string = 'SHA-1'): Promise<string> {
+export async function calculateFileHash(buffer: File | ArrayBuffer | Uint8Array, algorithm: string = 'SHA-1'): Promise<string> {
+    if (buffer instanceof File) {
+        buffer = await buffer.arrayBuffer();
+    }
+
     try {
         const bufferSource = new Uint8Array(buffer);
         const hashBuffer = await crypto.subtle.digest(algorithm, bufferSource);

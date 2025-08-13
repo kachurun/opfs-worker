@@ -12,18 +12,29 @@ export * from './utils/encoder';
 /**
  * Creates a new file system instance with inline worker
  * @param watchCallback - Optional callback for file change events
- * @param watchOptions - Optional configuration for watching
+ * @param options - Optional configuration options
+ * @param options.watchInterval - Polling interval in milliseconds for file watching
+ * @param options.hashAlgorithm - Hash algorithm for file hashing
  * @returns Promise resolving to the file system interface
  */
 export function createWorker(
     watchCallback?: (event: WatchEvent) => void,
-    watchOptions?: { watchInterval?: number }
+    options?: { 
+        watchInterval?: number;
+        hashAlgorithm?: 'SHA-1' | 'SHA-256' | 'SHA-384' | 'SHA-512';
+    }
 ): RemoteOPFSWorker {
     const wrapped = wrap<OPFSWorker>(new WorkerCtor());
     
-    // Set up watch callback if provided
+    // Set up watch callback and options if provided
     if (watchCallback) {
-        wrapped.setWatchCallback(proxy(watchCallback), watchOptions);
+        wrapped.setWatchCallback(
+            watchCallback ? proxy(watchCallback) : () => {}, 
+        );
+    }
+    
+    if (options) {
+        wrapped.setOptions(options);
     }
     
     return wrapped;

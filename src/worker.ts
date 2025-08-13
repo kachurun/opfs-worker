@@ -62,6 +62,9 @@ export class OPFSWorker {
     /** Promise to prevent concurrent mount operations */
     private mountingPromise: Promise<boolean> | null = null;
 
+    /** Hash algorithm for file hashing (null means no hashing) */
+    private hashAlgorithm: null | 'SHA-1' | 'SHA-256' | 'SHA-384' | 'SHA-512' = null;
+
     /**
      * Notify about internal changes to the file system
      * 
@@ -71,15 +74,31 @@ export class OPFSWorker {
      * @param path - The path that was changed
      * @param type - The type of change (create, change, delete)
      */
-    private notifyInternalChange(path: string, type: 'create' | 'change' | 'delete'): void {
+    private async notifyChange(event: Omit<WatchEvent, 'timestamp' | 'hash'>): Promise<void> {
         if (!this.watchCallback) {
             return;
         }
 
+        // Calculate hash if hashing is enabled and this is a file operation
+        let hash: string | undefined;
+        if (this.hashAlgorithm && !event.isDirectory && event.type !== 'removed') {
+            try {
+                const stats = await this.stat(event.path);
+
+                if (stats.isFile && stats.hash) {
+                    hash = stats.hash;
+                }
+            } 
+            catch (error) {
+                console.warn(`Failed to calculate hash for ${event.path}:`, error);
+            }
+        }
+
         // Notify about the change immediately
         this.watchCallback({
-            path,
-            type
+            timestamp: new Date().toISOString(),
+            ...event,
+            ...(hash && { hash })
         });
     }
 
@@ -87,20 +106,26 @@ export class OPFSWorker {
      * Creates a new OPFSFileSystem instance
      * 
      * @param watchCallback - Optional callback for file change events
-     * @param watchOptions - Optional configuration for watching
+     * @param options - Optional configuration options
+     * @param options.watchInterval - Polling interval in milliseconds for file watching
+     * @param options.hashAlgorithm - Hash algorithm for file hashing
      * @throws {OPFSError} If OPFS is not supported in the current browser
      */
     constructor(
         watchCallback?: (event: WatchEvent) => void,
-        watchOptions?: { watchInterval?: number }
+        options?: { 
+            watchInterval?: number;
+            hashAlgorithm?: 'SHA-1' | 'SHA-256' | 'SHA-384' | 'SHA-512';
+        }
     ) {
         checkOPFSSupport();
         
         if (watchCallback) {
             this.watchCallback = watchCallback;
-            if (watchOptions?.watchInterval) {
-                this.watchInterval = watchOptions.watchInterval;
-            }
+        }
+        
+        if (options) {
+            this.setOptions(options);
         }
         
         void this.mount('/');
@@ -163,13 +188,30 @@ export class OPFSWorker {
      * Set the watch callback for file change events
      * 
      * @param callback - The callback function to invoke when files change
-     * @param options - Optional configuration for watching
      */
-    setWatchCallback(callback: (event: WatchEvent) => void, options?: { watchInterval?: number }): void {
+    setWatchCallback(
+        callback: (event: WatchEvent) => void, 
+    ) {
         this.watchCallback = callback;
+    }
 
-        if (options?.watchInterval) {
+    /**
+     * Set configuration options for the file system
+     * 
+     * @param options - Configuration options to update
+     * @param options.watchInterval - Polling interval in milliseconds for file watching
+     * @param options.hashAlgorithm - Hash algorithm for file hashing
+     */
+    setOptions(options: { 
+        watchInterval?: number;
+        hashAlgorithm?: null | 'SHA-1' | 'SHA-256' | 'SHA-384' | 'SHA-512';
+    }): void {
+        if (options.watchInterval !== undefined) {
             this.watchInterval = options.watchInterval;
+        }
+
+        if (options.hashAlgorithm !== undefined) {
+            this.hashAlgorithm = options.hashAlgorithm;
         }
     }
 
@@ -268,35 +310,17 @@ export class OPFSWorker {
 
 
     /**
-     * Recursively list all files and directories with their stats
+     * Get a complete index of all files and directories in the file system
      * 
-     * Traverses the entire file system starting from the root and returns
-     * a Map containing all paths and their corresponding file statistics.
+     * This method recursively traverses the entire file system and returns
+     * a Map containing FileStat objects for every file and directory.
      * 
-     * @param options - Options for indexing
-     * @param options.includeHash - Whether to calculate file hash (default: false)
-     * @param options.hashAlgorithm - Hash algorithm to use (default: 'SHA-1', fastest)
-     * @returns Promise that resolves to a Map of path => FileStat
-     * @throws {OPFSError} If the indexing operation fails
+     * @returns Promise that resolves to a Map of paths to FileStat objects
+     * @throws {OPFSError} If the file system is not mounted
      * 
      * @example
      * ```typescript
-     * // Basic index without hash
      * const index = await fs.index();
-     * 
-     * // Index with file hash
-     * const indexWithHash = await fs.index({ 
-     *   includeHash: true,
-     *   hashAlgorithm: 'SHA-1'
-     * });
-     * 
-     * // Iterate through all files and directories
-     * for (const [path, stat] of index) {
-     *   console.log(`${path}: ${stat.isFile ? 'file' : 'directory'} (${stat.size} bytes)`);
-     *   if (stat.hash) console.log(`  Hash: ${stat.hash}`);
-     * }
-     * 
-     * // Get specific file stats
      * const fileStats = index.get('/data/config.json');
      * if (fileStats) {
      *   console.log(`File size: ${fileStats.size} bytes`);
@@ -304,7 +328,7 @@ export class OPFSWorker {
      * }
      * ```
      */
-    async index(options?: { includeHash?: boolean; hashAlgorithm?: 'SHA-1' | 'SHA-256' | 'SHA-384' | 'SHA-512' }): Promise<Map<string, FileStat>> {
+    async index(): Promise<Map<string, FileStat>> {
         const result = new Map<string, FileStat>();
 
         const walk = async(dirPath: string) => {
@@ -314,7 +338,7 @@ export class OPFSWorker {
                 const fullPath = `${ dirPath === '/' ? '' : dirPath }/${ item.name }`;
 
                 try {
-                    const stat = await this.stat(fullPath, options);
+                    const stat = await this.stat(fullPath);
 
                     result.set(fullPath, stat);
 
@@ -426,7 +450,7 @@ export class OPFSWorker {
         const fileHandle = await this.getFileHandle(path, true);
 
         await writeFileData(fileHandle, data, encoding, { truncate: true });
-        this.notifyInternalChange(path, 'change');
+        await this.notifyChange({ path, type: 'changed', isDirectory: false });
     }
 
     /**
@@ -461,7 +485,7 @@ export class OPFSWorker {
         const fileHandle = await this.getFileHandle(path, true);
 
         await writeFileData(fileHandle, data, encoding, { append: true });
-        this.notifyInternalChange(path, 'change');
+        await this.notifyChange({ path, type: 'changed', isDirectory: false });
     }
 
     /**
@@ -518,39 +542,32 @@ export class OPFSWorker {
                 throw new OPFSError('Failed to create directory', 'MKDIR_FAILED');
             }
         }
-        this.notifyInternalChange(path, 'create');
+        await this.notifyChange({ path, type: 'added', isDirectory: true });
     }
 
     /**
-     * Get file or directory stats
+     * Get file or directory statistics
      * 
-     * Retrieves metadata about a file or directory, including size, modification time,
-     * type information, and optionally file hashes.
+     * Returns detailed information about a file or directory, including
+     * size, modification time, and optionally a hash of the file content.
      * 
      * @param path - The path to the file or directory
-     * @param options - Options for stat operation
-     * @param options.includeHash - Whether to calculate file hash (default: false, only for files)
-     * @param options.hashAlgorithm - Hash algorithm to use (default: 'SHA-1', fastest)
-     * @returns Promise that resolves to file/directory statistics
-     * @throws {OPFSError} If the file or directory does not exist or cannot be accessed
+     * @returns Promise that resolves to FileStat object
+     * @throws {OPFSError} If the path does not exist or cannot be accessed
      * 
      * @example
      * ```typescript
-     * // Basic stats
-     * const stats = await fs.stat('/config/settings.json');
+     * const stats = await fs.stat('/data/config.json');
      * console.log(`File size: ${stats.size} bytes`);
-     * console.log(`Is file: ${stats.isFile}`);
-     * console.log(`Modified: ${stats.mtime}`);
+     * console.log(`Last modified: ${stats.mtime}`);
      * 
-     * // Stats with hash (SHA-1 is fastest)
-     * const statsWithHash = await fs.stat('/config/settings.json', { 
-     *   includeHash: true,
-     *   hashAlgorithm: 'SHA-1'
-     * });
-     * console.log(`Hash: ${statsWithHash.hash}`);
+     * // If hashing is enabled, hash will be included
+     * if (stats.hash) {
+     *   console.log(`Hash: ${stats.hash}`);
+     * }
      * ```
      */
-    async stat(path: string, options?: { includeHash?: boolean; hashAlgorithm?: 'SHA-1' | 'SHA-256' | 'SHA-384' | 'SHA-512' }): Promise<FileStat> {
+    async stat(path: string): Promise<FileStat> {
         await this.ensureMounted();
         
         // Special handling for root directory
@@ -567,8 +584,7 @@ export class OPFSWorker {
         
         const name = basename(path);
         const parentDir = await this.getDirectoryHandle(dirname(path), false);
-        const includeHash = options?.includeHash ?? false;
-        const hashAlgorithm = options?.hashAlgorithm ?? 'SHA-1';
+        const includeHash = this.hashAlgorithm !== null;
 
         try {
             const fileHandle = await parentDir.getFileHandle(name!, { create: false });
@@ -583,10 +599,9 @@ export class OPFSWorker {
                 isDirectory: false,
             };
 
-            if (includeHash) {
+            if (includeHash && this.hashAlgorithm) {
                 try {
-                    const buffer = new Uint8Array(await file.arrayBuffer());
-                    const hash = await calculateFileHash(buffer, hashAlgorithm);
+                    const hash = await calculateFileHash(file, this.hashAlgorithm);
 
                     baseStat.hash = hash;
                 }
@@ -780,7 +795,7 @@ export class OPFSWorker {
             }
             
             // Notify about the clear operation
-            this.notifyInternalChange(path, 'change');
+            await this.notifyChange({ path, type: 'changed', isDirectory: true });
         }
         catch (error: any) {
             if (error instanceof OPFSError) {
@@ -853,7 +868,8 @@ export class OPFSWorker {
                 throw new OPFSError(`Failed to remove path: ${ path }`, 'RM_FAILED');
             }
         }
-        this.notifyInternalChange(path, 'delete');
+        
+        await this.notifyChange({ path, type: 'removed', isDirectory: false });
     }
 
     /**
@@ -926,8 +942,8 @@ export class OPFSWorker {
             await this.remove(oldPath, { recursive: true });
             
             // Notify about the rename operation
-            this.notifyInternalChange(oldPath, 'delete');
-            this.notifyInternalChange(newPath, 'create');
+            await this.notifyChange({ path: oldPath, type: 'removed', isDirectory: false });
+            await this.notifyChange({ path: newPath, type: 'added', isDirectory: false });
         }
         catch (error) {
             if (error instanceof OPFSError) {
@@ -1007,7 +1023,7 @@ export class OPFSWorker {
             }
             
             // Notify about the copy operation
-            this.notifyInternalChange(destination, 'create');
+            await this.notifyChange({ path: destination, type: 'added', isDirectory: false });
         }
         catch (error) {
             if (error instanceof OPFSError) {
@@ -1026,6 +1042,7 @@ export class OPFSWorker {
         
         const normalizedPath = normalizePath(path);
         const snapshot = await this.buildSnapshot(normalizedPath);
+
         this.watchers.set(normalizedPath, snapshot);
 
         if (!this.watchTimer) {
@@ -1087,27 +1104,20 @@ export class OPFSWorker {
                         next = new Map();
                     }
 
-                    const events: WatchEvent[] = [];
-
                     for (const [p, stat] of next) {
                         const old = prev.get(p);
+                        
                         if (!old) {
-                            events.push({ path: p, type: 'create' });
+                            await this.notifyChange({ path: p, type: 'added', isDirectory: false });
                         }
                         else if (old.mtime !== stat.mtime || old.size !== stat.size) {
-                            events.push({ path: p, type: 'change' });
+                            await this.notifyChange({ path: p, type: 'changed', isDirectory: false });
                         }
                     }
 
                     for (const p of prev.keys()) {
                         if (!next.has(p)) {
-                            events.push({ path: p, type: 'delete' });
-                        }
-                    }
-
-                    if (events.length && this.watchCallback) {
-                        for (const event of events) {
-                            this.watchCallback(event);
+                            await this.notifyChange({ path: p, type: 'removed', isDirectory: false });
                         }
                     }
 
@@ -1174,7 +1184,7 @@ export class OPFSWorker {
             }
             
             // Notify about the sync operation
-            this.notifyInternalChange('/', 'change');
+            await this.notifyChange({ path: '/', type: 'changed', isDirectory: true });
         }
         catch (error) {
             if (error instanceof OPFSError) {
