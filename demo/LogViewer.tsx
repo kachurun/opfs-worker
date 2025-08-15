@@ -137,11 +137,11 @@ export const LogViewer: React.FC = () => {
                 log('✅ Created files in directories');
 
                 // List directory contents
-                const rootContents = await fs.readdir('/', { withFileTypes: false });
+                const rootContents = await fs.readDir('/');
 
                 log(`📋 Root directory contents: ${ rootContents.join(', ') }`);
 
-                const testDirContents = await fs.readdir('/dir', { withFileTypes: false });
+                const testDirContents = await fs.readDir('/dir');
 
                 log(`📋 /dir contents: ${ testDirContents.join(', ') }`);
 
@@ -162,7 +162,7 @@ export const LogViewer: React.FC = () => {
                 // Copy directory
                 await fs.copy('/dir', '/dir-copy', { recursive: true });
                 log('✅ Copied directory /dir to /dir-copy recursively');
-                const copiedDirContents = await fs.readdir('/dir-copy', { withFileTypes: false });
+                const copiedDirContents = await fs.readDir('/dir-copy');
 
                 log(`📋 /dir-copy contents: ${ copiedDirContents.join(', ') }`);
 

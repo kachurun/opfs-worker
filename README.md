@@ -164,7 +164,7 @@ async function advancedExample() {
     }
 
     // List directory contents
-    const files = await fs.readdir('/data', { withFileTypes: true });
+    const files = await fs.readDir('/data');
     files.forEach(item => {
         console.log(`${item.name} - ${item.isFile ? 'file' : 'directory'}`);
     });
@@ -276,7 +276,7 @@ Check out the live demo powered by Vite and hosted on GitHub Pages.
     - [Create Directory](#create-directory)
       - [`mkdir(path: string, options?: { recursive?: boolean }): Promise<void>`](#mkdirpath-string-options--recursive-boolean--promisevoid)
     - [Read Directory](#read-directory)
-      - [`readdir(path: string, options?: { withFileTypes?: boolean }): Promise<string[] | DirentData[]>`](#readdirpath-string-options--withfiletypes-boolean--promisestring--direntdata)
+      - [`readDir(path: string): Promise<DirentData[]>`](#readdirpath-string--promisedirentdata)
     - [Get Stats](#get-stats)
       - [`stat(path: string): Promise<FileStat>`](#statpath-string-promisefilestat)
     - [Check Existence](#check-existence)
@@ -526,17 +526,17 @@ await fs.mkdir('/users/john/documents/projects', { recursive: true });
 
 ### Read Directory
 
-#### `readdir(path: string, options?: { withFileTypes?: boolean }): Promise<string[] | DirentData[]>`
+#### `readDir(path: string): Promise<DirentData[]>`
 
 Read a directory's contents.
 
 ```typescript
 // Get simple list of names
-const files = await fs.readdir('/users/john/documents');
+const files = await fs.readDir('/users/john/documents');
 console.log('Files:', files); // ['readme.txt', 'config.json', 'images']
 
 // Get detailed information
-const detailed = await fs.readdir('/users/john/documents', { withFileTypes: true });
+const detailed = await fs.readDir('/users/john/documents');
 detailed.forEach(item => {
     console.log(`${item.name} - ${item.isFile ? 'file' : 'directory'}`);
 });
@@ -544,8 +544,7 @@ detailed.forEach(item => {
 
 **Returns:**
 
-- `Promise<string[]>` when `withFileTypes` is false or undefined
-- `Promise<DirentData[]>` when `withFileTypes` is true
+- `Promise<DirentData[]>` - Always returns detailed file/directory information
 
 ### Get Stats
 

@@ -19,13 +19,22 @@ export function checkOPFSSupport(): void {
  * 
  * @param path - The path to split
  * @returns The array of segments
+ * 
+ * @example
+ * ```typescript
+ * splitPath('/path/to/file'); // ['path', 'to', 'file']
+ * splitPath('~/path/to/file'); // ['path', 'to', 'file'] (home dir handled)
+ * splitPath('relative/path'); // ['relative', 'path']
+ * ```
  */
 export function splitPath(path: string | string[]): string[] {
     if (Array.isArray(path)) {
         return path;
     }
 
-    return path.split('/').filter(Boolean);
+    const normalizedPath = path.startsWith('~/') ? path.slice(2) : path;
+
+    return normalizedPath.split('/').filter(Boolean);
 }
 
 
@@ -88,6 +97,7 @@ export function dirname(path: string): string {
  * ```typescript
  * normalizePath('path/to/file'); // '/path/to/file'
  * normalizePath('/path/to/file'); // '/path/to/file'
+ * normalizePath('~/path/to/file'); // '/path/to/file' (home dir normalized to root)
  * normalizePath(''); // '/'
  * ```
  */
@@ -95,6 +105,11 @@ export function normalizePath(path: string): string {
     if (!path || path === '/') {
         return '/';
     }
+    
+    if (path.startsWith('~/')) {
+        return `/${path.slice(2)}`;
+    }
+    
     return path.startsWith('/') ? path : `/${path}`;
 }
 
@@ -109,10 +124,13 @@ export function normalizePath(path: string): string {
  * resolvePath('./config/../data/file.txt'); // '/data/file.txt'
  * resolvePath('/path/to/../file.txt'); // '/path/file.txt'
  * resolvePath('../../file.txt'); // '/file.txt' (truncated to root)
+ * resolvePath('~/config/../data/file.txt'); // '/data/file.txt' (home dir normalized to root)
  * ```
  */
 export function resolvePath(path: string): string {
-    const segments = splitPath(path);
+    // First normalize the path to handle home directory references
+    const normalizedPath = normalizePath(path);
+    const segments = splitPath(normalizedPath);
     const normalizedSegments: string[] = [];
 
     for (const segment of segments) {

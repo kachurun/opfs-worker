@@ -339,7 +339,7 @@ export class OPFSWorker {
         const result = new Map<string, FileStat>();
 
         const walk = async(dirPath: string) => {
-            const items = await this.readdir(dirPath, { withFileTypes: true });
+            const items = await this.readDir(dirPath);
 
             for (const item of items) {
                 const fullPath = `${ dirPath === '/' ? '' : dirPath }/${ item.name }`;
@@ -652,58 +652,37 @@ export class OPFSWorker {
      * Lists all files and subdirectories within the specified directory.
      * 
      * @param path - The path to the directory to read
-     * @param options - Options for the readdir operation
-     * @param options.withFileTypes - Whether to return detailed file information (default: false)
-     * @returns Promise that resolves to an array of file/directory names or detailed information
+     * @returns Promise that resolves to an array of detailed file/directory information
      * @throws {OPFSError} If the directory does not exist or cannot be accessed
      * 
      * @example
      * ```typescript
-     * // Get simple list of names
-     * const files = await fs.readdir('/users/john/documents');
-     * console.log('Files:', files); // ['readme.txt', 'config.json', 'images']
-     * 
-     * // Get detailed information
-     * const detailed = await fs.readdir('/users/john/documents', { withFileTypes: true });
+     * // Get detailed information about files and directories
+     * const detailed = await fs.readDir('/users/john/documents');
      * detailed.forEach(item => {
      *   console.log(`${item.name} - ${item.isFile ? 'file' : 'directory'}`);
      * });
      * ```
      */
-    async readdir(path: string): Promise<string[]>;
-    async readdir(path: string, options: { withFileTypes: true }): Promise<DirentData[]>;
-    async readdir(path: string, options: { withFileTypes: false }): Promise<string[]>;
-    async readdir(path: string, options?: { withFileTypes?: boolean }): Promise<string[] | DirentData[]> {
+    async readDir(path: string): Promise<DirentData[]> {
         await this.ensureMounted();
         
-        const withTypes = options?.withFileTypes ?? false;
         const dir = await this.getDirectoryHandle(path, false);
 
-        if (withTypes) {
-            const results: DirentData[] = [];
+        const results: DirentData[] = [];
 
-            for await (const [name, handle] of (dir as any).entries()) {
-                const isFile = handle.kind === 'file';
+        for await (const [name, handle] of (dir as any).entries()) {
+            const isFile = handle.kind === 'file';
 
-                results.push({
-                    name,
-                    kind: handle.kind,
-                    isFile,
-                    isDirectory: !isFile,
-                });
-            }
-
-            return results;
+            results.push({
+                name,
+                kind: handle.kind,
+                isFile,
+                isDirectory: !isFile,
+            });
         }
-        else {
-            const results: string[] = [];
 
-            for await (const [name] of (dir as any).entries()) {
-                results.push(name);
-            }
-
-            return results;
-        }
+        return results;
     }
 
     /**
@@ -793,7 +772,7 @@ export class OPFSWorker {
         await this.ensureMounted();
         
         try {
-            const items = await this.readdir(path, { withFileTypes: true });
+            const items = await this.readDir(path);
 
             for (const item of items) {
                 const itemPath = `${ path === '/' ? '' : path }/${ item.name }`;
@@ -1019,7 +998,7 @@ export class OPFSWorker {
 
                 await this.mkdir(destination, { recursive: true });
 
-                const items = await this.readdir(source, { withFileTypes: true });
+                const items = await this.readDir(source);
 
                 for (const item of items) {
                     const sourceItemPath = `${ source }/${ item.name }`;
@@ -1100,7 +1079,7 @@ export class OPFSWorker {
             result.set(current, stat);
 
             if (stat.isDirectory) {
-                const entries = await this.readdir(current, { withFileTypes: true });
+                const entries = await this.readDir(current);
                 for (const entry of entries) {
                     const child = `${ current === '/' ? '' : current }/${ entry.name }`;
                     await walk(child);

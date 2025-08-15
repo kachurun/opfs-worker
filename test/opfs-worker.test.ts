@@ -34,7 +34,7 @@ describe('OPFSWorker', () => {
 
   it('creates directories recursively and lists them', async () => {
     await fsw.mkdir('/a/b/c', { recursive: true });
-    const list = await fsw.readdir('/a/b', { withFileTypes: true });
+            const list = await fsw.readDir('/a/b');
     expect(list.some(e => e.name === 'c' && e.isDirectory)).toBe(true);
   });
 

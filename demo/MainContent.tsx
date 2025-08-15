@@ -135,7 +135,7 @@ const FileViewer: React.FC<{ selectedFile?: FileNode }> = ({ selectedFile }) => 
 const buildFileTree = async(fs: any, path: string = '/'): Promise<FileNode[]> => {
     try {
         console.log('🔍 Building file tree for path:', path);
-        const entries = await fs.readdir(path, { withFileTypes: true });
+        const entries = await fs.readDir(path);
 
         console.log('🔍 Found entries:', entries);
 
