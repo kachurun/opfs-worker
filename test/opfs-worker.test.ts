@@ -108,40 +108,44 @@ describe('OPFSWorker', () => {
 
   it('watches for file changes', async () => {
     const events: WatchEvent[] = [];
-    fsw.setWatchCallback(e => events.push(e));
+    const channel = new BroadcastChannel('opfs-worker');
+    channel.onmessage = (event) => events.push(event.data);
     
     await fsw.mkdir('/watched', { recursive: true });
     await fsw.watch('/watched');
 
     await fsw.writeFile('/watched/a.txt', '1');
-    await new Promise(r => setTimeout(r, 100));
+    await new Promise(r => setTimeout(r, 1100)); // Wait for watch timer to trigger
     expect(events.some(e => e.type === 'added' && e.path === '/watched/a.txt')).toBe(true);
 
     await fsw.writeFile('/watched/a.txt', '2');
-    await new Promise(r => setTimeout(r, 100));
+    await new Promise(r => setTimeout(r, 1100)); // Wait for watch timer to trigger
     expect(events.some(e => e.type === 'changed' && e.path === '/watched/a.txt')).toBe(true);
 
     await fsw.remove('/watched/a.txt');
-    await new Promise(r => setTimeout(r, 100));
+    await new Promise(r => setTimeout(r, 1100)); // Wait for watch timer to trigger
     expect(events.some(e => e.type === 'removed' && e.path === '/watched/a.txt')).toBe(true);
 
     fsw.unwatch('/watched');
+    channel.close();
   });
 
   it('watches root folder for changes', async () => {
     const events: WatchEvent[] = [];
-    fsw.setWatchCallback(e => events.push(e));
+    const channel = new BroadcastChannel('opfs-worker');
+    channel.onmessage = (event) => events.push(event.data);
     await fsw.watch('/');
 
     await fsw.writeFile('/root-file.txt', 'test');
-    await new Promise(r => setTimeout(r, 100));
+    await new Promise(r => setTimeout(r, 1100)); // Wait for watch timer to trigger
     expect(events.some(e => e.type === 'added' && e.path === '/root-file.txt')).toBe(true);
 
     await fsw.remove('/root-file.txt');
-    await new Promise(r => setTimeout(r, 100));
+    await new Promise(r => setTimeout(r, 1100)); // Wait for watch timer to trigger
     expect(events.some(e => e.type === 'removed' && e.path === '/root-file.txt')).toBe(true);
 
     fsw.unwatch('/');
+    channel.close();
   });
 
   it('provides root directory stats', async () => {
@@ -161,7 +165,8 @@ describe('OPFSWorker', () => {
 
   it('notifies about internal changes even when not watching', async () => {
     const events: WatchEvent[] = [];
-    fsw.setWatchCallback(e => events.push(e));
+    const channel = new BroadcastChannel('opfs-worker');
+    channel.onmessage = (event) => events.push(event.data);
     
     // Don't watch any paths, but still expect notifications from internal changes
     await fsw.writeFile('/internal-test.txt', 'test');
@@ -175,11 +180,14 @@ describe('OPFSWorker', () => {
     await fsw.remove('/internal-test.txt');
     await new Promise(r => setTimeout(r, 50));
     expect(events.some(e => e.type === 'removed' && e.path === '/internal-test.txt')).toBe(true);
+    
+    channel.close();
   });
 
   it('avoids duplicate events when path is already being watched', async () => {
     const events: WatchEvent[] = [];
-    fsw.setWatchCallback(e => events.push(e));
+    const channel = new BroadcastChannel('opfs-worker');
+    channel.onmessage = (event) => events.push(event.data);
     
     // Watch a specific path
     await fsw.mkdir('/watched-path', { recursive: true });
@@ -187,18 +195,20 @@ describe('OPFSWorker', () => {
     
     // Make changes to the watched path
     await fsw.writeFile('/watched-path/file.txt', 'test');
-    await new Promise(r => setTimeout(r, 100));
+    await new Promise(r => setTimeout(r, 1100)); // Wait for watch timer to trigger
     
     // Should only get one event from the watch mechanism, not duplicate from internal notification
     const createEvents = events.filter(e => e.type === 'added' && e.path === '/watched-path/file.txt');
     expect(createEvents.length).toBe(1);
     
     await fsw.unwatch('/watched-path');
+    channel.close();
   });
 
   it('notifies about copy operations', async () => {
     const events: WatchEvent[] = [];
-    fsw.setWatchCallback(e => events.push(e));
+    const channel = new BroadcastChannel('opfs-worker');
+    channel.onmessage = (event) => events.push(event.data);
     
     // Create a source file
     await fsw.writeFile('/source.txt', 'source content');
@@ -212,5 +222,7 @@ describe('OPFSWorker', () => {
     
     // Verify the copy worked
     expect(await fsw.readFile('/dest.txt')).toBe('source content');
+    
+    channel.close();
   });
 });

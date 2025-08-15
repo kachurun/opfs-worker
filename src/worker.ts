@@ -44,9 +44,6 @@ export class OPFSWorker {
     /** Root directory handle for the file system */
     private root: FileSystemDirectoryHandle | null = null;
 
-    /** Watch event callback */
-    private watchCallback: ((event: WatchEvent) => void) | null = null;
-
     /** Map of watched paths to their last known state */
     private watchers = new Map<string, Map<string, FileStat>>();
 
@@ -59,11 +56,15 @@ export class OPFSWorker {
     /** Promise to prevent concurrent mount operations */
     private mountingPromise: Promise<boolean> | null = null;
 
+    /** BroadcastChannel instance for sending events */
+    private broadcastChannel: BroadcastChannel | null = null;
+
     /** Configuration options */
     private options: Required<OPFSOptions> = {
         watchInterval: 1000,
         maxFileSize: 50 * 1024 * 1024,
         hashAlgorithm: null,
+        broadcastChannel: 'opfs-worker',
     };
     
     /**
@@ -76,7 +77,7 @@ export class OPFSWorker {
      * @param type - The type of change (create, change, delete)
      */
     private async notifyChange(event: Omit<WatchEvent, 'timestamp' | 'hash'>): Promise<void> {
-        if (!this.watchCallback) {
+        if (!this.options.broadcastChannel) {
             return;
         }
 
@@ -96,33 +97,36 @@ export class OPFSWorker {
             }
         }
 
-        // Notify about the change immediately
-        this.watchCallback({
-            timestamp: new Date().toISOString(),
-            ...event,
-            ...(hash && { hash })
-        });
+        // Send event via BroadcastChannel
+        try {
+            if (!this.broadcastChannel) {
+                this.broadcastChannel = new BroadcastChannel(this.options.broadcastChannel);
+            }
+            
+            const watchEvent: WatchEvent = {
+                timestamp: new Date().toISOString(),
+                ...event,
+                ...(hash && { hash })
+            };
+            
+            this.broadcastChannel.postMessage(watchEvent);
+        } 
+        catch (error) {
+            console.warn(`Failed to send event via BroadcastChannel:`, error);
+        }
     }
 
     /**
      * Creates a new OPFSFileSystem instance
      * 
-     * @param watchCallback - Optional callback for file change events
      * @param options - Optional configuration options
      * @param options.watchInterval - Polling interval in milliseconds for file watching
      * @param options.hashAlgorithm - Hash algorithm for file hashing
      * @param options.maxFileSize - Maximum file size for hashing in bytes (default: 50MB)
      * @throws {OPFSError} If OPFS is not supported in the current browser
      */
-    constructor(
-        watchCallback?: (event: WatchEvent) => void,
-        options?: OPFSOptions
-    ) {
+    constructor(options?: OPFSOptions) {
         checkOPFSSupport();
-        
-        if (watchCallback) {
-            this.watchCallback = watchCallback;
-        }
         
         if (options) {
             this.setOptions(options);
@@ -184,16 +188,6 @@ export class OPFSWorker {
         return this.mountingPromise;
     }
 
-    /**
-     * Set the watch callback for file change events
-     * 
-     * @param callback - The callback function to invoke when files change
-     */
-    setWatchCallback(
-        callback: (event: WatchEvent) => void, 
-    ) {
-        this.watchCallback = callback;
-    }
 
     /**
      * Update configuration options
@@ -202,6 +196,7 @@ export class OPFSWorker {
      * @param options.watchInterval - Polling interval in milliseconds for file watching
      * @param options.hashAlgorithm - Hash algorithm for file hashing
      * @param options.maxFileSize - Maximum file size for hashing in bytes
+     * @param options.broadcastChannel - Custom name for the broadcast channel
      */
     setOptions(options: OPFSOptions): void {
         if (options.watchInterval !== undefined) {
@@ -214,6 +209,16 @@ export class OPFSWorker {
 
         if (options.maxFileSize !== undefined) {
             this.options.maxFileSize = options.maxFileSize;
+        }
+
+        if (options.broadcastChannel !== undefined) {
+            // Close existing channel if name changed
+            if (this.broadcastChannel && this.options.broadcastChannel !== options.broadcastChannel) {
+                this.broadcastChannel.close();
+                this.broadcastChannel = null;
+            }
+            
+            this.options.broadcastChannel = options.broadcastChannel;
         }
     }
 
@@ -1067,6 +1072,26 @@ export class OPFSWorker {
         }
     }
 
+    /**
+     * Dispose of resources and clean up the file system instance
+     * 
+     * This method should be called when the file system instance is no longer needed
+     * to properly clean up resources like the broadcast channel and watch timers.
+     */
+    dispose(): void {
+        if (this.broadcastChannel) {
+            this.broadcastChannel.close();
+            this.broadcastChannel = null;
+        }
+        
+        if (this.watchTimer) {
+            clearInterval(this.watchTimer);
+            this.watchTimer = null;
+        }
+        
+        this.watchers.clear();
+    }
+
     private async buildSnapshot(rootPath: string): Promise<Map<string, FileStat>> {
         const result = new Map<string, FileStat>();
 
@@ -1102,7 +1127,7 @@ export class OPFSWorker {
                     try {
                         next = await this.buildSnapshot(rootPath);
                     }
-                    catch {
+                    catch (error) {
                         next = new Map();
                     }
 
@@ -1110,16 +1135,17 @@ export class OPFSWorker {
                         const old = prev.get(p);
                         
                         if (!old) {
-                            await this.notifyChange({ path: p, type: 'added', isDirectory: false });
+                            await this.notifyChange({ path: p, type: 'added', isDirectory: stat.isDirectory });
                         }
                         else if (old.mtime !== stat.mtime || old.size !== stat.size) {
-                            await this.notifyChange({ path: p, type: 'changed', isDirectory: false });
+                            await this.notifyChange({ path: p, type: 'changed', isDirectory: stat.isDirectory });
                         }
                     }
 
                     for (const p of prev.keys()) {
                         if (!next.has(p)) {
-                            await this.notifyChange({ path: p, type: 'removed', isDirectory: false });
+                            const oldStat = prev.get(p);
+                            await this.notifyChange({ path: p, type: 'removed', isDirectory: oldStat?.isDirectory ?? false });
                         }
                     }
 

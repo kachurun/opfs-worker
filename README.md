@@ -29,6 +29,7 @@ A robust TypeScript library for working with Origin Private File System (OPFS) t
 - 📊 **File indexing**: Complete file system indexing with metadata
 - 🔄 **Sync operations**: Bulk file synchronization from external data
 - 👀 **File watching**: Polling-based change detection for files and directories
+- 📡 **Event broadcasting**: Broadcast file system changes to other contexts (tabs, workers, etc.)
 - 🛡️ **Error handling**: Comprehensive error types and handling
 
 ## Installation
@@ -201,14 +202,12 @@ async function hashExample() {
     }
     
     // Watch events will also include hash information
-    fs.setWatchCallback((event) => {
-        if (event.hash) {
-            console.log(`File ${event.path} changed, hash: ${event.hash}`);
+    const channel = new BroadcastChannel('opfs-worker');
+    channel.onmessage = (event) => {
+        if (event.data.hash) {
+            console.log(`File ${event.data.path} changed, hash: ${event.data.hash}`);
         }
-    });
-    
-    // Disable hashing for better performance
-    fs.setOptions({ hashAlgorithm: null });
+    };
 }
 
 // Configure maximum file size for hashing
@@ -249,35 +248,90 @@ Check out the live demo powered by Vite and hosted on GitHub Pages.
 
 ## API Reference
 
-- [Entry Points](#entry-points)
-  - [`createWorker()`](#createworker)
-- [Core Methods](#core-methods)
-  - [Mount](#mountroot-string-watch-event-watch-event--void-options--watchinterval-number--promiseboolean)
-  - [Read File](#readfilepath-string-encoding-bufferencoding--binary-promisestring--uint8array)
-  - [Write File](#writefilepath-string-data-string--uint8array--arraybuffer-encoding-bufferencoding-promisevoid)
-  - [Append File](#appendfilepath-string-data-string--uint8array--arraybuffer-encoding-bufferencoding-promisevoid)
-  - [Make Directory](#mkdirpath-string-options--recursive-boolean--promisevoid)
-  - [Read Directory](#readdirpath-string-options--withfiletypes-boolean--promisestring--direntdata)
-  - [File Stat](#statpath-string-promisefilestat)
-  - [Exists](#existspath-string-promiseboolean)
-  - [Remove](#removepath-string-options--recursive-boolean-force-boolean--promisevoid)
-  - [Copy](#copysource-string-destination-string-options--recursive-boolean-force-boolean--promisevoid)
-  - [Rename](#renameoldpath-string-newpath-string-promisevoid)
-  - [Clear](#clearpath-string-promisevoid)
-  - [Index](#index-promisemapstring-filestat)
-  - [Sync](#syncentries-string-string--uint8array--blob-options--cleanbefore-boolean--promisevoid)
-  - [Watch](#watchpath-string-promisevoid)
-  - [Unwatch](#unwatchpath-string-void)
-  - [Configuration](#configuration)
-  - [Real Path](#realpathpath-string-promisestring)
-- [Binary File Handling](#binary-file-handling)
-- [Utility Functions](#utility-functions)
+- [OPFS Worker](#opfs-worker)
+  - [Table of Contents](#table-of-contents)
+  - [Features](#features)
+  - [Installation](#installation)
+  - [Quick Start](#quick-start)
+    - [Inline Worker (Recommended)](#inline-worker-recommended)
+    - [Manual Worker Setup](#manual-worker-setup)
+    - [Advanced Usage](#advanced-usage)
+    - [Hash Algorithm Configuration](#hash-algorithm-configuration)
+  - [Demo](#demo)
+  - [API Reference](#api-reference)
+    - [Entry Points](#entry-points)
+      - [Mode 1: Inline Worker](#mode-1-inline-worker)
+        - [`createWorker(options?: OPFSOptions)`](#createworkeroptions-opfsoptions)
+      - [Mode 2: Manual Worker Setup](#mode-2-manual-worker-setup)
+        - [`OPFSWorker`](#opfsworker)
+    - [Core Methods](#core-methods)
+    - [Mount](#mount)
+      - [`mount(root?: string): Promise<boolean>`](#mountroot-string-promiseboolean)
+    - [Read File](#read-file)
+      - [`readFile(path: string, encoding?: BufferEncoding | 'binary'): Promise<string | Uint8Array>`](#readfilepath-string-encoding-bufferencoding--binary-promisestring--uint8array)
+    - [Write File](#write-file)
+      - [`writeFile(path: string, data: string | Uint8Array | ArrayBuffer, encoding?: BufferEncoding): Promise<void>`](#writefilepath-string-data-string--uint8array--arraybuffer-encoding-bufferencoding-promisevoid)
+    - [Append File](#append-file)
+      - [`appendFile(path: string, data: string | Uint8Array | ArrayBuffer, encoding?: BufferEncoding): Promise<void>`](#appendfilepath-string-data-string--uint8array--arraybuffer-encoding-bufferencoding-promisevoid)
+    - [Create Directory](#create-directory)
+      - [`mkdir(path: string, options?: { recursive?: boolean }): Promise<void>`](#mkdirpath-string-options--recursive-boolean--promisevoid)
+    - [Read Directory](#read-directory)
+      - [`readdir(path: string, options?: { withFileTypes?: boolean }): Promise<string[] | DirentData[]>`](#readdirpath-string-options--withfiletypes-boolean--promisestring--direntdata)
+    - [Get Stats](#get-stats)
+      - [`stat(path: string): Promise<FileStat>`](#statpath-string-promisefilestat)
+    - [Check Existence](#check-existence)
+      - [`exists(path: string): Promise<boolean>`](#existspath-string-promiseboolean)
+    - [Remove Path](#remove-path)
+      - [`remove(path: string, options?: { recursive?: boolean; force?: boolean }): Promise<void>`](#removepath-string-options--recursive-boolean-force-boolean--promisevoid)
+    - [Copy Path](#copy-path)
+      - [`copy(source: string, destination: string, options?: { recursive?: boolean; force?: boolean }): Promise<void>`](#copysource-string-destination-string-options--recursive-boolean-force-boolean--promisevoid)
+    - [Rename Path](#rename-path)
+      - [`rename(oldPath: string, newPath: string): Promise<void>`](#renameoldpath-string-newpath-string-promisevoid)
+    - [Clear Directory](#clear-directory)
+      - [`clear(path?: string): Promise<void>`](#clearpath-string-promisevoid)
+    - [Index File System](#index-file-system)
+      - [`index(): Promise<Map<string, FileStat>>`](#index-promisemapstring-filestat)
+    - [Sync File System](#sync-file-system)
+      - [`sync(entries: [string, string | Uint8Array | Blob][], options?: { cleanBefore?: boolean }): Promise<void>`](#syncentries-string-string--uint8array--blob-options--cleanbefore-boolean--promisevoid)
+    - [Watch](#watch)
+      - [`watch(path: string): Promise<void>`](#watchpath-string-promisevoid)
+    - [Unwatch](#unwatch)
+      - [`unwatch(path: string): void`](#unwatchpath-string-void)
+    - [Dispose](#dispose)
+      - [`dispose(): void`](#dispose-void)
+    - [Configuration](#configuration)
+      - [`setOptions(options: { watchInterval?: number; hashAlgorithm?: null | 'SHA-1' | 'SHA-256' | 'SHA-384' | 'SHA-512'; maxFileSize?: number }): void`](#setoptionsoptions--watchinterval-number-hashalgorithm-null--sha-1--sha-256--sha-384--sha-512-maxfilesize-number--void)
+    - [Resolve Path](#resolve-path)
+      - [`realpath(path: string): Promise<string>`](#realpathpath-string-promisestring)
+  - [Binary File Handling](#binary-file-handling)
+    - [Reading Binary Files](#reading-binary-files)
+    - [Writing Binary Files](#writing-binary-files)
+    - [Working with Different Data Types](#working-with-different-data-types)
+    - [File Upload and Download](#file-upload-and-download)
+    - [Supported Encodings](#supported-encodings)
+  - [Utility Functions](#utility-functions)
+    - [Path Utilities](#path-utilities)
+    - [Data Conversion](#data-conversion)
+    - [File System Utilities](#file-system-utilities)
+  - [Types](#types)
+    - [`FileStat`](#filestat)
+    - [`DirentData`](#direntdata)
+    - [`RemoteOPFSWorker`](#remoteopfsworker)
+  - [Error Types](#error-types)
+  - [Browser Support](#browser-support)
+  - [Development](#development)
+    - [Building](#building)
+    - [Development Server](#development-server)
+    - [Testing](#testing)
+    - [Linting](#linting)
+  - [License](#license)
+  - [Contributing](#contributing)
 
 ### Entry Points
 
 #### Mode 1: Inline Worker
 
-##### `createWorker(watchCallback?: (event: WatchEvent) => void, options?: { watchInterval?: number; hashAlgorithm?: 'SHA-1' | 'SHA-256' | 'SHA-384' | 'SHA-512' })`
+##### `createWorker(options?: OPFSOptions)`
 
 Creates a new file system instance with an inline worker.
 
@@ -287,22 +341,26 @@ import { createWorker } from 'opfs-worker/inline';
 // Basic usage
 const fs = await createWorker();
 
-// With watch callback and options
-const fs = await createWorker(
-    (event) => console.log('File changed:', event),
-    { 
-        watchInterval: 500,
-        hashAlgorithm: 'SHA-256'
-    }
-);
+// With options
+const fs = await createWorker({ 
+    watchInterval: 500,
+    hashAlgorithm: 'SHA-256',
+    broadcastChannel: 'my-app-events'
+});
+
+// Listen for file change events via BroadcastChannel
+const channel = new BroadcastChannel('my-app-events');
+channel.onmessage = (event) => {
+    console.log('File changed:', event.data);
+};
 ```
 
 **Parameters:**
 
-- `watchCallback` (optional): Callback function for file change events
 - `options` (optional): Configuration options
   - `watchInterval` (optional): Polling interval in milliseconds for file watching
   - `hashAlgorithm` (optional): Hash algorithm for file hashing
+  - `broadcastChannel` (optional): Custom name for the broadcast channel (default: 'opfs-worker')
 
 **Returns:** `Promise<RemoteOPFSWorker>` - A remote file system interface
 
@@ -352,7 +410,7 @@ await fs.mount('/my-app');
 
 **Note:** All file operations will automatically mount the OPFS root if no explicit mount has been performed.
 
-**Watch Callbacks:** File watching with callbacks is only available when using the raw worker directly. The `createWorker()` function does not support watch callbacks due to Comlink limitations with function serialization.
+**File Change Events:** File change events are sent via BroadcastChannel. Set the `broadcastChannel` option to customize the channel name, or use the default 'opfs-worker' channel.
 
 ### Read File
 
@@ -690,6 +748,19 @@ Stop watching a previously watched path.
 ```typescript
 fs.unwatch('/docs');
 ```
+
+### Dispose
+
+#### `dispose(): void`
+
+Dispose of resources and clean up the file system instance. This method should be called when the file system instance is no longer needed to properly clean up resources like the broadcast channel and watch timers.
+
+```typescript
+// Clean up resources when done
+fs.dispose();
+```
+
+**Note:** This method closes the broadcast channel, clears watch timers, and cleans up all watched paths. Call this when you're done with the file system instance to prevent memory leaks.
 
 ### Configuration
 

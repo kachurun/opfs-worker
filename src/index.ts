@@ -11,23 +11,15 @@ export * from './utils/encoder';
 
 /**
  * Creates a new file system instance with inline worker
- * @param watchCallback - Optional callback for file change events
  * @param options - Optional configuration options
  * @returns Promise resolving to the file system interface
  */
 export function createWorker(
-    watchCallback?: (event: WatchEvent) => void,
     options?: OPFSOptions
 ): RemoteOPFSWorker {
     const wrapped = wrap<OPFSWorker>(new WorkerCtor());
     
-    // Set up watch callback and options if provided
-    if (watchCallback) {
-        wrapped.setWatchCallback(
-            watchCallback ? proxy(watchCallback) : () => {}, 
-        );
-    }
-    
+    // Set up options if provided
     if (options) {
         wrapped.setOptions(options);
     }

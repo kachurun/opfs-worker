@@ -1,5 +1,11 @@
 # opfs-worker
 
+## 0.3.0
+
+### Minor Changes
+
+-   Broadcast channel instead of watchCallback
+
 ## 0.2.6
 
 ### Patch Changes

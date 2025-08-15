@@ -138,4 +138,81 @@ Object.defineProperty(globalThis, 'navigator', {
   configurable: true
 });
 
+// Mock BroadcastChannel for Node.js environment
+const channels = new Map<string, MockBroadcastChannel[]>();
+
+class MockBroadcastChannel {
+  private listeners: Array<(event: any) => void> = [];
+  private _onmessage: ((event: any) => void) | null = null;
+  
+  constructor(public name: string) {
+    if (!channels.has(this.name)) {
+      channels.set(this.name, []);
+    }
+    channels.get(this.name)!.push(this);
+  }
+  
+  postMessage(message: any): void {
+    // Send message to all other channels with the same name
+    const channelList = channels.get(this.name) || [];
+    const event = { data: message };
+    
+    // Simulate immediate message delivery to other listeners
+    setTimeout(() => {
+      channelList.forEach(channel => {
+        if (channel !== this) {
+          channel.listeners.forEach(listener => {
+            listener(event);
+          });
+          if (channel._onmessage) {
+            channel._onmessage(event);
+          }
+        }
+      });
+    }, 0);
+  }
+  
+  addEventListener(type: string, listener: (event: any) => void): void {
+    if (type === 'message') {
+      this.listeners.push(listener);
+    }
+  }
+  
+  removeEventListener(type: string, listener: (event: any) => void): void {
+    if (type === 'message') {
+      const index = this.listeners.indexOf(listener);
+      if (index > -1) {
+        this.listeners.splice(index, 1);
+      }
+    }
+  }
+  
+  get onmessage(): ((event: any) => void) | null {
+    return this._onmessage;
+  }
+  
+  set onmessage(value: ((event: any) => void) | null) {
+    this._onmessage = value;
+  }
+  
+  close(): void {
+    const channelList = channels.get(this.name) || [];
+    const index = channelList.indexOf(this);
+    if (index > -1) {
+      channelList.splice(index, 1);
+    }
+    if (channelList.length === 0) {
+      channels.delete(this.name);
+    }
+    this.listeners = [];
+    this._onmessage = null;
+  }
+}
+
+Object.defineProperty(globalThis, 'BroadcastChannel', {
+  value: MockBroadcastChannel,
+  writable: true,
+  configurable: true
+});
+
 export {} 

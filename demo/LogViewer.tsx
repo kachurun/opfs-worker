@@ -248,10 +248,11 @@ export const LogViewer: React.FC = () => {
                 log('\n👀 Testing watch functionality...');
                 
                 const watchEvents: any[] = [];
-                fs.setWatchCallback((event) => {
-                    watchEvents.push(event);
-                    log(`👀 Watch event: ${event.type} - ${event.path}`);
-                }, { watchInterval: 100 });
+                const channel = new BroadcastChannel('opfs-worker');
+                channel.onmessage = (event) => {
+                    watchEvents.push(event.data);
+                    log(`👀 Watch event: ${event.data.type} - ${event.data.path}`);
+                };
 
                 // Watch the root directory
                 await fs.watch('/');
@@ -270,6 +271,7 @@ export const LogViewer: React.FC = () => {
                 // Clean up
                 fs.unwatch('/');
                 await fs.remove('/watch-test.txt');
+                channel.close();
                 log('✅ Stopped watching and cleaned up');
 
                 // Final summary
