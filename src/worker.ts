@@ -43,7 +43,7 @@ import type { BufferEncoding } from 'typescript';
 export class OPFSWorker {
     /** Root directory handle for the file system */
     private root: FileSystemDirectoryHandle | null = null;
-
+    
     /** Map of watched paths to their last known state */
     private watchers = new Map<string, Map<string, FileStat>>();
 
@@ -67,6 +67,7 @@ export class OPFSWorker {
         broadcastChannel: 'opfs-worker',
     };
     
+
     /**
      * Notify about internal changes to the file system
      * 
@@ -76,7 +77,7 @@ export class OPFSWorker {
      * @param path - The path that was changed
      * @param type - The type of change (create, change, delete)
      */
-    private async notifyChange(event: Omit<WatchEvent, 'timestamp' | 'hash'>): Promise<void> {
+    private async notifyChange(event: Omit<WatchEvent, 'timestamp' | 'hash' | 'root'>): Promise<void> {
         if (!this.options.broadcastChannel) {
             return;
         }
@@ -92,7 +93,7 @@ export class OPFSWorker {
                     hash = stats.hash;
                 }
             } 
-            catch (error) {
+        catch (error) {
                 console.warn(`Failed to calculate hash for ${event.path}:`, error);
             }
         }
@@ -104,6 +105,7 @@ export class OPFSWorker {
             }
             
             const watchEvent: WatchEvent = {
+                root: this.root!.name,
                 timestamp: new Date().toISOString(),
                 ...event,
                 ...(hash && { hash })
@@ -174,6 +176,7 @@ export class OPFSWorker {
                 else {
                     this.root = await this.getDirectoryHandle(root, true, rootDir);
                 }
+                
                 resolve(true);
             }
             catch (error) {

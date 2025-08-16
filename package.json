@@ -1,6 +1,6 @@
 {
     "name": "opfs-worker",
-    "version": "0.3.0",
+    "version": "0.3.3",
     "description": "A robust TypeScript library for working with Origin Private File System (OPFS) through Web Workers",
     "type": "module",
     "main": "dist/index.js",
@@ -45,25 +45,29 @@
         "file-api",
         "typescript"
     ],
-    "author": "Your Name <your.email@example.com>",
+    "author": "Maksim Kachurun <kachurun@gmail.com>",
     "license": "MIT",
     "repository": {
         "type": "git",
-        "url": "https://github.com/your-username/opfs-worker.git"
+        "url": "https://github.com/kachurun/opfs-worker.git"
     },
     "bugs": {
-        "url": "https://github.com/your-username/opfs-worker/issues"
+        "url": "https://github.com/kachurun/opfs-worker/issues"
     },
-    "homepage": "https://github.com/your-username/opfs-worker#readme",
+    "homepage": "https://github.com/kachurun/opfs-worker#readme",
     "devDependencies": {
         "@changesets/cli": "^2.29.5",
         "@flexbe/eslint-config": "^1.0.11",
         "@types/node": "^24.2.0",
+        "@types/react": "^19.1.9",
+        "@types/react-dom": "^19.1.7",
         "@typescript-eslint/eslint-plugin": "^8.39.0",
         "@typescript-eslint/parser": "^8.39.0",
         "@vitest/coverage-v8": "^3.2.4",
         "eslint": "^9.32.0",
         "happy-dom": "^18.0.1",
+        "react": "^19.1.1",
+        "react-dom": "^19.1.1",
         "typescript": "^5.9.2",
         "vite": "^7.0.6",
         "vitest": "^3.2.4"
@@ -76,11 +80,7 @@
     },
     "packageManager": "bun@1.2.19",
     "dependencies": {
-        "@types/react": "^19.1.9",
-        "@types/react-dom": "^19.1.7",
-        "comlink": "^4.4.2",
-        "react": "^19.1.1",
-        "react-dom": "^19.1.1"
+        "comlink": "^4.4.2"
     },
     "publishConfig": {
         "access": "public"

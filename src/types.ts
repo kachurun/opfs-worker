@@ -22,6 +22,7 @@ export interface DirentData {
 }
 
 export interface WatchEvent {
+    root: string;
     path: string;
     type: 'added' | 'changed' | 'removed';
     isDirectory: boolean;

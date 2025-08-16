@@ -1,5 +1,23 @@
 # opfs-worker
 
+## 0.3.3
+
+### Patch Changes
+
+-   Fix deps
+
+## 0.3.2
+
+### Patch Changes
+
+-   Add root property to change event
+
+## 0.3.1
+
+### Patch Changes
+
+-   Refactor readDir
+
 ## 0.3.0
 
 ### Minor Changes
