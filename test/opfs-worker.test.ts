@@ -11,8 +11,7 @@ describe('OPFSWorker', () => {
   beforeEach(async () => {
     await fsp.rm(rootDir, { recursive: true, force: true });
     await fsp.mkdir(rootDir, { recursive: true });
-    fsw = new OPFSWorker(undefined, { watchInterval: 50 });
-    await fsw.mount('/');
+    fsw = new OPFSWorker({ root: '/', watchInterval: 50 });
   });
 
   afterEach(async () => {
@@ -40,7 +39,7 @@ describe('OPFSWorker', () => {
 
   it('provides file stats and hash', async () => {
     await fsw.writeFile('/hash.txt', 'data');
-    fsw.setOptions({ hashAlgorithm: 'SHA-1' });
+    await fsw.setOptions({ hashAlgorithm: 'SHA-1' });
     const stat = await fsw.stat('/hash.txt');
     expect(stat.isFile).toBe(true);
     expect(stat.size).toBe(4);
@@ -53,12 +52,12 @@ describe('OPFSWorker', () => {
     await fsw.writeFile('/large.txt', largeData);
     
     // Should not have hash with default 50MB limit
-    fsw.setOptions({ hashAlgorithm: 'SHA-1' });
+    await fsw.setOptions({ hashAlgorithm: 'SHA-1' });
     const statWithoutHash = await fsw.stat('/large.txt');
     expect(statWithoutHash.hash).toBeUndefined();
     
     // Should work with increased limit
-    fsw.setOptions({ maxFileSize: 100 * 1024 * 1024 }); // 100MB
+    await fsw.setOptions({ maxFileSize: 100 * 1024 * 1024 }); // 100MB
     const statWithHash = await fsw.stat('/large.txt');
     expect(statWithHash.hash).toMatch(/^[0-9a-f]+$/);
   });

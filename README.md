@@ -55,13 +55,13 @@ The easiest way to get started - just import and use:
 import { createWorker } from 'opfs-worker';
 
 async function example() {
-    // Create a file system instance
+    // Create a file system instance with default root path '/'
     const fs = await createWorker();
 
-    // Mount is optional - OPFS root is used by default
-    // await fs.mount('/my-app'); // Uses custom subdirectory
+    // Or specify a custom root path
+    const fsCustom = await createWorker({ root: '/my-app' });
 
-    // Write a file (auto-mounts if not mounted)
+    // Write a file
     await fs.writeFile('/config.json', JSON.stringify({ theme: 'dark' }));
 
     // Read the file back
@@ -74,20 +74,26 @@ async function example() {
     const binaryData = await fs.readFile('/image.png', 'binary');
 }
 
-// With watch callbacks
-async function exampleWithWatch() {
-    const fs = await createWorker(
-        (event) => {
-            console.log('File changed:', event);
-        },
-        { watchInterval: 500 }
-    );
+// With custom root and broadcast channel
+async function exampleWithBroadcastChannel() {
+    const worker = wrap(new OPFSWorker({ 
+        root: '/my-app',
+        watchInterval: 500,
+        hashAlgorithm: 'SHA-1',
+        broadcastChannel: 'my-app-events'
+    }));
 
-    await fs.watch('/docs');
+    // Listen for file change events via BroadcastChannel
+    const channel = new BroadcastChannel('my-app-events');
+    channel.onmessage = (event) => {
+        console.log('File changed:', event.data);
+    };
+
+    await worker.watch('/docs');
 }
 ```
 
-> **Note:** The onChange callback will be called for all internal file changes (made by the worker itself), not just for watched paths. You only need to call `fs.watch` to start watching for changes from external sources.
+> **Note:** File change events are sent via BroadcastChannel. Set the `broadcastChannel` option to customize the channel name, or use the default 'opfs-worker' channel.
 
 ### Manual Worker Setup
 
@@ -98,37 +104,40 @@ import OPFSWorker from 'opfs-worker/raw?worker';
 import { wrap } from 'comlink';
 
 async function example() {
-    // Create and wrap the worker
+    // Create and wrap the worker with default root path '/'
     const worker = wrap(new OPFSWorker());
 
-    // Mount is optional - OPFS root is used by default
-    // await worker.mount(); // Uses OPFS root directory
-    // await worker.mount('/my-app'); // Uses custom subdirectory
+    // Or specify a custom root path
+    const workerCustom = wrap(new OPFSWorker({ root: '/my-app' }));
 
-    // Use the file system (auto-mounts if not mounted)
+    // Use the file system
     await worker.writeFile('/config.json', JSON.stringify({ theme: 'dark' }));
     const config = await worker.readFile('/config.json');
     console.log(JSON.parse(config));
 }
 
-// With watch callbacks
-async function exampleWithWatch() {
-    const worker = wrap(new OPFSWorker(
-        (event) => console.log('File changed:', event),
-        { 
-            watchInterval: 500,
-            hashAlgorithm: 'SHA-1'
-        }
-    ));
+// With custom root and broadcast channel
+async function exampleWithBroadcastChannel() {
+    const worker = wrap(new OPFSWorker({ 
+        root: '/my-app',
+        watchInterval: 500,
+        hashAlgorithm: 'SHA-1',
+        broadcastChannel: 'my-app-events'
+    }));
 
-    await worker.mount('/my-app');
+    // Listen for file change events via BroadcastChannel
+    const channel = new BroadcastChannel('my-app-events');
+    channel.onmessage = (event) => {
+        console.log('File changed:', event.data);
+    };
+
     await worker.watch('/docs');
 }
 ```
 
 **Note:** Manual worker setup requires a bundler that supports Web Workers (like Vite, Webpack, Rollup, etc.) and the `comlink` package for communication between the main thread and worker.
 
-**Watch Callbacks:** File watching with callbacks is available with both `createWorker()` and raw worker usage. The `createWorker()` function uses Comlink.proxy to handle function serialization across worker boundaries.
+**File Change Events:** File change events are sent via BroadcastChannel. Set the `broadcastChannel` option to customize the channel name, or use the default 'opfs-worker' channel.
 
 ### Advanced Usage
 
@@ -136,9 +145,8 @@ async function exampleWithWatch() {
 import { createWorker } from 'opfs-worker';
 
 async function advancedExample() {
-    const fs = await createWorker();
-    // Mount is optional - auto-mounts to OPFS root if not called
-    // await fs.mount('/my-app'); // For custom subdirectory
+    // Create with custom root path
+    const fs = await createWorker({ root: '/my-app' });
 
     // Create directories
     await fs.mkdir('/data/logs', { recursive: true });
@@ -240,6 +248,43 @@ async function maxFileSizeExample() {
 
 **Note:** When hashing is enabled, it affects all file operations including `stat()`, `index()`, and watch events. Set to `null` when you don't need hash information to improve performance.
 
+### Root Path Configuration
+
+The file system supports configuring the root path through options. The root path determines where in OPFS the file system's root will be created. All file paths passed to the API are relative to this root path.
+
+```typescript
+import { createWorker } from 'opfs-worker';
+
+async function rootPathExample() {
+    // Use default root path '/'
+    const fsDefault = await createWorker();
+    await fsDefault.writeFile('/config.json', '{}');
+    // This creates /config.json in OPFS root
+    
+    // Use custom root path
+    const fsCustom = await createWorker({ root: '/my-app' });
+    await fsCustom.writeFile('/config.json', '{}');
+    // This creates /my-app/config.json in OPFS root
+    
+    // Change root path dynamically
+    await fsCustom.setOptions({ root: '/new-app' });
+    await fsCustom.writeFile('/config.json', '{}');
+    // This creates /new-app/config.json in OPFS root
+}
+```
+
+**Root Path Behavior:**
+- **Default**: Uses `/` (OPFS root directory)
+- **Custom**: Creates a subdirectory within OPFS for isolation
+- **Dynamic**: Can be changed at runtime via `setOptions()`
+- **Auto-mount**: Automatically mounts to the specified root when needed
+- **Path Resolution**: All API paths are relative to the configured root
+
+**Use Cases:**
+- **Isolation**: Keep different apps' data separate (`root: '/app1'`, `root: '/app2'`)
+- **Versioning**: Use different roots for different versions (`root: '/v1'`, `root: '/v2'`)
+- **User Separation**: Separate data by user (`root: '/user/john'`, `root: '/user/jane'`)
+
 ## Demo
 
 Check out the live demo powered by Vite and hosted on GitHub Pages.
@@ -257,6 +302,7 @@ Check out the live demo powered by Vite and hosted on GitHub Pages.
     - [Manual Worker Setup](#manual-worker-setup)
     - [Advanced Usage](#advanced-usage)
     - [Hash Algorithm Configuration](#hash-algorithm-configuration)
+    - [Root Path Configuration](#root-path-configuration)
   - [Demo](#demo)
   - [API Reference](#api-reference)
     - [Entry Points](#entry-points)
@@ -265,8 +311,6 @@ Check out the live demo powered by Vite and hosted on GitHub Pages.
       - [Mode 2: Manual Worker Setup](#mode-2-manual-worker-setup)
         - [`OPFSWorker`](#opfsworker)
     - [Core Methods](#core-methods)
-    - [Mount](#mount)
-      - [`mount(root?: string): Promise<boolean>`](#mountroot-string-promiseboolean)
     - [Read File](#read-file)
       - [`readFile(path: string, encoding?: BufferEncoding | 'binary'): Promise<string | Uint8Array>`](#readfilepath-string-encoding-bufferencoding--binary-promisestring--uint8array)
     - [Write File](#write-file)
@@ -276,7 +320,7 @@ Check out the live demo powered by Vite and hosted on GitHub Pages.
     - [Create Directory](#create-directory)
       - [`mkdir(path: string, options?: { recursive?: boolean }): Promise<void>`](#mkdirpath-string-options--recursive-boolean--promisevoid)
     - [Read Directory](#read-directory)
-      - [`readDir(path: string): Promise<DirentData[]>`](#readdirpath-string--promisedirentdata)
+      - [`readDir(path: string): Promise<DirentData[]>`](#readdirpath-string-promisedirentdata)
     - [Get Stats](#get-stats)
       - [`stat(path: string): Promise<FileStat>`](#statpath-string-promisefilestat)
     - [Check Existence](#check-existence)
@@ -300,7 +344,7 @@ Check out the live demo powered by Vite and hosted on GitHub Pages.
     - [Dispose](#dispose)
       - [`dispose(): void`](#dispose-void)
     - [Configuration](#configuration)
-      - [`setOptions(options: { watchInterval?: number; hashAlgorithm?: null | 'SHA-1' | 'SHA-256' | 'SHA-384' | 'SHA-512'; maxFileSize?: number }): void`](#setoptionsoptions--watchinterval-number-hashalgorithm-null--sha-1--sha-256--sha-384--sha-512-maxfilesize-number--void)
+      - [`setOptions(options: { root?: string; watchInterval?: number; hashAlgorithm?: null | 'SHA-1' | 'SHA-256' | 'SHA-384' | 'SHA-512'; maxFileSize?: number }): Promise<void>`](#setoptionsoptions--root-string-watchinterval-number-hashalgorithm-null--sha-1--sha-256--sha-384--sha-512-maxfilesize-number--promisevoid)
     - [Resolve Path](#resolve-path)
       - [`realpath(path: string): Promise<string>`](#realpathpath-string-promisestring)
   - [Binary File Handling](#binary-file-handling)
@@ -343,6 +387,7 @@ const fs = await createWorker();
 
 // With options
 const fs = await createWorker({ 
+    root: '/my-app',
     watchInterval: 500,
     hashAlgorithm: 'SHA-256',
     broadcastChannel: 'my-app-events'
@@ -358,6 +403,7 @@ channel.onmessage = (event) => {
 **Parameters:**
 
 - `options` (optional): Configuration options
+  - `root` (optional): Root path for the file system (default: '/')
   - `watchInterval` (optional): Polling interval in milliseconds for file watching
   - `hashAlgorithm` (optional): Hash algorithm for file hashing
   - `broadcastChannel` (optional): Custom name for the broadcast channel (default: 'opfs-worker')
@@ -380,37 +426,6 @@ const worker = wrap(new OPFSWorker());
 **Note:** This approach requires a bundler that supports Web Workers (Vite, Webpack, Rollup, etc.) and the `comlink` package.
 
 ### Core Methods
-
-### Mount
-
-#### `mount(root?: string): Promise<boolean>`
-
-Initialize the file system within a given directory. **Mount is optional** - if not called, the OPFS root directory is used automatically.
-
-The `root` parameter defines where in OPFS the file system's root will be
-created. All file paths passed to the API are relative to this mount point. For
-example, after `fs.mount('/dir')`, calling `fs.readFile('/text.txt')` accesses
-`/dir/text.txt` in OPFS.
-
-```typescript
-// Use OPFS root (default behavior)
-await fs.mount();
-
-// Use custom subdirectory
-await fs.mount('/my-app');
-```
-
-**Parameters:**
-
-- `root` (optional): The root path for the file system (default: '/')
-
-**Returns:** `Promise<boolean>` - True if initialization was successful
-
-**Throws:** `OPFSError` if initialization fails
-
-**Note:** All file operations will automatically mount the OPFS root if no explicit mount has been performed.
-
-**File Change Events:** File change events are sent via BroadcastChannel. Set the `broadcastChannel` option to customize the channel name, or use the default 'opfs-worker' channel.
 
 ### Read File
 
@@ -724,19 +739,27 @@ await fs.sync(entries, { cleanBefore: true });
 
 #### `watch(path: string): Promise<void>`
 
-Start watching a file or directory for changes. Detected changes are sent to the
-callback provided to the constructor. The polling interval is configured globally when
-creating the worker instance.
+Start watching a file or directory for changes. Detected changes are sent via BroadcastChannel
+using the channel name specified in the `broadcastChannel` option.
 
 ```typescript
+// Start watching a directory
 await fs.watch('/docs');
+
+// Listen for changes via BroadcastChannel
+const channel = new BroadcastChannel('opfs-worker'); // or your custom channel name
+channel.onmessage = (event) => {
+    const { path, type, isDirectory, timestamp, hash } = event.data;
+    console.log(`File ${path} was ${type} at ${timestamp}`);
+    if (hash) console.log(`Hash: ${hash}`);
+};
 ```
 
 **Parameters:**
 
 - `path`: File or directory to watch
 
-**Note:** Watch callbacks are available with both `createWorker()` and raw worker usage. The `createWorker()` function uses Comlink.proxy to handle function serialization across worker boundaries.
+**Note:** File change events are sent via BroadcastChannel. Set the `broadcastChannel` option to customize the channel name, or use the default 'opfs-worker' channel. The `createWorker()` function automatically handles the BroadcastChannel setup.
 
 ### Unwatch
 
@@ -763,25 +786,29 @@ fs.dispose();
 
 ### Configuration
 
-#### `setOptions(options: { watchInterval?: number; hashAlgorithm?: null | 'SHA-1' | 'SHA-256' | 'SHA-384' | 'SHA-512'; maxFileSize?: number }): void`
+#### `setOptions(options: { root?: string; watchInterval?: number; hashAlgorithm?: null | 'SHA-1' | 'SHA-256' | 'SHA-384' | 'SHA-512'; maxFileSize?: number }): Promise<void>`
 
-Update configuration options for the file system, including watch interval, hash algorithm, and maximum file size for hashing.
+Update configuration options for the file system, including root path, watch interval, hash algorithm, and maximum file size for hashing.
 
 ```typescript
+// Change root path (will automatically remount)
+await fs.setOptions({ root: '/new-app' });
+
 // Enable SHA-256 hashing for all file operations
-fs.setOptions({ hashAlgorithm: 'SHA-256' });
+await fs.setOptions({ hashAlgorithm: 'SHA-256' });
 
 // Change watch interval to 100ms for faster change detection
-fs.setOptions({ watchInterval: 100 });
+await fs.setOptions({ watchInterval: 100 });
 
 // Set custom maximum file size for hashing (100MB)
-fs.setOptions({ maxFileSize: 100 * 1024 * 1024 });
+await fs.setOptions({ maxFileSize: 100 * 1024 * 1024 });
 
 // Disable hashing
-fs.setOptions({ hashAlgorithm: null });
+await fs.setOptions({ hashAlgorithm: null });
 
 // Update multiple options at once
-fs.setOptions({ 
+await fs.setOptions({ 
+    root: '/my-app',
     watchInterval: 200, 
     hashAlgorithm: 'SHA-1',
     maxFileSize: 50 * 1024 * 1024 // 50MB
@@ -790,11 +817,12 @@ fs.setOptions({
 
 **Parameters:**
 
+- `options.root` (optional): Root path for the file system
 - `options.watchInterval` (optional): Polling interval in milliseconds for file watching
 - `options.hashAlgorithm` (optional): Hash algorithm to use, or `null` to disable hashing
 - `options.maxFileSize` (optional): Maximum file size in bytes for hashing (default: 50MB)
 
-**Note:** When a hash algorithm is set, all file operations (`stat`, `index`, watch events) will automatically include hash information for files within the size limit. Files exceeding `maxFileSize` will not have hash information. Set `hashAlgorithm` to `null` to disable hashing and improve performance.
+**Note:** When the `root` option is changed, the file system will automatically remount to the new location. All other options are updated immediately without affecting the current mount.
 
 ### Resolve Path
 

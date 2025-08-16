@@ -115,7 +115,7 @@ class NodeDirectoryHandle {
     }
   }
   async *entries(): AsyncIterableIterator<[string, NodeDirectoryHandle | NodeFileHandle]> {
-            const dirents = await fsp.readDir(this.path);
+    const dirents = await fsp.readdir(this.path, { withFileTypes: true });
     for (const dirent of dirents) {
       const full = path.join(this.path, dirent.name);
       yield dirent.isDirectory() ? [dirent.name, new NodeDirectoryHandle(full)] : [dirent.name, new NodeFileHandle(full)];

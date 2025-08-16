@@ -34,6 +34,8 @@ export type { OPFSWorker };
 export type RemoteOPFSWorker = Remote<OPFSWorker>;
 
 export interface OPFSOptions {
+    /** Root path for the file system (default: '/') */
+    root?: string;
     /** Polling interval in milliseconds for file watching (default: 1000) */
     watchInterval?: number;
     /** Hash algorithm for file hashing, or null to disable (default: null) */

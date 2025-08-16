@@ -61,6 +61,7 @@ export class OPFSWorker {
 
     /** Configuration options */
     private options: Required<OPFSOptions> = {
+        root: '/',
         watchInterval: 1000,
         maxFileSize: 50 * 1024 * 1024,
         hashAlgorithm: null,
@@ -105,7 +106,7 @@ export class OPFSWorker {
             }
             
             const watchEvent: WatchEvent = {
-                root: this.root!.name,
+                root: this.options.root,
                 timestamp: new Date().toISOString(),
                 ...event,
                 ...(hash && { hash })
@@ -122,6 +123,7 @@ export class OPFSWorker {
      * Creates a new OPFSFileSystem instance
      * 
      * @param options - Optional configuration options
+     * @param options.root - Root path for the file system (default: '/')
      * @param options.watchInterval - Polling interval in milliseconds for file watching
      * @param options.hashAlgorithm - Hash algorithm for file hashing
      * @param options.maxFileSize - Maximum file size for hashing in bytes (default: 50MB)
@@ -133,8 +135,6 @@ export class OPFSWorker {
         if (options) {
             this.setOptions(options);
         }
-        
-        void this.mount('/');
     }
 
     /**
@@ -158,11 +158,13 @@ export class OPFSWorker {
      * await fs.mount('/my-app');
      * ```
      */
-    async mount(root: string = '/'): Promise<boolean> {
+    private async mount(root: string = this.options.root): Promise<boolean> {
         // If already mounting, wait for previous operation to complete first
         if (this.mountingPromise) {
             await this.mountingPromise;
         }
+        
+        root = normalizePath(root);
 
         this.mountingPromise = new Promise<boolean>(async(resolve, reject) => {
             this.root = null;
@@ -196,12 +198,13 @@ export class OPFSWorker {
      * Update configuration options
      * 
      * @param options - Configuration options to update
+     * @param options.root - Root path for the file system
      * @param options.watchInterval - Polling interval in milliseconds for file watching
      * @param options.hashAlgorithm - Hash algorithm for file hashing
      * @param options.maxFileSize - Maximum file size for hashing in bytes
      * @param options.broadcastChannel - Custom name for the broadcast channel
      */
-    setOptions(options: OPFSOptions): void {
+    async setOptions(options: OPFSOptions): Promise<void> {
         if (options.watchInterval !== undefined) {
             this.options.watchInterval = options.watchInterval;
         }
@@ -223,30 +226,11 @@ export class OPFSWorker {
             
             this.options.broadcastChannel = options.broadcastChannel;
         }
-    }
-
-    /**
-     * Automatically mount the OPFS root if not already mounted
-     * 
-     * This method is called internally when file operations are performed
-     * without explicitly mounting first.
-     * 
-     * @returns Promise that resolves when auto-mount is complete
-     * @throws {OPFSError} If auto-mount fails
-     */
-    private async ensureMounted(): Promise<void> {
-        // If already mounted, return immediately
-        if (this.root) {
-            return;
+        
+        if (options.root !== undefined) {
+            this.options.root = options.root;
+            await this.mount(this.options.root);
         }
-
-        // If already mounting, wait for that operation to complete
-        if (this.mountingPromise) {
-            await this.mountingPromise;
-            return;
-        }
-
-        throw new OPFSError('OPFS not mounted', 'NOT_MOUNTED');
     }
 
     /**
@@ -406,7 +390,7 @@ export class OPFSWorker {
         path: string,
         encoding: BufferEncoding | 'binary' = 'utf-8'
     ): Promise<string | Uint8Array> {
-        await this.ensureMounted();
+        await this.mount();
         
         try {
             const fileHandle = await this.getFileHandle(path, false);
@@ -455,7 +439,7 @@ export class OPFSWorker {
         data: string | Uint8Array | ArrayBuffer,
         encoding?: BufferEncoding
     ): Promise<void> {
-        await this.ensureMounted();
+        await this.mount();
         
         const fileHandle = await this.getFileHandle(path, true);
 
@@ -490,7 +474,7 @@ export class OPFSWorker {
         data: string | Uint8Array | ArrayBuffer,
         encoding?: BufferEncoding
     ): Promise<void> {
-        await this.ensureMounted();
+        await this.mount();
         
         const fileHandle = await this.getFileHandle(path, true);
 
@@ -520,7 +504,7 @@ export class OPFSWorker {
      * ```
      */
     async mkdir(path: string, options?: { recursive?: boolean }): Promise<void> {
-        await this.ensureMounted();
+        await this.mount();
 
         if (!this.root) {
             throw new OPFSNotMountedError();
@@ -578,7 +562,7 @@ export class OPFSWorker {
      * ```
      */
     async stat(path: string): Promise<FileStat> {
-        await this.ensureMounted();
+        await this.mount();
         
         // Special handling for root directory
         if (path === '/') {
@@ -668,7 +652,7 @@ export class OPFSWorker {
      * ```
      */
     async readDir(path: string): Promise<DirentData[]> {
-        await this.ensureMounted();
+        await this.mount();
         
         const dir = await this.getDirectoryHandle(path, false);
 
@@ -703,7 +687,7 @@ export class OPFSWorker {
      * ```
      */
     async exists(path: string): Promise<boolean> {
-        await this.ensureMounted();
+        await this.mount();
         
         if (path === '/') {
             return true;
@@ -772,7 +756,7 @@ export class OPFSWorker {
      * ```
      */
     async clear(path: string = '/'): Promise<void> {
-        await this.ensureMounted();
+        await this.mount();
         
         try {
             const items = await this.readDir(path);
@@ -820,7 +804,7 @@ export class OPFSWorker {
      * ```
      */
     async remove(path: string, options?: { recursive?: boolean; force?: boolean }): Promise<void> {
-        await this.ensureMounted();
+        await this.mount();
         
         const recursive = options?.recursive ?? false;
         const force = options?.force ?? false;
@@ -880,7 +864,7 @@ export class OPFSWorker {
      * ```
      */
     async realpath(path: string): Promise<string> {
-        await this.ensureMounted();
+        await this.mount();
         
         try {
             const normalizedPath = resolvePath(path);
@@ -918,7 +902,7 @@ export class OPFSWorker {
      * ```
      */
     async rename(oldPath: string, newPath: string): Promise<void> {
-        await this.ensureMounted();
+        await this.mount();
         
         try {
             const sourceExists = await this.exists(oldPath);
@@ -969,7 +953,7 @@ export class OPFSWorker {
      * ```
      */
     async copy(source: string, destination: string, options?: { recursive?: boolean; force?: boolean }): Promise<void> {
-        await this.ensureMounted();
+        await this.mount();
         
         try {
             const recursive = options?.recursive ?? false;
@@ -1027,7 +1011,7 @@ export class OPFSWorker {
      * Start watching a file or directory for changes
      */
     async watch(path: string): Promise<void> {
-        await this.ensureMounted();
+        await this.mount();
         
         const normalizedPath = normalizePath(path);
         const snapshot = await this.buildSnapshot(normalizedPath);
@@ -1074,7 +1058,7 @@ export class OPFSWorker {
         this.watchers.clear();
     }
 
-    private async buildSnapshot(rootPath: string): Promise<Map<string, FileStat>> {
+    private async buildSnapshot(root: string): Promise<Map<string, FileStat>> {
         const result = new Map<string, FileStat>();
 
         const walk = async (current: string) => {
@@ -1090,7 +1074,7 @@ export class OPFSWorker {
             }
         };
 
-        await walk(rootPath);
+        await walk(root);
         return result;
     }
 
@@ -1103,11 +1087,11 @@ export class OPFSWorker {
 
         try {
             await Promise.all(
-                [...this.watchers.entries()].map(async([rootPath, prev]) => {
+                [...this.watchers.entries()].map(async([root, prev]) => {
                     let next: Map<string, FileStat>;
 
                     try {
-                        next = await this.buildSnapshot(rootPath);
+                        next = await this.buildSnapshot(root);
                     }
                     catch (error) {
                         next = new Map();
@@ -1131,7 +1115,7 @@ export class OPFSWorker {
                         }
                     }
 
-                    this.watchers.set(rootPath, next);
+                    this.watchers.set(root, next);
                 })
             );
         }
@@ -1169,7 +1153,7 @@ export class OPFSWorker {
      * ```
      */
     async sync(entries: [string, string | Uint8Array | Blob][], options?: { cleanBefore?: boolean }): Promise<void> {
-        await this.ensureMounted();
+        await this.mount();
         
         try {
             const cleanBefore = options?.cleanBefore ?? false;
