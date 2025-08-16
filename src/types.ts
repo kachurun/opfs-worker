@@ -50,5 +50,5 @@ export interface WatchOptions {
     /** Whether to watch recursively (default: true) */
     recursive?: boolean;
     /** Glob patterns to exclude from watching (minimatch syntax) */
-    excludes?: string | string[];
+    exclude?: string | string[];
 }

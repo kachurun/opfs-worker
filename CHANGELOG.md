@@ -1,5 +1,11 @@
 # opfs-worker
 
+## 0.4.2
+
+### Patch Changes
+
+-   Excludes support for watches
+
 ## 0.4.1
 
 ### Patch Changes

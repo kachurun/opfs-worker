@@ -1,5 +1,6 @@
-import { encodeString } from './encoder';
 import { minimatch } from 'minimatch';
+
+import { encodeString } from './encoder';
 import { OPFSError, OPFSNotSupportedError } from './errors';
 
 import type { BufferEncoding } from 'typescript';
@@ -13,6 +14,18 @@ export function checkOPFSSupport(): void {
     if (!('storage' in navigator) || !('getDirectory' in (navigator.storage as any))) {
         throw new OPFSNotSupportedError();
     }
+}
+
+export async function withLock<T>(
+    path: string,
+    mode: 'shared' | 'exclusive',
+    fn: () => Promise<T>
+): Promise<T> {
+    if (typeof navigator !== 'undefined' && navigator.locks?.request) {
+        return navigator.locks.request(`opfs:${ path.replace(/\/+/g, '/').toLowerCase() }`, { mode }, fn);
+    }
+
+    return fn();
 }
 
 /** 
@@ -66,6 +79,7 @@ export function joinPath(segments: string[] | string): string {
  */
 export function basename(path: string): string {
     const segments = splitPath(path);
+
     return segments[segments.length - 1] || '';
 }
 
@@ -84,7 +98,9 @@ export function basename(path: string): string {
  */
 export function dirname(path: string): string {
     const segments = splitPath(path);
+
     segments.pop();
+
     return joinPath(segments);
 }
 
@@ -106,12 +122,12 @@ export function normalizePath(path: string): string {
     if (!path || path === '/') {
         return '/';
     }
-    
+
     if (path.startsWith('~/')) {
-        return `/${path.slice(2)}`;
+        return `/${ path.slice(2) }`;
     }
-    
-    return path.startsWith('/') ? path : `/${path}`;
+
+    return path.startsWith('/') ? path : `/${ path }`;
 }
 
 /**
@@ -128,7 +144,8 @@ export function isPathExcluded(path: string, patterns?: string | string[]): bool
 
     const normalized = normalizePath(path);
     const list = Array.isArray(patterns) ? patterns : [patterns];
-    return list.some((pattern) => minimatch(normalized, pattern, { dot: true }));
+
+    return list.some(pattern => minimatch(normalized, pattern, { dot: true }));
 }
 
 /**
@@ -161,6 +178,7 @@ export function resolvePath(path: string): string {
                 // Path escapes root, keep at root level
                 continue;
             }
+
             // Go up one directory
             normalizedSegments.pop();
         }
@@ -189,11 +207,11 @@ export function resolvePath(path: string): string {
 export function extname(path: string): string {
     const filename = basename(path);
     const lastDotIndex = filename.lastIndexOf('.');
-    
+
     if (lastDotIndex <= 0 || lastDotIndex === filename.length - 1) {
         return '';
     }
-    
+
     return filename.slice(lastDotIndex);
 }
 
@@ -212,20 +230,16 @@ export function createBuffer(data: string | Uint8Array | ArrayBuffer, encoding: 
  * @param fileHandle - The file handle to read from
  * @returns The raw binary data as Uint8Array
  */
-export async function readFileData(fileHandle: FileSystemFileHandle): Promise<Uint8Array> {
-    const handle = await fileHandle.createSyncAccessHandle();
+export async function readFileData(
+    fileHandle: FileSystemFileHandle,
+    path: string
+): Promise<Uint8Array> {
+    return withLock(path, 'shared', async() => {
+        const file = await fileHandle.getFile();
+        const buf = await file.arrayBuffer();
 
-    try {
-        const size = handle.getSize();
-        const buffer = new Uint8Array(size);
-
-        handle.read(buffer, { at: 0 });
-
-        return buffer;
-    }
-    finally {
-        handle.close();
-    }
+        return new Uint8Array(buf);
+    });
 }
 
 /**
@@ -235,43 +249,55 @@ export async function readFileData(fileHandle: FileSystemFileHandle): Promise<Ui
  * @param data - The data to write to the file
  * @param encoding - The encoding to use
  * @param options - Write options (truncate or append)
+ * @param path - Optional path for locking (if not provided, no locking is used)
  */
 export async function writeFileData(
     fileHandle: FileSystemFileHandle,
     data: string | Uint8Array | ArrayBuffer,
     encoding?: BufferEncoding,
-    options: { truncate?: boolean; append?: boolean } = {}
+    options: { truncate?: boolean; append?: boolean } = {},
+    path?: string
 ): Promise<void> {
-    let handle: FileSystemSyncAccessHandle | null = null;
+    const writeOperation = async() => {
+        let handle: FileSystemSyncAccessHandle | null = null;
 
-    try {
-        handle = await fileHandle.createSyncAccessHandle();
+        const append = options.append || false;
+        const truncate = !append && (options.truncate ?? true);
 
-        const buffer = createBuffer(data, encoding);
-        const writeOffset = options.append ? handle.getSize() : 0;
+        try {
+            handle = await fileHandle.createSyncAccessHandle();
 
-        handle.write(buffer, { at: writeOffset });
+            const buffer = createBuffer(data, encoding);
+            const writeOffset = append ? handle.getSize() : 0;
 
-        if (options.truncate && !options.append) {
-            handle.truncate(buffer.byteLength);
+            handle.write(buffer, { at: writeOffset });
+
+            if (truncate) {
+                handle.truncate(buffer.byteLength);
+            }
+
+            handle.flush();
         }
+        catch (error) {
+            console.error(error);
+            const operation = append ? 'append' : 'write';
 
-        handle.flush();
-    }
-    catch (error) {
-        console.error(error);
-        const operation = options.append ? 'append' : 'write';
-
-        throw new OPFSError(`Failed to ${ operation } file`, `${ operation.toUpperCase() }_FAILED`);
-    }
-    finally {
-        if (handle) {
+            throw new OPFSError(`Failed to ${ operation } file`, `${ operation.toUpperCase() }_FAILED`, undefined, error);
+        }
+        finally {
             try {
-                handle.close();
+                handle?.close();
             }
             catch { /* ~ */ }
         }
+    };
+
+    // If path is provided, use locking; otherwise, just execute the operation
+    if (path) {
+        return withLock(path, 'exclusive', writeOperation);
     }
+
+    return writeOperation();
 }
 
 /**
@@ -284,17 +310,17 @@ export async function writeFileData(
  * @throws Error if file size exceeds maxSize
  */
 export async function calculateFileHash(
-    buffer: File | ArrayBuffer | Uint8Array, 
+    buffer: File | ArrayBuffer | Uint8Array,
     algorithm: string = 'SHA-1',
     maxSize: number = 50 * 1024 * 1024 // 50MB default
 ): Promise<string> {
     if (buffer instanceof File) {
         buffer = await buffer.arrayBuffer();
     }
-    
+
     // Check file size before processing
     if (buffer.byteLength > maxSize) {
-        throw new Error(`File size ${buffer.byteLength} bytes exceeds maximum allowed size ${maxSize} bytes`);
+        throw new Error(`File size ${ buffer.byteLength } bytes exceeds maximum allowed size ${ maxSize } bytes`);
     }
 
     const bufferSource = new Uint8Array(buffer);
@@ -302,6 +328,27 @@ export async function calculateFileHash(
     const hashArray = Array.from(new Uint8Array(hashBuffer));
 
     return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+/**
+ * Compare two Uint8Array buffers for equality
+ * 
+ * @param a - First buffer
+ * @param b - Second buffer
+ * @returns true if buffers are equal, false otherwise
+ */
+export function buffersEqual(a: Uint8Array, b: Uint8Array): boolean {
+    if (a.length !== b.length) {
+        return false;
+    }
+
+    for (let i = 0; i < a.length; i++) {
+        if (a[i] !== b[i]) {
+            return false;
+        }
+    }
+
+    return true;
 }
 
 /**
@@ -321,9 +368,51 @@ export async function calculateFileHash(
  *   const data = await convertBlobToUint8Array(file);
  *   await fs.writeFile('/uploaded-file', data);
  * }
+ * }
  * ```
  */
 export async function convertBlobToUint8Array(blob: Blob): Promise<Uint8Array> {
     const arrayBuffer = await blob.arrayBuffer();
+
     return new Uint8Array(arrayBuffer);
+}
+
+/**
+ * Remove a file or directory entry using a directory handle
+ *
+ * @param parentHandle - The parent directory handle
+ * @param path - The full path of the entry to remove
+ * @param options - Remove options (recursive, force)
+ */
+export async function removeEntry(
+    parentHandle: FileSystemDirectoryHandle,
+    path: string,
+    options: { recursive?: boolean; force?: boolean } = {}
+): Promise<void> {
+    const name = basename(path);
+
+    return withLock(path, 'exclusive', async() => {
+        const recursive = options.recursive ?? false;
+        const force = options.force ?? false;
+
+        try {
+            await parentHandle.removeEntry(name, { recursive });
+        }
+        catch (e: any) {
+            if (e.name === 'NotFoundError') {
+                if (!force) {
+                    throw new OPFSError(`No such file or directory: ${ path }`, 'ENOENT', undefined, e);
+                }
+            }
+            else if (e.name === 'InvalidModificationError') {
+                throw new OPFSError(`Directory not empty: ${ path }. Use recursive option to force removal.`, 'ENOTEMPTY', undefined, e);
+            }
+            else if (e.name === 'TypeMismatchError' && !recursive) {
+                throw new OPFSError(`Cannot remove directory without recursive option: ${ path }`, 'EISDIR', undefined, e);
+            }
+            else {
+                throw new OPFSError(`Failed to remove entry: ${ path }`, 'RM_FAILED', undefined, e);
+            }
+        }
+    });
 }

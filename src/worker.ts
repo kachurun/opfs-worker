@@ -1,30 +1,31 @@
 import { expose } from 'comlink';
-import { minimatch } from 'minimatch';
 
 import { decodeBuffer } from './utils/encoder';
 import {
     FileNotFoundError,
     OPFSError,
-    OPFSNotMountedError,
     PathError
 } from './utils/errors';
 
-import { 
-    calculateFileHash, 
-    checkOPFSSupport, 
-    joinPath, 
-    readFileData, 
-    splitPath, 
-    writeFileData,
+import {
     basename,
-    dirname,
-    normalizePath,
-    resolvePath,
+    buffersEqual,
+    calculateFileHash,
+    checkOPFSSupport,
     convertBlobToUint8Array,
-    isPathExcluded
+    createBuffer,
+    dirname,
+    isPathExcluded,
+    joinPath,
+    normalizePath,
+    readFileData,
+    removeEntry,
+    resolvePath,
+    splitPath,
+    writeFileData
 } from './utils/helpers';
 
-import type { DirentData, FileStat, WatchEvent, OPFSOptions, WatchOptions } from './types';
+import type { DirentData, FileStat, OPFSOptions, WatchEvent, WatchOptions } from './types';
 import type { BufferEncoding } from 'typescript';
 
 /**
@@ -45,7 +46,7 @@ import type { BufferEncoding } from 'typescript';
 export class OPFSWorker {
     /** Root directory handle for the file system */
     private root: FileSystemDirectoryHandle | null = null;
-    
+
     /** Map of watched paths to their last known state and options */
     private watchers = new Map<string, { snapshot: Map<string, FileStat>; options: WatchOptions }>();
 
@@ -69,7 +70,7 @@ export class OPFSWorker {
         hashAlgorithm: null,
         broadcastChannel: 'opfs-worker',
     };
-    
+
 
     /**
      * Notify about internal changes to the file system
@@ -87,7 +88,7 @@ export class OPFSWorker {
 
         // Calculate hash if hashing is enabled and this is a file operation
         let hash: string | undefined;
-        
+
         if (this.options.hashAlgorithm && !event.isDirectory && event.type !== 'removed') {
             try {
                 const stats = await this.stat(event.path);
@@ -95,9 +96,9 @@ export class OPFSWorker {
                 if (stats.isFile && stats.hash) {
                     hash = stats.hash;
                 }
-            } 
-        catch (error) {
-                console.warn(`Failed to calculate hash for ${event.path}:`, error);
+            }
+            catch (error) {
+                console.warn(`Failed to calculate hash for ${ event.path }:`, error);
             }
         }
 
@@ -106,18 +107,18 @@ export class OPFSWorker {
             if (!this.broadcastChannel) {
                 this.broadcastChannel = new BroadcastChannel(this.options.broadcastChannel);
             }
-            
+
             const watchEvent: WatchEvent = {
                 root: this.options.root,
                 timestamp: new Date().toISOString(),
                 ...event,
-                ...(hash && { hash })
+                ...(hash && { hash }),
             };
-            
+
             this.broadcastChannel.postMessage(watchEvent);
-        } 
+        }
         catch (error) {
-            console.warn(`Failed to send event via BroadcastChannel:`, error);
+            console.warn('Failed to send event via BroadcastChannel:', error);
         }
     }
 
@@ -133,9 +134,9 @@ export class OPFSWorker {
      */
     constructor(options?: OPFSOptions) {
         checkOPFSSupport();
-        
+
         if (options) {
-            this.setOptions(options);
+            void this.setOptions(options);
         }
     }
 
@@ -165,26 +166,24 @@ export class OPFSWorker {
         if (this.mountingPromise) {
             await this.mountingPromise;
         }
-        
+
         root = normalizePath(root);
 
+        // eslint-disable-next-line no-async-promise-executor
         this.mountingPromise = new Promise<boolean>(async(resolve, reject) => {
-            this.root = null;
-    
             try {
                 const rootDir = await navigator.storage.getDirectory();
-    
+
                 if (root === '/') {
                     this.root = rootDir;
-                } 
+                }
                 else {
                     this.root = await this.getDirectoryHandle(root, true, rootDir);
                 }
-                
+
                 resolve(true);
             }
             catch (error) {
-                console.error(error);
                 reject(new OPFSError('Failed to initialize OPFS', 'INIT_FAILED'));
             }
             finally {
@@ -225,10 +224,10 @@ export class OPFSWorker {
                 this.broadcastChannel.close();
                 this.broadcastChannel = null;
             }
-            
+
             this.options.broadcastChannel = options.broadcastChannel;
         }
-        
+
         if (options.root !== undefined) {
             this.options.root = options.root;
             await this.mount(this.options.root);
@@ -254,18 +253,14 @@ export class OPFSWorker {
      * ```
      */
     private async getDirectoryHandle(path: string | string[], create: boolean = false, from: FileSystemDirectoryHandle | null = this.root): Promise<FileSystemDirectoryHandle> {
-        if (!from) {
-            throw new OPFSNotMountedError();
-        }
-
         const segments = Array.isArray(path) ? path : splitPath(path);
         let current = from;
 
         for (const segment of segments) {
-            current = await current.getDirectoryHandle(segment, { create });
+            current = await current!.getDirectoryHandle(segment, { create });
         }
 
-        return current;
+        return current!;
     }
 
     /**
@@ -288,10 +283,6 @@ export class OPFSWorker {
      * ```
      */
     private async getFileHandle(path: string | string[], create = false, from: FileSystemDirectoryHandle | null = this.root): Promise<FileSystemFileHandle> {
-        if (!from) {
-            throw new OPFSNotMountedError();
-        }
-
         const segments = splitPath(path);
 
         if (segments.length === 0) {
@@ -392,21 +383,15 @@ export class OPFSWorker {
         encoding: BufferEncoding | 'binary' = 'utf-8'
     ): Promise<string | Uint8Array> {
         await this.mount();
-        
+
         try {
             const fileHandle = await this.getFileHandle(path, false);
-            const buffer = await readFileData(fileHandle);
+            const buffer = await readFileData(fileHandle, path);
 
-            if (encoding === 'binary') {
-                return buffer;
-            }
-
-            return decodeBuffer(buffer, encoding);
+            return (encoding === 'binary') ? buffer : decodeBuffer(buffer, encoding);
         }
         catch (err) {
-            console.error(err);
-
-            throw new FileNotFoundError(path);
+            throw new FileNotFoundError(path, err);
         }
     }
 
@@ -441,11 +426,24 @@ export class OPFSWorker {
         encoding?: BufferEncoding
     ): Promise<void> {
         await this.mount();
-        
-        const fileHandle = await this.getFileHandle(path, true);
 
-        await writeFileData(fileHandle, data, encoding, { truncate: true });
-        await this.notifyChange({ path, type: 'changed', isDirectory: false });
+        const fileHandle = await this.getFileHandle(path, true);
+        const fileExists = await this.exists(path);
+        const currentContent = fileExists ? await readFileData(fileHandle, path) : new Uint8Array(0);
+
+        await writeFileData(fileHandle, data, encoding, {}, path);
+
+        // Only notify changes if the file didn't exist before or if content actually changed
+        if (!fileExists) {
+            await this.notifyChange({ path, type: 'added', isDirectory: false });
+        }
+        else {
+            const newBuffer = createBuffer(data, encoding);
+
+            if (!buffersEqual(currentContent, newBuffer)) {
+                await this.notifyChange({ path, type: 'changed', isDirectory: false });
+            }
+        }
     }
 
     /**
@@ -476,10 +474,10 @@ export class OPFSWorker {
         encoding?: BufferEncoding
     ): Promise<void> {
         await this.mount();
-        
+
         const fileHandle = await this.getFileHandle(path, true);
 
-        await writeFileData(fileHandle, data, encoding, { append: true });
+        await writeFileData(fileHandle, data, encoding, { append: true }, path);
         await this.notifyChange({ path, type: 'changed', isDirectory: false });
     }
 
@@ -507,36 +505,35 @@ export class OPFSWorker {
     async mkdir(path: string, options?: { recursive?: boolean }): Promise<void> {
         await this.mount();
 
-        if (!this.root) {
-            throw new OPFSNotMountedError();
-        }
-
         const recursive = options?.recursive ?? false;
         const segments = splitPath(path);
 
-        let current = this.root;
+        let current: FileSystemDirectoryHandle | null = this.root;
 
         for (let i = 0; i < segments.length; i++) {
             const segment = segments[i];
 
             try {
-                current = await current.getDirectoryHandle(segment!, { create: recursive || i === segments.length - 1 });
+                current = await current!.getDirectoryHandle(segment!, { create: recursive || i === segments.length - 1 });
             }
-            catch (e: any) {
-                if (e.name === 'NotFoundError') {
+            catch (err: any) {
+                if (err.name === 'NotFoundError') {
                     throw new OPFSError(
                         `Parent directory does not exist: ${ joinPath(segments.slice(0, i + 1)) }`,
-                        'ENOENT'
+                        'ENOENT',
+                        undefined,
+                        err
                     );
                 }
 
-                if (e.name === 'TypeMismatchError') {
-                    throw new OPFSError(`Path segment is not a directory: ${ segment }`, 'ENOTDIR');
+                if (err.name === 'TypeMismatchError') {
+                    throw new OPFSError(`Path segment is not a directory: ${ segment }`, 'ENOTDIR', undefined, err);
                 }
 
-                throw new OPFSError('Failed to create directory', 'MKDIR_FAILED');
+                throw new OPFSError('Failed to create directory', 'MKDIR_FAILED', undefined, err);
             }
         }
+
         await this.notifyChange({ path, type: 'added', isDirectory: true });
     }
 
@@ -564,7 +561,7 @@ export class OPFSWorker {
      */
     async stat(path: string): Promise<FileStat> {
         await this.mount();
-        
+
         // Special handling for root directory
         if (path === '/') {
             return {
@@ -576,13 +573,13 @@ export class OPFSWorker {
                 isDirectory: true,
             };
         }
-        
+
         const name = basename(path);
         const parentDir = await this.getDirectoryHandle(dirname(path), false);
         const includeHash = this.options.hashAlgorithm !== null;
 
         try {
-            const fileHandle = await parentDir.getFileHandle(name!, { create: false });
+            const fileHandle = await parentDir.getFileHandle(name, { create: false });
             const file = await fileHandle.getFile();
 
             const baseStat: FileStat = {
@@ -609,12 +606,12 @@ export class OPFSWorker {
         }
         catch (e: any) {
             if (e.name !== 'TypeMismatchError' && e.name !== 'NotFoundError') {
-                throw new OPFSError('Failed to stat (file)', 'STAT_FAILED');
+                throw new OPFSError('Failed to stat (file)', 'STAT_FAILED', undefined, e);
             }
         }
 
         try {
-            await parentDir.getDirectoryHandle(name!, { create: false });
+            await parentDir.getDirectoryHandle(name, { create: false });
 
             return {
                 kind: 'directory',
@@ -627,10 +624,10 @@ export class OPFSWorker {
         }
         catch (e: any) {
             if (e.name === 'NotFoundError') {
-                throw new OPFSError(`No such file or directory: ${ path }`, 'ENOENT');
+                throw new OPFSError(`No such file or directory: ${ path }`, 'ENOENT', undefined, e);
             }
 
-            throw new OPFSError('Failed to stat (directory)', 'STAT_FAILED');
+            throw new OPFSError('Failed to stat (directory)', 'STAT_FAILED', undefined, e);
         }
     }
 
@@ -654,7 +651,7 @@ export class OPFSWorker {
      */
     async readDir(path: string): Promise<DirentData[]> {
         await this.mount();
-        
+
         const dir = await this.getDirectoryHandle(path, false);
 
         const results: DirentData[] = [];
@@ -689,11 +686,11 @@ export class OPFSWorker {
      */
     async exists(path: string): Promise<boolean> {
         await this.mount();
-        
+
         if (path === '/') {
             return true;
         }
-        
+
         const name = basename(path);
         let dir: FileSystemDirectoryHandle | null = null;
 
@@ -717,24 +714,24 @@ export class OPFSWorker {
 
             return true;
         }
-        catch (e: any) {
-            if (e.name !== 'NotFoundError' && e.name !== 'TypeMismatchError') {
-                throw e;
+        catch (err: any) {
+            if (err.name !== 'NotFoundError' && err.name !== 'TypeMismatchError') {
+                throw err;
+            }
+
+            try {
+                await dir.getDirectoryHandle(name, { create: false });
+
+                return true;
+            }
+            catch (err: any) {
+                if (err.name !== 'NotFoundError' && err.name !== 'TypeMismatchError') {
+                    throw err;
+                }
+
+                return false;
             }
         }
-
-        try {
-            await dir.getDirectoryHandle(name, { create: false });
-
-            return true;
-        }
-        catch (e: any) {
-            if (e.name !== 'NotFoundError' && e.name !== 'TypeMismatchError') {
-                throw e;
-            }
-        }
-
-        return false;
     }
 
     /**
@@ -758,7 +755,7 @@ export class OPFSWorker {
      */
     async clear(path: string = '/'): Promise<void> {
         await this.mount();
-        
+
         try {
             const items = await this.readDir(path);
 
@@ -767,7 +764,7 @@ export class OPFSWorker {
 
                 await this.remove(itemPath, { recursive: true });
             }
-            
+
             // Notify about the clear operation
             await this.notifyChange({ path, type: 'changed', isDirectory: true });
         }
@@ -776,7 +773,7 @@ export class OPFSWorker {
                 throw error;
             }
 
-            throw new OPFSError(`Failed to clear directory: ${ path }`, 'CLEAR_FAILED');
+            throw new OPFSError(`Failed to clear directory: ${ path }`, 'CLEAR_FAILED', undefined, error);
         }
     }
 
@@ -806,43 +803,16 @@ export class OPFSWorker {
      */
     async remove(path: string, options?: { recursive?: boolean; force?: boolean }): Promise<void> {
         await this.mount();
-        
-        const recursive = options?.recursive ?? false;
-        const force = options?.force ?? false;
 
         // Special handling for root directory
         if (path === '/') {
             throw new OPFSError('Cannot remove root directory', 'EROOT');
         }
 
-        const name = basename(path);
-
-        if (!name) {
-            throw new PathError('Invalid path', path);
-        }
-
         const parent = await this.getDirectoryHandle(dirname(path), false);
 
-        try {
-            await parent.removeEntry(name, { recursive });
-        }
-        catch (e: any) {
-            if (e.name === 'NotFoundError') {
-                if (!force) {
-                    throw new OPFSError(`No such file or directory: ${ path }`, 'ENOENT');
-                }
-            }
-            else if (e.name === 'InvalidModificationError') {
-                throw new OPFSError(`Directory not empty: ${ path }. Use recursive option to force removal.`, 'ENOTEMPTY');
-            }
-            else if (e.name === 'TypeMismatchError' && !recursive) {
-                throw new OPFSError(`Cannot remove directory without recursive option: ${ path }`, 'EISDIR');
-            }
-            else {
-                throw new OPFSError(`Failed to remove path: ${ path }`, 'RM_FAILED');
-            }
-        }
-        
+        await removeEntry(parent, path, options);
+
         await this.notifyChange({ path, type: 'removed', isDirectory: false });
     }
 
@@ -866,7 +836,7 @@ export class OPFSWorker {
      */
     async realpath(path: string): Promise<string> {
         await this.mount();
-        
+
         try {
             const normalizedPath = resolvePath(path);
             const exists = await this.exists(normalizedPath);
@@ -882,7 +852,7 @@ export class OPFSWorker {
                 throw error;
             }
 
-            throw new OPFSError(`Failed to resolve path: ${ path }`, 'REALPATH_FAILED');
+            throw new OPFSError(`Failed to resolve path: ${ path }`, 'REALPATH_FAILED', undefined, error);
         }
     }
 
@@ -904,7 +874,7 @@ export class OPFSWorker {
      */
     async rename(oldPath: string, newPath: string): Promise<void> {
         await this.mount();
-        
+
         try {
             const sourceExists = await this.exists(oldPath);
 
@@ -914,7 +884,7 @@ export class OPFSWorker {
 
             await this.copy(oldPath, newPath, { recursive: true });
             await this.remove(oldPath, { recursive: true });
-            
+
             // Notify about the rename operation
             await this.notifyChange({ path: oldPath, type: 'removed', isDirectory: false });
             await this.notifyChange({ path: newPath, type: 'added', isDirectory: false });
@@ -924,7 +894,7 @@ export class OPFSWorker {
                 throw error;
             }
 
-            throw new OPFSError(`Failed to rename from ${ oldPath } to ${ newPath }`, 'RENAME_FAILED');
+            throw new OPFSError(`Failed to rename from ${ oldPath } to ${ newPath }`, 'RENAME_FAILED', undefined, error);
         }
     }
 
@@ -955,7 +925,7 @@ export class OPFSWorker {
      */
     async copy(source: string, destination: string, options?: { recursive?: boolean; force?: boolean }): Promise<void> {
         await this.mount();
-        
+
         try {
             const recursive = options?.recursive ?? false;
             const force = options?.force ?? true;
@@ -963,25 +933,25 @@ export class OPFSWorker {
             const sourceExists = await this.exists(source);
 
             if (!sourceExists) {
-                throw new OPFSError(`Source does not exist: ${ source }`, 'ENOENT');
+                throw new OPFSError(`Source does not exist: ${ source }`, 'ENOENT', undefined);
             }
 
             const destExists = await this.exists(destination);
 
             if (destExists && !force) {
-                throw new OPFSError(`Destination already exists: ${ destination }`, 'EEXIST');
+                throw new OPFSError(`Destination already exists: ${ destination }`, 'EEXIST', undefined);
             }
 
             const sourceStats = await this.stat(source);
 
             if (sourceStats.isFile) {
                 const content = await this.readFile(source, 'binary');
-                
+
                 await this.writeFile(destination, content);
             }
             else {
                 if (!recursive) {
-                    throw new OPFSError(`Cannot copy directory without recursive option: ${ source }`, 'EISDIR');
+                    throw new OPFSError(`Cannot copy directory without recursive option: ${ source }`, 'EISDIR', undefined);
                 }
 
                 await this.mkdir(destination, { recursive: true });
@@ -995,7 +965,7 @@ export class OPFSWorker {
                     await this.copy(sourceItemPath, destItemPath, { recursive: true, force });
                 }
             }
-            
+
             // Notify about the copy operation
             await this.notifyChange({ path: destination, type: 'added', isDirectory: false });
         }
@@ -1004,7 +974,7 @@ export class OPFSWorker {
                 throw error;
             }
 
-            throw new OPFSError(`Failed to copy from ${ source } to ${ destination }`, 'CP_FAILED');
+            throw new OPFSError(`Failed to copy from ${ source } to ${ destination }`, 'CP_FAILED', undefined, error);
         }
     }
 
@@ -1014,7 +984,7 @@ export class OPFSWorker {
      * @param path - The path to watch
      * @param options - Watch options
      * @param options.recursive - Whether to watch recursively (default: true)
-     * @param options.excludes - Glob pattern(s) to exclude (minimatch).
+     * @param options.exclude - Glob pattern(s) to exclude (minimatch).
      * @returns Promise that resolves when watching starts
      * 
      * @example
@@ -1031,7 +1001,7 @@ export class OPFSWorker {
      */
     async watch(path: string, options?: WatchOptions): Promise<void> {
         await this.mount();
-        
+
         const normalizedPath = normalizePath(path);
         const watchOptions: WatchOptions = { recursive: true, ...options };
         const snapshot = await this.buildSnapshot(normalizedPath, watchOptions);
@@ -1050,6 +1020,7 @@ export class OPFSWorker {
      */
     unwatch(path: string): void {
         const normalizedPath = normalizePath(path);
+
         this.watchers.delete(normalizedPath);
 
         if (this.watchers.size === 0 && this.watchTimer) {
@@ -1069,42 +1040,45 @@ export class OPFSWorker {
             this.broadcastChannel.close();
             this.broadcastChannel = null;
         }
-        
+
         if (this.watchTimer) {
             clearInterval(this.watchTimer);
             this.watchTimer = null;
         }
-        
+
         this.watchers.clear();
     }
 
     private async buildSnapshot(root: string, options?: WatchOptions): Promise<Map<string, FileStat>> {
         const result = new Map<string, FileStat>();
         const recursive = options?.recursive ?? true;
-        const excludePatterns: string | string[] | undefined = options?.excludes;
-        
+        const excludePatterns: string | string[] | undefined = options?.exclude;
+
         const save = async(path: string) => {
             const stat = await this.stat(path);
-            result.set(path, stat);
-            return stat;
-        }
 
-        const walk = async (current: string) => {
+            result.set(path, stat);
+
+            return stat;
+        };
+
+        const walk = async(current: string) => {
             if (isPathExcluded(current, excludePatterns)) {
                 return;
             }
-            
+
             const stat = await save(current);
 
             if (stat.isDirectory) {
                 const entries = await this.readDir(current);
+
                 for (const entry of entries) {
                     const child = `${ current === '/' ? '' : current }/${ entry.name }`;
-                    
+
                     // Recursive mode: walk into all subdirectories
                     if (recursive) {
                         await walk(child);
-                    } 
+                    }
                     // Non-recursive mode: add immediate children to snapshot but don't walk into subdirectories
                     else if (!isPathExcluded(child, excludePatterns)) {
                         await save(child);
@@ -1114,6 +1088,7 @@ export class OPFSWorker {
         };
 
         await walk(root);
+
         return result;
     }
 
@@ -1138,11 +1113,11 @@ export class OPFSWorker {
 
                     for (const [p, stat] of next) {
                         const old = prev.get(p);
-                        
-                        if (isPathExcluded(p, options.excludes)) {
+
+                        if (isPathExcluded(p, options.exclude)) {
                             continue;
                         }
-                        
+
                         if (!old) {
                             await this.notifyChange({ path: p, type: 'added', isDirectory: stat.isDirectory });
                         }
@@ -1152,12 +1127,13 @@ export class OPFSWorker {
                     }
 
                     for (const p of prev.keys()) {
-                        if (isPathExcluded(p, options.excludes)) {
+                        if (isPathExcluded(p, options.exclude)) {
                             continue;
                         }
-                        
+
                         if (!next.has(p)) {
                             const oldStat = prev.get(p);
+
                             await this.notifyChange({ path: p, type: 'removed', isDirectory: oldStat?.isDirectory ?? false });
                         }
                     }
@@ -1201,7 +1177,7 @@ export class OPFSWorker {
      */
     async sync(entries: [string, string | Uint8Array | Blob][], options?: { cleanBefore?: boolean }): Promise<void> {
         await this.mount();
-        
+
         try {
             const cleanBefore = options?.cleanBefore ?? false;
 
@@ -1223,7 +1199,7 @@ export class OPFSWorker {
 
                 await this.writeFile(normalizedPath, fileData);
             }
-            
+
             // Notify about the sync operation
             await this.notifyChange({ path: '/', type: 'changed', isDirectory: true });
         }
@@ -1232,12 +1208,12 @@ export class OPFSWorker {
                 throw error;
             }
 
-            throw new OPFSError('Failed to sync file system', 'SYNC_FAILED');
+            throw new OPFSError('Failed to sync file system', 'SYNC_FAILED', undefined, error);
         }
     }
 }
 
 // Only expose the worker when running in a Web Worker environment
-if (typeof self !== 'undefined' && self.constructor.name === 'DedicatedWorkerGlobalScope') {
-  expose(new OPFSWorker());
+if (typeof globalThis !== 'undefined' && globalThis.constructor.name === 'DedicatedWorkerGlobalScope') {
+    expose(new OPFSWorker());
 }

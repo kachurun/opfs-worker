@@ -3,7 +3,7 @@ import { wrap } from 'comlink';
 import WorkerCtor from './worker?worker&inline';
 // import SharedWorkerCtor from './worker?sharedworker&inline';
 
-import type { OPFSWorker, RemoteOPFSWorker, OPFSOptions } from './types';
+import type { OPFSOptions, OPFSWorker, RemoteOPFSWorker } from './types';
 
 export * from './types';
 export * from './utils/errors';
@@ -15,16 +15,16 @@ export * from './utils/encoder';
  * @param options - Optional configuration options
  * @returns Promise resolving to the file system interface
  */
-export function createWorker(
+export async function createWorker(
     options?: OPFSOptions
-): RemoteOPFSWorker {
+): Promise<RemoteOPFSWorker> {
     const wrapped = wrap<OPFSWorker>(new WorkerCtor());
-    
+
     // Set up options if provided
     if (options) {
-        wrapped.setOptions(options);
+        await wrapped.setOptions(options);
     }
-    
+
     return wrapped;
 }
 
@@ -43,13 +43,13 @@ export function createWorker(
 //     const sharedWorker = new SharedWorkerCtor({
 //         name: workerName
 //     });
-    
+
 //     const wrapped = wrap<OPFSWorker>(sharedWorker.port);
-    
+
 //     // Set up options if provided
 //     if (options) {
 //         wrapped.setOptions(options);
 //     }
-    
+
 //     return wrapped;
 // }
