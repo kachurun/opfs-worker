@@ -1,6 +1,6 @@
 {
     "name": "opfs-worker",
-    "version": "0.4.0",
+    "version": "0.4.1",
     "description": "A robust TypeScript library for working with Origin Private File System (OPFS) through Web Workers",
     "type": "module",
     "main": "dist/index.js",
@@ -25,7 +25,7 @@
     "scripts": {
         "build": "vite build && tsc -p tsconfig.build.json",
         "build:demo": "vite build demo --base=./",
-        "watch": "vite build --watch",
+        "watch": "concurrently \"vite build --watch\" \"tsc -p tsconfig.build.json --watch\"",
         "dev": "vite serve demo",
         "preview": "vite preview demo",
         "type-check": "tsc --noEmit",
@@ -59,6 +59,7 @@
     "devDependencies": {
         "@changesets/cli": "^2.29.5",
         "@flexbe/eslint-config": "^1.0.11",
+        "@types/minimatch": "^6.0.0",
         "@types/node": "^24.2.0",
         "@types/react": "^19.1.9",
         "@types/react-dom": "^19.1.7",
@@ -81,7 +82,8 @@
     },
     "packageManager": "bun@1.2.19",
     "dependencies": {
-        "comlink": "^4.4.2"
+        "comlink": "^4.4.2",
+        "minimatch": "^10.0.3"
     },
     "publishConfig": {
         "access": "public"

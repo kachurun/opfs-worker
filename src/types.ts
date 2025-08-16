@@ -45,3 +45,13 @@ export interface OPFSOptions {
     /** Custom name for the broadcast channel (default: 'opfs-worker') */
     broadcastChannel?: string | null;
 }
+
+export interface WatchOptions {
+    /** Whether to watch recursively (default: true) */
+    recursive?: boolean;
+    /**
+     * Glob patterns to exclude from watching (minimatch syntax).
+     * Examples: '**/node_modules/**', '**/*.tmp', '**/something_*'
+     */
+    excludes?: string | string[];
+}

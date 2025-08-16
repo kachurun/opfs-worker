@@ -192,7 +192,7 @@ export const LogViewer: React.FC = () => {
 
                 // Now test indexing with hashes
                 log('\n🔐 Index with file hashes:');
-                const indexWithHashes = await fs.index({ includeHash: true });
+                const indexWithHashes = await fs.index();
                 let hashedFileCount = 0;
 
                 for (const [path, stat] of indexWithHashes) {
@@ -253,25 +253,47 @@ export const LogViewer: React.FC = () => {
                     watchEvents.push(event.data);
                     log(`👀 Watch event: ${event.data.type} - ${event.data.path}`);
                 };
-
-                // Watch the root directory
+                
+                // Watch the root directory recursively (default behavior)
                 await fs.watch('/');
-                log('✅ Started watching root directory');
-
+                log('✅ Started watching root directory recursively');
+                
                 // Create a file to trigger watch event
                 await fs.writeFile('/watch-test.txt', 'Watch test content');
                 await new Promise(r => setTimeout(r, 150)); // Wait for watch to detect
                 log(`✅ Watch detected ${watchEvents.length} events`);
-
+                
                 // Modify the file
                 await fs.writeFile('/watch-test.txt', 'Modified content');
-                await new Promise(r => setTimeout(r, 150));
+                await new Promise(r => setTimeout(r, 150)); // Wait for watch to detect
                 log(`✅ Watch detected ${watchEvents.length} events total`);
-
-                // Clean up
+                
+                // Test shallow watching
+                log('\n👀 Testing shallow watching...');
+                await fs.mkdir('/shallow-demo', { recursive: true });
+                await fs.mkdir('/shallow-demo/nested', { recursive: true });
+                
+                // Watch with shallow option
+                await fs.watch('/shallow-demo', { recursive: false });
+                log('✅ Started shallow watching /shallow-demo (non-recursive)');
+                
+                // Create file in immediate directory (should be detected)
+                await fs.writeFile('/shallow-demo/immediate.txt', 'Immediate file');
+                await new Promise(r => setTimeout(r, 150));
+                log(`✅ Shallow watch detected immediate file changes`);
+                
+                // Create file in nested directory (should NOT be detected with shallow watching)
+                await fs.writeFile('/shallow-demo/nested/deep.txt', 'Deep nested file');
+                await new Promise(r => setTimeout(r, 150));
+                log(`✅ Shallow watch correctly ignored nested changes`);
+                
+                // Cleanup
                 fs.unwatch('/');
+                fs.unwatch('/shallow-demo');
                 await fs.remove('/watch-test.txt');
+                await fs.remove('/shallow-demo', { recursive: true });
                 channel.close();
+                
                 log('✅ Stopped watching and cleaned up');
 
                 // Final summary

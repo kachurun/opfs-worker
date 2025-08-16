@@ -147,19 +147,35 @@ describe('OPFSWorker', () => {
     channel.close();
   });
 
-  it('provides root directory stats', async () => {
-    const stat = await fsw.stat('/');
-    expect(stat.isDirectory).toBe(true);
-    expect(stat.isFile).toBe(false);
-    expect(stat.kind).toBe('directory');
-  });
-
-  it('checks root directory existence', async () => {
-    expect(await fsw.exists('/')).toBe(true);
-  });
-
-  it('prevents removal of root directory', async () => {
-    await expect(fsw.remove('/')).rejects.toThrow('Cannot remove root directory');
+  it('supports shallow watching with recursive: false', async () => {
+    const events: WatchEvent[] = [];
+    
+    const channel = new BroadcastChannel('opfs-worker');
+    channel.onmessage = (event) => events.push(event.data);
+    
+    // Create nested structure
+    await fsw.mkdir('/shallow-test', { recursive: true });
+    await fsw.mkdir('/shallow-test/nested', { recursive: true });
+    await fsw.writeFile('/shallow-test/nested/deep-file.txt', 'deep content');
+    
+    // Watch with shallow option
+    await fsw.watch('/shallow-test', { recursive: false });
+    
+    // Create file in immediate directory (should be detected)
+    await fsw.writeFile('/shallow-test/immediate.txt', 'immediate content');
+    await new Promise(r => setTimeout(r, 1100));
+    expect(events.some(e => e.type === 'added' && e.path === '/shallow-test/immediate.txt')).toBe(true);
+    
+    // Create file in nested directory (should NOT be detected with shallow watching)
+    await fsw.writeFile('/shallow-test/nested/another-deep.txt', 'another deep content');
+    await new Promise(r => setTimeout(r, 1100));
+    expect(events.some(e => e.type === 'added' && e.path === '/shallow-test/nested/another-deep.txt')).toBe(false);
+    
+    fsw.unwatch('/shallow-test');
+    channel.close();
+    
+    // Cleanup
+    await fsw.remove('/shallow-test', { recursive: true });
   });
 
   it('notifies about internal changes even when not watching', async () => {

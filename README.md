@@ -338,7 +338,7 @@ Check out the live demo powered by Vite and hosted on GitHub Pages.
     - [Sync File System](#sync-file-system)
       - [`sync(entries: [string, string | Uint8Array | Blob][], options?: { cleanBefore?: boolean }): Promise<void>`](#syncentries-string-string--uint8array--blob-options--cleanbefore-boolean--promisevoid)
     - [Watch](#watch)
-      - [`watch(path: string): Promise<void>`](#watchpath-string-promisevoid)
+      - [`watch(path: string, options?: WatchOptions): Promise<void>`](#watchpath-string-options-watchoptions-promisevoid)
     - [Unwatch](#unwatch)
       - [`unwatch(path: string): void`](#unwatchpath-string-void)
     - [Dispose](#dispose)
@@ -360,6 +360,7 @@ Check out the live demo powered by Vite and hosted on GitHub Pages.
   - [Types](#types)
     - [`FileStat`](#filestat)
     - [`DirentData`](#direntdata)
+    - [`WatchOptions`](#watchoptions)
     - [`RemoteOPFSWorker`](#remoteopfsworker)
   - [Error Types](#error-types)
   - [Browser Support](#browser-support)
@@ -737,14 +738,20 @@ await fs.sync(entries, { cleanBefore: true });
 
 ### Watch
 
-#### `watch(path: string): Promise<void>`
+#### `watch(path: string, options?: WatchOptions): Promise<void>`
 
 Start watching a file or directory for changes. Detected changes are sent via BroadcastChannel
 using the channel name specified in the `broadcastChannel` option.
 
 ```typescript
-// Start watching a directory
+// Start watching a directory recursively (default behavior)
 await fs.watch('/docs');
+
+// Start watching a directory shallow (only immediate children)
+await fs.watch('/docs', { recursive: false });
+
+// Watch a single file (non-recursive)
+await fs.watch('/config.json', { recursive: false });
 
 // Listen for changes via BroadcastChannel
 const channel = new BroadcastChannel('opfs-worker'); // or your custom channel name
@@ -758,6 +765,10 @@ channel.onmessage = (event) => {
 **Parameters:**
 
 - `path`: File or directory to watch
+- `options` (optional): Watch options
+  - `options.recursive` (optional): Whether to watch recursively (default: `true`)
+    - `true`: Watch the entire directory tree (current behavior)
+    - `false`: Only watch the specified path and its immediate children (shallow watching)
 
 **Note:** File change events are sent via BroadcastChannel. Set the `broadcastChannel` option to customize the channel name, or use the default 'opfs-worker' channel. The `createWorker()` function automatically handles the BroadcastChannel setup.
 
@@ -1033,6 +1044,16 @@ interface DirentData {
     kind: 'file' | 'directory';
     isFile: boolean;
     isDirectory: boolean;
+}
+```
+
+### `WatchOptions`
+
+Options for file watching operations.
+
+```typescript
+interface WatchOptions {
+    recursive?: boolean; // Whether to watch recursively (default: true)
 }
 ```
 

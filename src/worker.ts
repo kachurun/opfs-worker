@@ -1,4 +1,5 @@
 import { expose } from 'comlink';
+import minimatch from 'minimatch';
 
 import { decodeBuffer } from './utils/encoder';
 import {
@@ -22,7 +23,7 @@ import {
     convertBlobToUint8Array
 } from './utils/helpers';
 
-import type { DirentData, FileStat, WatchEvent, OPFSOptions } from './types';
+import type { DirentData, FileStat, WatchEvent, OPFSOptions, WatchOptions } from './types';
 import type { BufferEncoding } from 'typescript';
 
 /**
@@ -44,8 +45,8 @@ export class OPFSWorker {
     /** Root directory handle for the file system */
     private root: FileSystemDirectoryHandle | null = null;
     
-    /** Map of watched paths to their last known state */
-    private watchers = new Map<string, Map<string, FileStat>>();
+    /** Map of watched paths to their last known state and options */
+    private watchers = new Map<string, { snapshot: Map<string, FileStat>; options: WatchOptions }>();
 
     /** Interval handle for polling watched paths */
     private watchTimer: ReturnType<typeof setInterval> | null = null;
@@ -301,7 +302,6 @@ export class OPFSWorker {
 
         return dir.getFileHandle(fileName, { create });
     }
-
 
     /**
      * Get a complete index of all files and directories in the file system
@@ -1009,14 +1009,32 @@ export class OPFSWorker {
 
     /**
      * Start watching a file or directory for changes
+     * 
+     * @param path - The path to watch
+     * @param options - Watch options
+     * @param options.recursive - Whether to watch recursively (default: true)
+     * @returns Promise that resolves when watching starts
+     * 
+     * @example
+     * ```typescript
+     * // Watch entire directory tree recursively (default)
+     * await fs.watch('/data');
+     * 
+     * // Watch only immediate children (shallow)
+     * await fs.watch('/data', { recursive: false });
+     * 
+     * // Watch a single file
+     * await fs.watch('/config.json', { recursive: false });
+     * ```
      */
-    async watch(path: string): Promise<void> {
+    async watch(path: string, options?: WatchOptions): Promise<void> {
         await this.mount();
         
         const normalizedPath = normalizePath(path);
-        const snapshot = await this.buildSnapshot(normalizedPath);
+        const watchOptions: WatchOptions = { recursive: true, ...options };
+        const snapshot = await this.buildSnapshot(normalizedPath, watchOptions.recursive);
 
-        this.watchers.set(normalizedPath, snapshot);
+        this.watchers.set(normalizedPath, { snapshot, options: watchOptions });
 
         if (!this.watchTimer) {
             this.watchTimer = setInterval(() => {
@@ -1058,7 +1076,7 @@ export class OPFSWorker {
         this.watchers.clear();
     }
 
-    private async buildSnapshot(root: string): Promise<Map<string, FileStat>> {
+    private async buildSnapshot(root: string, recursive: boolean = true): Promise<Map<string, FileStat>> {
         const result = new Map<string, FileStat>();
 
         const walk = async (current: string) => {
@@ -1069,7 +1087,16 @@ export class OPFSWorker {
                 const entries = await this.readDir(current);
                 for (const entry of entries) {
                     const child = `${ current === '/' ? '' : current }/${ entry.name }`;
-                    await walk(child);
+                    
+                    // Recursive mode: walk into all subdirectories
+                    if (recursive) {
+                        await walk(child);
+                    } 
+                    // Non-recursive mode: add immediate children to snapshot but don't walk into subdirectories
+                    else {
+                        const childStat = await this.stat(child);
+                        result.set(child, childStat);
+                    }
                 }
             }
         };
@@ -1087,11 +1114,11 @@ export class OPFSWorker {
 
         try {
             await Promise.all(
-                [...this.watchers.entries()].map(async([root, prev]) => {
+                [...this.watchers.entries()].map(async([root, { snapshot: prev, options }]) => {
                     let next: Map<string, FileStat>;
 
                     try {
-                        next = await this.buildSnapshot(root);
+                        next = await this.buildSnapshot(root, options.recursive);
                     }
                     catch (error) {
                         next = new Map();
@@ -1115,7 +1142,7 @@ export class OPFSWorker {
                         }
                     }
 
-                    this.watchers.set(root, next);
+                    this.watchers.set(root, { snapshot: next, options });
                 })
             );
         }

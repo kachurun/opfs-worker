@@ -1,20 +1,26 @@
 # opfs-worker
 
+## 0.4.1
+
+### Patch Changes
+
+-   Optional recursive flag for watch
+
 ## 0.4.0
 
 ### Breaking Changes
 
-- **BREAKING**: Moved `rootPath` from class property to `OPFSOptions.root`
-- **BREAKING**: `mount()` method is now private and no longer accessible
-- **BREAKING**: `setOptions()` is now async and automatically remounts when root changes
-- **BREAKING**: File system now auto-mounts to the configured root path
+-   **BREAKING**: Moved `rootPath` from class property to `OPFSOptions.root`
+-   **BREAKING**: `mount()` method is now private and no longer accessible
+-   **BREAKING**: `setOptions()` is now async and automatically remounts when root changes
+-   **BREAKING**: File system now auto-mounts to the configured root path
 
 ### Changes
 
-- Root path is now configured through options instead of manual mounting
-- All file operations automatically mount to the configured root when needed
-- Improved isolation and separation of file system instances
-- Simplified API - no need to call mount() manually
+-   Root path is now configured through options instead of manual mounting
+-   All file operations automatically mount to the configured root when needed
+-   Improved isolation and separation of file system instances
+-   Simplified API - no need to call mount() manually
 
 ## 0.3.3
 
