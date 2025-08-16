@@ -1,5 +1,5 @@
 import { expose } from 'comlink';
-import minimatch from 'minimatch';
+import { minimatch } from 'minimatch';
 
 import { decodeBuffer } from './utils/encoder';
 import {
@@ -20,7 +20,8 @@ import {
     dirname,
     normalizePath,
     resolvePath,
-    convertBlobToUint8Array
+    convertBlobToUint8Array,
+    isPathExcluded
 } from './utils/helpers';
 
 import type { DirentData, FileStat, WatchEvent, OPFSOptions, WatchOptions } from './types';
@@ -1013,6 +1014,7 @@ export class OPFSWorker {
      * @param path - The path to watch
      * @param options - Watch options
      * @param options.recursive - Whether to watch recursively (default: true)
+     * @param options.excludes - Glob pattern(s) to exclude (minimatch).
      * @returns Promise that resolves when watching starts
      * 
      * @example
@@ -1032,7 +1034,7 @@ export class OPFSWorker {
         
         const normalizedPath = normalizePath(path);
         const watchOptions: WatchOptions = { recursive: true, ...options };
-        const snapshot = await this.buildSnapshot(normalizedPath, watchOptions.recursive);
+        const snapshot = await this.buildSnapshot(normalizedPath, watchOptions);
 
         this.watchers.set(normalizedPath, { snapshot, options: watchOptions });
 
@@ -1076,12 +1078,23 @@ export class OPFSWorker {
         this.watchers.clear();
     }
 
-    private async buildSnapshot(root: string, recursive: boolean = true): Promise<Map<string, FileStat>> {
+    private async buildSnapshot(root: string, options?: WatchOptions): Promise<Map<string, FileStat>> {
         const result = new Map<string, FileStat>();
+        const recursive = options?.recursive ?? true;
+        const excludePatterns: string | string[] | undefined = options?.excludes;
+        
+        const save = async(path: string) => {
+            const stat = await this.stat(path);
+            result.set(path, stat);
+            return stat;
+        }
 
         const walk = async (current: string) => {
-            const stat = await this.stat(current);
-            result.set(current, stat);
+            if (isPathExcluded(current, excludePatterns)) {
+                return;
+            }
+            
+            const stat = await save(current);
 
             if (stat.isDirectory) {
                 const entries = await this.readDir(current);
@@ -1093,9 +1106,8 @@ export class OPFSWorker {
                         await walk(child);
                     } 
                     // Non-recursive mode: add immediate children to snapshot but don't walk into subdirectories
-                    else {
-                        const childStat = await this.stat(child);
-                        result.set(child, childStat);
+                    else if (!isPathExcluded(child, excludePatterns)) {
+                        await save(child);
                     }
                 }
             }
@@ -1118,7 +1130,7 @@ export class OPFSWorker {
                     let next: Map<string, FileStat>;
 
                     try {
-                        next = await this.buildSnapshot(root, options.recursive);
+                        next = await this.buildSnapshot(root, options);
                     }
                     catch (error) {
                         next = new Map();
@@ -1126,6 +1138,10 @@ export class OPFSWorker {
 
                     for (const [p, stat] of next) {
                         const old = prev.get(p);
+                        
+                        if (isPathExcluded(p, options.excludes)) {
+                            continue;
+                        }
                         
                         if (!old) {
                             await this.notifyChange({ path: p, type: 'added', isDirectory: stat.isDirectory });
@@ -1136,6 +1152,10 @@ export class OPFSWorker {
                     }
 
                     for (const p of prev.keys()) {
+                        if (isPathExcluded(p, options.excludes)) {
+                            continue;
+                        }
+                        
                         if (!next.has(p)) {
                             const oldStat = prev.get(p);
                             await this.notifyChange({ path: p, type: 'removed', isDirectory: oldStat?.isDirectory ?? false });

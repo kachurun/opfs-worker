@@ -49,9 +49,6 @@ export interface OPFSOptions {
 export interface WatchOptions {
     /** Whether to watch recursively (default: true) */
     recursive?: boolean;
-    /**
-     * Glob patterns to exclude from watching (minimatch syntax).
-     * Examples: '**/node_modules/**', '**/*.tmp', '**/something_*'
-     */
+    /** Glob patterns to exclude from watching (minimatch syntax) */
     excludes?: string | string[];
 }

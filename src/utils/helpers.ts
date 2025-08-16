@@ -1,4 +1,5 @@
 import { encodeString } from './encoder';
+import { minimatch } from 'minimatch';
 import { OPFSError, OPFSNotSupportedError } from './errors';
 
 import type { BufferEncoding } from 'typescript';
@@ -111,6 +112,23 @@ export function normalizePath(path: string): string {
     }
     
     return path.startsWith('/') ? path : `/${path}`;
+}
+
+/**
+ * Check if a path matches any of the provided exclude patterns (minimatch syntax)
+ *
+ * @param path - Absolute or relative path
+ * @param patterns - Glob pattern(s) to match against
+ * @returns true if excluded, false otherwise
+ */
+export function isPathExcluded(path: string, patterns?: string | string[]): boolean {
+    if (!patterns || (Array.isArray(patterns) && patterns.length === 0)) {
+        return false;
+    }
+
+    const normalized = normalizePath(path);
+    const list = Array.isArray(patterns) ? patterns : [patterns];
+    return list.some((pattern) => minimatch(normalized, pattern, { dot: true }));
 }
 
 /**
