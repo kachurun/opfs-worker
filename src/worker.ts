@@ -14,6 +14,7 @@ import {
     checkOPFSSupport,
     convertBlobToUint8Array,
     dirname,
+    isBinaryFileExtension,
     joinPath,
     matchMinimatch,
     normalizeMinimatch,
@@ -389,9 +390,13 @@ export class OPFSWorker {
     async readFile(path: string, encoding?: BufferEncoding): Promise<string>;
     async readFile(
         path: string,
-        encoding: BufferEncoding | 'binary' = 'utf-8'
+        encoding?: BufferEncoding | 'binary'
     ): Promise<string | Uint8Array> {
         await this.mount();
+
+        if (!encoding) {
+            encoding = (isBinaryFileExtension(path)) ? 'binary' : 'utf-8';
+        }
 
         try {
             const fileHandle = await this.getFileHandle(path, false);
@@ -439,7 +444,11 @@ export class OPFSWorker {
         const fileExists = await this.exists(path);
         const fileHandle = await this.getFileHandle(path, true);
 
-        await writeFileData(fileHandle, data, encoding, {}, path);
+        if (!encoding) {
+            encoding = (typeof data !== 'string' || isBinaryFileExtension(path)) ? 'binary' : 'utf-8';
+        }
+
+        await writeFileData(fileHandle, data, encoding, path);
 
         // Only notify changes if the file didn't exist before or if content actually changed
         if (!fileExists) {
@@ -481,7 +490,11 @@ export class OPFSWorker {
 
         const fileHandle = await this.getFileHandle(path, true);
 
-        await writeFileData(fileHandle, data, encoding, { append: true }, path);
+        if (!encoding) {
+            encoding = (typeof data !== 'string' || isBinaryFileExtension(path)) ? 'binary' : 'utf-8';
+        }
+
+        await writeFileData(fileHandle, data, encoding, path, { append: true });
         await this.notifyChange({ path, type: 'changed', isDirectory: false });
     }
 

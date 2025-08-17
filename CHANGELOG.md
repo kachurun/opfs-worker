@@ -1,5 +1,11 @@
 # opfs-worker
 
+## 0.5.0
+
+### Minor Changes
+
+-   New watching mechanism
+
 ## 0.4.3
 
 ### Patch Changes

@@ -6,6 +6,88 @@ import { OPFSError, OPFSNotSupportedError } from './errors';
 import type { BufferEncoding } from 'typescript';
 
 /**
+ * Common binary file extensions
+ */
+export const BINARY_FILE_EXTENSIONS = [
+    // Images
+    '.jpg',
+    '.jpeg',
+    '.png',
+    '.gif',
+    '.bmp',
+    '.webp',
+    '.svg',
+    '.ico',
+    '.tiff',
+    '.tga',
+    // Audio
+    '.mp3',
+    '.wav',
+    '.ogg',
+    '.flac',
+    '.aac',
+    '.wma',
+    '.m4a',
+    // Video
+    '.mp4',
+    '.avi',
+    '.mov',
+    '.wmv',
+    '.flv',
+    '.webm',
+    '.mkv',
+    '.m4v',
+    // Documents
+    '.pdf',
+    '.doc',
+    '.docx',
+    '.xls',
+    '.xlsx',
+    '.ppt',
+    '.pptx',
+    // Archives
+    '.zip',
+    '.rar',
+    '.7z',
+    '.tar',
+    '.gz',
+    '.bz2',
+    // Executables
+    '.exe',
+    '.dll',
+    '.so',
+    '.dylib',
+    '.bin',
+    // Other binary formats
+    '.dat',
+    '.db',
+    '.sqlite',
+    '.bin',
+    '.obj',
+    '.fbx',
+    '.3ds',
+] as const;
+
+/**
+ * Check if a file extension indicates a binary file
+ * 
+ * @param path - The file path or filename
+ * @returns True if the file extension suggests binary content
+ * 
+ * @example
+ * ```typescript
+ * isBinaryFileExtension('/path/to/image.jpg'); // true
+ * isBinaryFileExtension('/path/to/document.txt'); // false
+ * isBinaryFileExtension('data.bin'); // true
+ * ```
+ */
+export function isBinaryFileExtension(path: string): boolean {
+    const extension = path.toLowerCase().substring(path.lastIndexOf('.'));
+
+    return BINARY_FILE_EXTENSIONS.includes(extension as any);
+}
+
+/**
  * Check if the browser supports the OPFS API
  * 
  * @throws {OPFSNotSupportedError} If the browser does not support the OPFS API
@@ -271,8 +353,8 @@ export async function writeFileData(
     fileHandle: FileSystemFileHandle,
     data: string | Uint8Array | ArrayBuffer,
     encoding?: BufferEncoding,
-    options: { truncate?: boolean; append?: boolean } = {},
-    path?: string
+    path?: string,
+    options: { truncate?: boolean; append?: boolean } = {}
 ): Promise<void> {
     const writeOperation = async() => {
         let handle: FileSystemSyncAccessHandle | null = null;
