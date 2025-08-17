@@ -46,6 +46,11 @@ export interface OPFSOptions {
     broadcastChannel?: string | BroadcastChannel | null;
 }
 
+export interface RenameOptions {
+    /** Whether to overwrite existing files (default: false) */
+    overwrite?: boolean;
+}
+
 export interface WatchOptions {
     /** Whether to watch recursively (default: true) */
     recursive?: boolean;

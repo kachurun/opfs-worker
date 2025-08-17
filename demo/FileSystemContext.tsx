@@ -33,7 +33,7 @@ export const FileSystemProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     useEffect(() => {
         const initializeFileSystem = async() => {
             try {
-                const fileSystem = createWorker({ root: '/opfs-worker-demo' });
+                const fileSystem = createWorker({ rootDir: '/opfs-worker-demo' });
 
                 fsRef.current = fileSystem;
                 setIsInitialized(true);

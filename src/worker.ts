@@ -26,7 +26,7 @@ import {
     writeFileData
 } from './utils/helpers';
 
-import type { DirentData, FileStat, OPFSOptions, WatchEvent, WatchOptions, WatchSnapshot } from './types';
+import type { DirentData, FileStat, OPFSOptions, RenameOptions, WatchEvent, WatchOptions, WatchSnapshot } from './types';
 import type { BufferEncoding } from 'typescript';
 
 /**
@@ -166,30 +166,25 @@ export class OPFSWorker {
      * await fs.mount('/my-app');
      * ```
      */
-    private async mount(root: string = this.options.root): Promise<boolean> {
+    private async mount(): Promise<boolean> {
+        const root = this.options.root;
+
         // If already mounting, wait for previous operation to complete first
         if (this.mountingPromise) {
             await this.mountingPromise;
         }
-
-        root = normalizePath(root);
 
         // eslint-disable-next-line no-async-promise-executor
         this.mountingPromise = new Promise<boolean>(async(resolve, reject) => {
             try {
                 const rootDir = await navigator.storage.getDirectory();
 
-                if (root === '/') {
-                    this.root = rootDir;
-                }
-                else {
-                    this.root = await this.getDirectoryHandle(root, true, rootDir);
-                }
+                this.root = (root === '/') ? rootDir : await this.getDirectoryHandle(root, true, rootDir);
 
                 resolve(true);
             }
             catch (error) {
-                reject(new OPFSError('Failed to initialize OPFS', 'INIT_FAILED'));
+                reject(new OPFSError('Failed to initialize OPFS', 'INIT_FAILED', root, error));
             }
             finally {
                 this.mountingPromise = null;
@@ -234,13 +229,13 @@ export class OPFSWorker {
         }
 
         if (options.root !== undefined) {
-            this.options.root = options.root;
+            this.options.root = normalizePath(options.root);
 
             if (!this.options.namespace) {
                 this.options.namespace = `opfs-worker:${ this.options.root }`;
             }
 
-            await this.mount(this.options.root);
+            await this.mount();
         }
     }
 
@@ -390,7 +385,8 @@ export class OPFSWorker {
     async readFile(path: string, encoding?: BufferEncoding): Promise<string>;
     async readFile(
         path: string,
-        encoding?: BufferEncoding | 'binary'
+        encoding?: BufferEncoding | 'binary',
+        _from: FileSystemDirectoryHandle | null = this.root
     ): Promise<string | Uint8Array> {
         await this.mount();
 
@@ -399,7 +395,7 @@ export class OPFSWorker {
         }
 
         try {
-            const fileHandle = await this.getFileHandle(path, false);
+            const fileHandle = await this.getFileHandle(path, false, _from);
             const buffer = await readFileData(fileHandle, path);
 
             return (encoding === 'binary') ? buffer : decodeBuffer(buffer, encoding);
@@ -666,10 +662,10 @@ export class OPFSWorker {
      * });
      * ```
      */
-    async readDir(path: string): Promise<DirentData[]> {
+    async readDir(path: string, _from: FileSystemDirectoryHandle | null = this.root): Promise<DirentData[]> {
         await this.mount();
 
-        const dir = await this.getDirectoryHandle(path, false);
+        const dir = await this.getDirectoryHandle(path, false, _from);
 
         const results: DirentData[] = [];
 
@@ -773,14 +769,18 @@ export class OPFSWorker {
     async clear(path: string = '/'): Promise<void> {
         await this.mount();
 
-        try {
-            const items = await this.readDir(path);
+        const doRemove = async(path: string, from: FileSystemDirectoryHandle | null = this.root) => {
+            const items = await this.readDir(path, from);
 
             for (const item of items) {
                 const itemPath = `${ path === '/' ? '' : path }/${ item.name }`;
 
                 await this.remove(itemPath, { recursive: true });
             }
+        };
+
+        try {
+            await doRemove(path, this.root);
 
             // Notify about the clear operation
             await this.notifyChange({ path, type: 'changed', isDirectory: true });
@@ -826,9 +826,11 @@ export class OPFSWorker {
             throw new OPFSError('Cannot remove root directory', 'EROOT');
         }
 
+        const { recursive = false, force = false } = options || {};
+
         const parent = await this.getDirectoryHandle(dirname(path), false);
 
-        await removeEntry(parent, path, options);
+        await removeEntry(parent, path, { recursive, force });
 
         await this.notifyChange({ path, type: 'removed', isDirectory: false });
     }
@@ -877,29 +879,43 @@ export class OPFSWorker {
      * Rename a file or directory
      * 
      * Changes the name of a file or directory. If the target path already exists,
-     * it will be replaced.
+     * it will be replaced only if overwrite option is enabled.
      * 
      * @param oldPath - The current path of the file or directory
      * @param newPath - The new path for the file or directory
+     * @param options - Options for renaming
+     * @param options.overwrite - Whether to overwrite existing files (default: false)
      * @returns Promise that resolves when the rename operation is complete
      * @throws {OPFSError} If the rename operation fails
      * 
      * @example
      * ```typescript
+     * // Basic rename (fails if target exists)
      * await fs.rename('/old/path/file.txt', '/new/path/renamed.txt');
+     * 
+     * // Rename with overwrite
+     * await fs.rename('/old/path/file.txt', '/new/path/renamed.txt', { overwrite: true });
      * ```
      */
-    async rename(oldPath: string, newPath: string): Promise<void> {
+    async rename(oldPath: string, newPath: string, options?: RenameOptions): Promise<void> {
         await this.mount();
 
         try {
+            const overwrite = options?.overwrite ?? false;
+
             const sourceExists = await this.exists(oldPath);
 
             if (!sourceExists) {
                 throw new FileNotFoundError(oldPath);
             }
 
-            await this.copy(oldPath, newPath, { recursive: true });
+            const destExists = await this.exists(newPath);
+
+            if (destExists && !overwrite) {
+                throw new OPFSError(`Destination already exists: ${ newPath }`, 'EEXIST', undefined);
+            }
+
+            await this.copy(oldPath, newPath, { recursive: true, overwrite });
             await this.remove(oldPath, { recursive: true });
 
             // Notify about the rename operation
@@ -924,7 +940,7 @@ export class OPFSWorker {
      * @param destination - The destination path to copy to
      * @param options - Options for copying
      * @param options.recursive - Whether to copy directories recursively (default: false)
-     * @param options.force - Whether to overwrite existing files (default: true)
+     * @param options.overwrite - Whether to overwrite existing files (default: true)
      * @returns Promise that resolves when the copy operation is complete
      * @throws {OPFSError} If the copy operation fails
      * 
@@ -937,15 +953,15 @@ export class OPFSWorker {
      * await fs.copy('/source/dir', '/dest/dir', { recursive: true });
      * 
      * // Copy without overwriting existing files
-     * await fs.copy('/source', '/dest', { recursive: true, force: false });
+     * await fs.copy('/source', '/dest', { recursive: true, overwrite: false });
      * ```
      */
-    async copy(source: string, destination: string, options?: { recursive?: boolean; force?: boolean }): Promise<void> {
+    async copy(source: string, destination: string, options?: { recursive?: boolean; overwrite?: boolean }): Promise<void> {
         await this.mount();
 
         try {
             const recursive = options?.recursive ?? false;
-            const force = options?.force ?? true;
+            const overwrite = options?.overwrite ?? true;
 
             const sourceExists = await this.exists(source);
 
@@ -955,7 +971,7 @@ export class OPFSWorker {
 
             const destExists = await this.exists(destination);
 
-            if (destExists && !force) {
+            if (destExists && !overwrite) {
                 throw new OPFSError(`Destination already exists: ${ destination }`, 'EEXIST', undefined);
             }
 
@@ -979,7 +995,7 @@ export class OPFSWorker {
                     const sourceItemPath = `${ source }/${ item.name }`;
                     const destItemPath = `${ destination }/${ item.name }`;
 
-                    await this.copy(sourceItemPath, destItemPath, { recursive: true, force });
+                    await this.copy(sourceItemPath, destItemPath, { recursive: true, overwrite });
                 }
             }
         }

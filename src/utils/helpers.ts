@@ -480,18 +480,19 @@ export async function convertBlobToUint8Array(blob: Blob): Promise<Uint8Array> {
  *
  * @param parentHandle - The parent directory handle
  * @param path - The full path of the entry to remove
- * @param options - Remove options (recursive, force)
+ * @param options - Remove options (recursive, force, useTrash)
  */
 export async function removeEntry(
     parentHandle: FileSystemDirectoryHandle,
     path: string,
-    options: { recursive?: boolean; force?: boolean } = {}
+    options: { recursive?: boolean; force?: boolean; useTrash?: boolean } = {}
 ): Promise<void> {
     const name = basename(path);
 
     return withLock(path, 'exclusive', async() => {
         const recursive = options.recursive ?? false;
         const force = options.force ?? false;
+        const useTrash = options.useTrash ?? false;
 
         try {
             await parentHandle.removeEntry(name, { recursive });
