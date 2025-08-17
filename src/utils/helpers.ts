@@ -130,6 +130,22 @@ export function normalizePath(path: string): string {
     return path.startsWith('/') ? path : `/${ path }`;
 }
 
+export function normalizeMinimatch(path: string, recursive: boolean = false): string {
+    path = path.replace(/\/$/, '');
+    if (recursive && !path.includes('*')) {
+        return `${ path }/**`;
+    }
+
+    return path;
+}
+
+export function matchMinimatch(path: string, pattern: string): boolean {
+    return minimatch(path, pattern, {
+        dot: true,
+        matchBase: true,
+    });
+}
+
 /**
  * Check if a path matches any of the provided exclude patterns (minimatch syntax)
  *

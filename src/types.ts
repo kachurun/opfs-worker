@@ -22,7 +22,7 @@ export interface DirentData {
 }
 
 export interface WatchEvent {
-    root: string;
+    namespace: string;
     path: string;
     type: 'added' | 'changed' | 'removed';
     isDirectory: boolean;
@@ -36,19 +36,27 @@ export type RemoteOPFSWorker = Remote<OPFSWorker>;
 export interface OPFSOptions {
     /** Root path for the file system (default: '/') */
     root?: string;
-    /** Polling interval in milliseconds for file watching (default: 1000) */
-    watchInterval?: number;
+    /** Namespace for the events (default: 'opfs-worker:${root}') */
+    namespace?: string;
     /** Hash algorithm for file hashing, or null to disable (default: null) */
     hashAlgorithm?: null | 'SHA-1' | 'SHA-256' | 'SHA-384' | 'SHA-512';
     /** Maximum file size in bytes for hashing (default: 50MB) */
     maxFileSize?: number;
     /** Custom name for the broadcast channel (default: 'opfs-worker') */
-    broadcastChannel?: string | null;
+    broadcastChannel?: string | BroadcastChannel | null;
 }
 
 export interface WatchOptions {
     /** Whether to watch recursively (default: true) */
     recursive?: boolean;
-    /** Glob patterns to exclude from watching (minimatch syntax) */
+    /** Glob patterns to include in watching (minimatch syntax, default: ['**']) */
+    include?: string | string[];
+    /** Glob patterns to exclude from watching (minimatch syntax, default: []) */
     exclude?: string | string[];
+}
+
+export interface WatchSnapshot {
+    pattern: string;
+    include: string[];
+    exclude: string[];
 }

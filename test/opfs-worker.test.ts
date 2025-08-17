@@ -11,7 +11,7 @@ describe('OPFSWorker', () => {
   beforeEach(async () => {
     await fsp.rm(rootDir, { recursive: true, force: true });
     await fsp.mkdir(rootDir, { recursive: true });
-    fsw = new OPFSWorker({ root: '/', watchInterval: 50 });
+    fsw = new OPFSWorker({ root: '/' });
   });
 
   afterEach(async () => {
@@ -114,15 +114,16 @@ describe('OPFSWorker', () => {
     await fsw.watch('/watched');
 
     await fsw.writeFile('/watched/a.txt', '1');
-    await new Promise(r => setTimeout(r, 1100)); // Wait for watch timer to trigger
+    // Give BroadcastChannel a moment to deliver the event
+    await new Promise(r => setTimeout(r, 10));
     expect(events.some(e => e.type === 'added' && e.path === '/watched/a.txt')).toBe(true);
 
     await fsw.writeFile('/watched/a.txt', '2');
-    await new Promise(r => setTimeout(r, 1100)); // Wait for watch timer to trigger
+    await new Promise(r => setTimeout(r, 10));
     expect(events.some(e => e.type === 'changed' && e.path === '/watched/a.txt')).toBe(true);
 
     await fsw.remove('/watched/a.txt');
-    await new Promise(r => setTimeout(r, 1100)); // Wait for watch timer to trigger
+    await new Promise(r => setTimeout(r, 10));
     expect(events.some(e => e.type === 'removed' && e.path === '/watched/a.txt')).toBe(true);
 
     fsw.unwatch('/watched');
@@ -136,11 +137,12 @@ describe('OPFSWorker', () => {
     await fsw.watch('/');
 
     await fsw.writeFile('/root-file.txt', 'test');
-    await new Promise(r => setTimeout(r, 1100)); // Wait for watch timer to trigger
+    // Give BroadcastChannel a moment to deliver the event
+    await new Promise(r => setTimeout(r, 10));
     expect(events.some(e => e.type === 'added' && e.path === '/root-file.txt')).toBe(true);
 
     await fsw.remove('/root-file.txt');
-    await new Promise(r => setTimeout(r, 1100)); // Wait for watch timer to trigger
+    await new Promise(r => setTimeout(r, 10));
     expect(events.some(e => e.type === 'removed' && e.path === '/root-file.txt')).toBe(true);
 
     fsw.unwatch('/');
@@ -158,20 +160,20 @@ describe('OPFSWorker', () => {
     await fsw.mkdir('/shallow-test/nested', { recursive: true });
     await fsw.writeFile('/shallow-test/nested/deep-file.txt', 'deep content');
     
-    // Watch with shallow option
-    await fsw.watch('/shallow-test', { recursive: false });
+    // Watch with shallow option - watch immediate children, not the directory itself
+    await fsw.watch('/shallow-test/*', { recursive: false });
     
     // Create file in immediate directory (should be detected)
     await fsw.writeFile('/shallow-test/immediate.txt', 'immediate content');
-    await new Promise(r => setTimeout(r, 1100));
+    await new Promise(r => setTimeout(r, 10));
     expect(events.some(e => e.type === 'added' && e.path === '/shallow-test/immediate.txt')).toBe(true);
     
     // Create file in nested directory (should NOT be detected with shallow watching)
     await fsw.writeFile('/shallow-test/nested/another-deep.txt', 'another deep content');
-    await new Promise(r => setTimeout(r, 1100));
+    await new Promise(r => setTimeout(r, 10));
     expect(events.some(e => e.type === 'added' && e.path === '/shallow-test/nested/another-deep.txt')).toBe(false);
     
-    fsw.unwatch('/shallow-test');
+    fsw.unwatch('/shallow-test/*');
     channel.close();
     
     // Cleanup
@@ -183,18 +185,18 @@ describe('OPFSWorker', () => {
     const channel = new BroadcastChannel('opfs-worker');
     channel.onmessage = (event) => events.push(event.data);
     
-    // Don't watch any paths, but still expect notifications from internal changes
+    // Don't watch any paths, so no events should be received
     await fsw.writeFile('/internal-test.txt', 'test');
     await new Promise(r => setTimeout(r, 50));
-    expect(events.some(e => e.type === 'changed' && e.path === '/internal-test.txt')).toBe(true);
+    expect(events.some(e => e.type === 'changed' && e.path === '/internal-test.txt')).toBe(false);
 
     await fsw.mkdir('/internal-dir', { recursive: true });
     await new Promise(r => setTimeout(r, 50));
-    expect(events.some(e => e.type === 'added' && e.path === '/internal-dir')).toBe(true);
+    expect(events.some(e => e.type === 'added' && e.path === '/internal-dir')).toBe(false);
 
     await fsw.remove('/internal-test.txt');
     await new Promise(r => setTimeout(r, 50));
-    expect(events.some(e => e.type === 'removed' && e.path === '/internal-test.txt')).toBe(true);
+    expect(events.some(e => e.type === 'removed' && e.path === '/internal-test.txt')).toBe(false);
     
     channel.close();
   });
@@ -210,9 +212,10 @@ describe('OPFSWorker', () => {
     
     // Make changes to the watched path
     await fsw.writeFile('/watched-path/file.txt', 'test');
-    await new Promise(r => setTimeout(r, 1100)); // Wait for watch timer to trigger
+    // Give BroadcastChannel a moment to deliver the event
+    await new Promise(r => setTimeout(r, 10));
     
-    // Should only get one event from the watch mechanism, not duplicate from internal notification
+    // Should only get one event from the watch mechanism
     const createEvents = events.filter(e => e.type === 'added' && e.path === '/watched-path/file.txt');
     expect(createEvents.length).toBe(1);
     
@@ -225,12 +228,24 @@ describe('OPFSWorker', () => {
     const channel = new BroadcastChannel('opfs-worker');
     channel.onmessage = (event) => events.push(event.data);
     
+    // Clean up any existing files from previous tests
+    try {
+      await fsw.remove('/dest.txt');
+    } catch {}
+    try {
+      await fsw.remove('/source.txt');
+    } catch {}
+    
+    // Watch the root directory to receive events for any files
+    await fsw.watch('/');
+    
     // Create a source file
     await fsw.writeFile('/source.txt', 'source content');
     
     // Copy the file
     await fsw.copy('/source.txt', '/dest.txt');
-    await new Promise(r => setTimeout(r, 50));
+    // Give BroadcastChannel a moment to deliver the event
+    await new Promise(r => setTimeout(r, 10));
     
     // Should get notification about the new file
     expect(events.some(e => e.type === 'added' && e.path === '/dest.txt')).toBe(true);
@@ -238,6 +253,55 @@ describe('OPFSWorker', () => {
     // Verify the copy worked
     expect(await fsw.readFile('/dest.txt')).toBe('source content');
     
+    fsw.unwatch('/');
     channel.close();
+  });
+
+  it('supports minimatch patterns and include/exclude options', async () => {
+    const events: WatchEvent[] = [];
+    const channel = new BroadcastChannel('opfs-worker');
+    channel.onmessage = (event) => events.push(event.data);
+    
+    // Create test structure
+    await fsw.mkdir('/pattern-test', { recursive: true });
+    await fsw.mkdir('/pattern-test/src', { recursive: true });
+    await fsw.mkdir('/pattern-test/dist', { recursive: true });
+    
+    // Watch with minimatch pattern and include/exclude options
+    await fsw.watch('/pattern-test/**/*.js', {
+      recursive: true,
+      include: ['**/*.js', '**/*.ts'],
+      exclude: ['**/dist/**', '**/node_modules/**']
+    });
+    
+    // Create files that should match the pattern
+    await fsw.writeFile('/pattern-test/app.js', 'console.log("app")');
+    await new Promise(r => setTimeout(r, 10));
+    expect(events.some(e => e.type === 'added' && e.path === '/pattern-test/app.js')).toBe(true);
+    
+    await fsw.writeFile('/pattern-test/src/index.js', 'export default {}');
+    await new Promise(r => setTimeout(r, 10));
+    expect(events.some(e => e.type === 'added' && e.path === '/pattern-test/src/index.js')).toBe(true);
+    
+    // Create files that should NOT match (excluded by pattern)
+    await fsw.writeFile('/pattern-test/dist/bundle.js', 'bundle content');
+    await new Promise(r => setTimeout(r, 10));
+    expect(events.some(e => e.type === 'added' && e.path === '/pattern-test/dist/bundle.js')).toBe(false);
+    
+    // Create files that should NOT match (not in include patterns)
+    await fsw.writeFile('/pattern-test/readme.md', '# Readme');
+    await new Promise(r => setTimeout(r, 10));
+    expect(events.some(e => e.type === 'added' && e.path === '/pattern-test/readme.md')).toBe(false);
+    
+    // Test minimatch pattern with wildcards
+    await fsw.writeFile('/pattern-test/utils.js', 'utils');
+    await new Promise(r => setTimeout(r, 10));
+    expect(events.some(e => e.type === 'added' && e.path === '/pattern-test/utils.js')).toBe(true);
+    
+    fsw.unwatch('/pattern-test/**/*.js');
+    channel.close();
+    
+    // Cleanup
+    await fsw.remove('/pattern-test', { recursive: true });
   });
 });

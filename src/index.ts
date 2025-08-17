@@ -22,6 +22,11 @@ export async function createWorker(
 
     // Set up options if provided
     if (options) {
+        // We can't pass a BroadcastChannel instance to the worker, so we need to convert it to a string first
+        if (options.broadcastChannel && options.broadcastChannel instanceof BroadcastChannel) {
+            options.broadcastChannel = options.broadcastChannel.name;
+        }
+
         await wrapped.setOptions(options);
     }
 
