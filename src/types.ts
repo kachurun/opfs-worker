@@ -1,5 +1,5 @@
-import type { Remote } from 'comlink';
 import type { OPFSWorker } from './worker';
+import type { Remote } from 'comlink';
 
 export type Kind = 'file' | 'directory';
 

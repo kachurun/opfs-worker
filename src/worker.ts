@@ -81,26 +81,33 @@ export class OPFSWorker {
      * @param path - The path that was changed
      * @param type - The type of change (create, change, delete)
      */
-    private async notifyChange(event: Omit<WatchEvent, 'timestamp' | 'hash' | 'root'>): Promise<void> {
+    private async notifyChange(event: Omit<WatchEvent, 'timestamp' | 'hash' | 'root'>, stat?: FileStat): Promise<void> {
         if (!this.options.broadcastChannel) {
             return;
         }
 
-        // Calculate hash if hashing is enabled and this is a file operation
-        let hash: string | undefined;
+        const path = event.path;
 
-        if (this.options.hashAlgorithm && !event.isDirectory && event.type !== 'removed') {
-            try {
-                const stats = await this.stat(event.path);
+        try {
+            stat ??= await this.stat(path);
+        }
+        catch {
+            // File probably deleted
+            stat = undefined;
+        }
 
-                if (stats.isFile && stats.hash) {
-                    hash = stats.hash;
+
+        // Update the snapshot for this path to prevent duplicate notifications from watchers
+        [...this.watchers.values()].forEach(({ snapshot }) => {
+            if (snapshot.has(path)) {
+                if (stat) {
+                    snapshot.set(path, stat);
+                }
+                else {
+                    snapshot.delete(path);
                 }
             }
-            catch (error) {
-                console.warn(`Failed to calculate hash for ${ event.path }:`, error);
-            }
-        }
+        });
 
         // Send event via BroadcastChannel
         try {
@@ -112,7 +119,7 @@ export class OPFSWorker {
                 root: this.options.root,
                 timestamp: new Date().toISOString(),
                 ...event,
-                ...(hash && { hash }),
+                ...(stat?.hash && { hash: stat.hash }),
             };
 
             this.broadcastChannel.postMessage(watchEvent);
@@ -967,7 +974,7 @@ export class OPFSWorker {
             }
 
             // Notify about the copy operation
-            await this.notifyChange({ path: destination, type: 'added', isDirectory: false });
+            await this.notifyChange({ path: destination, type: 'added', isDirectory: sourceStats.isDirectory });
         }
         catch (error) {
             if (error instanceof OPFSError) {
@@ -1075,11 +1082,9 @@ export class OPFSWorker {
                 for (const entry of entries) {
                     const child = `${ current === '/' ? '' : current }/${ entry.name }`;
 
-                    // Recursive mode: walk into all subdirectories
                     if (recursive) {
                         await walk(child);
                     }
-                    // Non-recursive mode: add immediate children to snapshot but don't walk into subdirectories
                     else if (!isPathExcluded(child, excludePatterns)) {
                         await save(child);
                     }
@@ -1100,45 +1105,51 @@ export class OPFSWorker {
         this.scanning = true;
 
         try {
-            await Promise.all(
-                [...this.watchers.entries()].map(async([root, { snapshot: prev, options }]) => {
-                    let next: Map<string, FileStat>;
+            await Promise.allSettled(
+                [...this.watchers.entries()].map(async([path, { snapshot: prev, options }]) => {
+                    const next = await this.buildSnapshot(path, options);
 
-                    try {
-                        next = await this.buildSnapshot(root, options);
-                    }
-                    catch (error) {
-                        next = new Map();
-                    }
-
-                    for (const [p, stat] of next) {
-                        const old = prev.get(p);
-
-                        if (isPathExcluded(p, options.exclude)) {
-                            continue;
-                        }
-
-                        if (!old) {
-                            await this.notifyChange({ path: p, type: 'added', isDirectory: stat.isDirectory });
-                        }
-                        else if (old.mtime !== stat.mtime || old.size !== stat.size) {
-                            await this.notifyChange({ path: p, type: 'changed', isDirectory: stat.isDirectory });
-                        }
-                    }
-
+                    // File/Directory removed
                     for (const p of prev.keys()) {
-                        if (isPathExcluded(p, options.exclude)) {
-                            continue;
-                        }
-
                         if (!next.has(p)) {
                             const oldStat = prev.get(p);
 
-                            await this.notifyChange({ path: p, type: 'removed', isDirectory: oldStat?.isDirectory ?? false });
+                            await this.notifyChange({
+                                path: p,
+                                type: 'removed',
+                                isDirectory: oldStat?.isDirectory ?? false,
+                            });
                         }
                     }
 
-                    this.watchers.set(root, { snapshot: next, options });
+                    // File/Directory added or changed
+                    for (const [p, stat] of next) {
+                        const old = prev.get(p);
+
+                        // File/Directory added
+                        if (!old) {
+                            await this.notifyChange({
+                                path: p,
+                                type: 'added',
+                                isDirectory: stat.isDirectory,
+                            }, stat);
+                        }
+                        // File changed
+                        else {
+                            const oldHash = old.hash ?? `${ old.size }:${ old.mtime }`;
+                            const newHash = stat.hash ?? `${ stat.size }:${ stat.mtime }`;
+
+                            if (oldHash !== newHash) {
+                                await this.notifyChange({
+                                    path: p,
+                                    type: 'changed',
+                                    isDirectory: stat.isDirectory,
+                                }, stat);
+                            }
+                        }
+                    }
+
+                    this.watchers.set(path, { snapshot: next, options });
                 })
             );
         }
@@ -1199,9 +1210,6 @@ export class OPFSWorker {
 
                 await this.writeFile(normalizedPath, fileData);
             }
-
-            // Notify about the sync operation
-            await this.notifyChange({ path: '/', type: 'changed', isDirectory: true });
         }
         catch (error) {
             if (error instanceof OPFSError) {

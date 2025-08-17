@@ -1,5 +1,11 @@
 # opfs-worker
 
+## 0.4.3
+
+### Patch Changes
+
+-   Add locks for file operations
+
 ## 0.4.2
 
 ### Patch Changes
