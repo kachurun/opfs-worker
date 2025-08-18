@@ -46,7 +46,7 @@ import type { BufferEncoding } from 'typescript';
  */
 export class OPFSWorker {
     /** Root directory handle for the file system */
-    private root: FileSystemDirectoryHandle | null = null;
+    private root!: FileSystemDirectoryHandle;
 
     /** Map of watched paths and options */
     private watchers = new Map<string, WatchSnapshot>();
@@ -381,17 +381,22 @@ export class OPFSWorker {
      * const utf8Content = await fs.readFile('/data/utf8.txt', 'utf-8');
      * ```
      */
-    async readFile(path: string, encoding: 'binary'): Promise<Uint8Array>;
-    async readFile(path: string, encoding?: BufferEncoding): Promise<string>;
+    async readFile(path: string, encoding: 'binary', _from?: any): Promise<Uint8Array>;
+    async readFile(path: string, encoding: BufferEncoding, _from?: any): Promise<string>;
+    async readFile(path: string, encoding?: undefined, _from?: any): Promise<string | Uint8Array>;
     async readFile(
         path: string,
         encoding?: BufferEncoding | 'binary',
-        _from: FileSystemDirectoryHandle | null = this.root
+        _from?: FileSystemDirectoryHandle
     ): Promise<string | Uint8Array> {
         await this.mount();
 
+        if (!_from) {
+            _from = this.root;
+        }
+
         if (!encoding) {
-            encoding = (isBinaryFileExtension(path)) ? 'binary' : 'utf-8';
+            encoding = isBinaryFileExtension(path) ? 'binary' : 'utf-8';
         }
 
         try {
@@ -527,7 +532,7 @@ export class OPFSWorker {
             const segment = segments[i];
 
             try {
-                current = await current!.getDirectoryHandle(segment!, { create: recursive || i === segments.length - 1 });
+                current = await current.getDirectoryHandle(segment!, { create: recursive || i === segments.length - 1 });
             }
             catch (err: any) {
                 if (err.name === 'NotFoundError') {
