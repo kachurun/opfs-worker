@@ -276,7 +276,7 @@ export class OPFSWorker {
      * 
      * @param path - The path to the file (string or array of segments)
      * @param create - Whether to create the file if it doesn't exist (default: false)
-     * @param from - The directory to start from (default: root directory)
+     * @param _from - The directory to start from (default: root directory)
      * @returns Promise that resolves to the file handle
      * @throws {PathError} If the path is empty
      * @throws {OPFSError} If the file cannot be accessed or created
@@ -287,7 +287,7 @@ export class OPFSWorker {
      * const fileHandle2 = await fs.getFileHandle(['config', 'settings.json'], true);
      * ```
      */
-    private async getFileHandle(path: string | string[], create = false, from: FileSystemDirectoryHandle | null = this.root): Promise<FileSystemFileHandle> {
+    private async getFileHandle(path: string | string[], create = false, _from: FileSystemDirectoryHandle | null = this.root): Promise<FileSystemFileHandle> {
         const segments = splitPath(path);
 
         if (segments.length === 0) {
@@ -295,7 +295,7 @@ export class OPFSWorker {
         }
 
         const fileName = segments.pop()!;
-        const dir = await this.getDirectoryHandle(segments, create, from);
+        const dir = await this.getDirectoryHandle(segments, create, _from);
 
         return dir.getFileHandle(fileName, { create });
     }
@@ -711,11 +711,11 @@ export class OPFSWorker {
             dir = await this.getDirectoryHandle(dirname(path), false);
         }
         catch (e: any) {
-            if (e.name === 'NotFoundError' || e.name === 'TypeMismatchError') {
-                dir = null;
-            }
+            dir = null;
 
-            throw e;
+            if (e.name !== 'NotFoundError' && e.name !== 'TypeMismatchError') {
+                throw e;
+            }
         }
 
         if (!dir || !name) {

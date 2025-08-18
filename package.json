@@ -1,6 +1,6 @@
 {
     "name": "opfs-worker",
-    "version": "0.5.1",
+    "version": "1.0.1",
     "description": "A robust TypeScript library for working with Origin Private File System (OPFS) through Web Workers",
     "type": "module",
     "main": "dist/index.js",

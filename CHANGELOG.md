@@ -1,5 +1,17 @@
 # opfs-worker
 
+## 1.0.1
+
+### Patch Changes
+
+-   Fix throw in exist()
+
+## 1.0.0
+
+### Major Changes
+
+-   Stable API release
+
 ## 0.5.1
 
 ### Patch Changes
