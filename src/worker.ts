@@ -26,7 +26,7 @@ import {
     writeFileData
 } from './utils/helpers';
 
-import type { DirentData, FileStat, OPFSOptions, RenameOptions, WatchEvent, WatchOptions, WatchSnapshot } from './types';
+import type { DirentData, Encoding, FileStat, OPFSOptions, RenameOptions, WatchEvent, WatchOptions, WatchSnapshot } from './types';
 import type { BufferEncoding } from 'typescript';
 
 /**
@@ -381,26 +381,21 @@ export class OPFSWorker {
      * const utf8Content = await fs.readFile('/data/utf8.txt', 'utf-8');
      * ```
      */
-    async readFile(path: string, encoding: 'binary', _from?: any): Promise<Uint8Array>;
-    async readFile(path: string, encoding: BufferEncoding, _from?: any): Promise<string>;
-    async readFile(path: string, encoding?: undefined, _from?: any): Promise<string | Uint8Array>;
+    async readFile(path: string, encoding: 'binary'): Promise<Uint8Array>;
+    async readFile(path: string, encoding: Encoding): Promise<string>;
+    async readFile(path: string, encoding: Encoding | 'binary'): Promise<string | Uint8Array>;
     async readFile(
         path: string,
-        encoding?: BufferEncoding | 'binary',
-        _from?: FileSystemDirectoryHandle
+        encoding?: any
     ): Promise<string | Uint8Array> {
         await this.mount();
-
-        if (!_from) {
-            _from = this.root;
-        }
 
         if (!encoding) {
             encoding = isBinaryFileExtension(path) ? 'binary' : 'utf-8';
         }
 
         try {
-            const fileHandle = await this.getFileHandle(path, false, _from);
+            const fileHandle = await this.getFileHandle(path, false, this.root);
             const buffer = await readFileData(fileHandle, path);
 
             return (encoding === 'binary') ? buffer : decodeBuffer(buffer, encoding);
@@ -667,10 +662,10 @@ export class OPFSWorker {
      * });
      * ```
      */
-    async readDir(path: string, _from: FileSystemDirectoryHandle | null = this.root): Promise<DirentData[]> {
+    async readDir(path: string): Promise<DirentData[]> {
         await this.mount();
 
-        const dir = await this.getDirectoryHandle(path, false, _from);
+        const dir = await this.getDirectoryHandle(path, false);
 
         const results: DirentData[] = [];
 
@@ -774,20 +769,15 @@ export class OPFSWorker {
     async clear(path: string = '/'): Promise<void> {
         await this.mount();
 
-        const doRemove = async(path: string, from: FileSystemDirectoryHandle | null = this.root) => {
-            const items = await this.readDir(path, from);
+        try {
+            const items = await this.readDir(path);
 
             for (const item of items) {
                 const itemPath = `${ path === '/' ? '' : path }/${ item.name }`;
 
                 await this.remove(itemPath, { recursive: true });
             }
-        };
 
-        try {
-            await doRemove(path, this.root);
-
-            // Notify about the clear operation
             await this.notifyChange({ path, type: 'changed', isDirectory: true });
         }
         catch (error: any) {

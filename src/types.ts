@@ -3,6 +3,17 @@ import type { Remote } from 'comlink';
 
 export type Kind = 'file' | 'directory';
 
+export type Encoding = 'ascii'
+  | 'utf8'
+  | 'utf-8'
+  | 'utf16le'
+  | 'utf-16le'
+  | 'ucs2'
+  | 'ucs-2'
+  | 'base64'
+  | 'latin1'
+  | 'hex';
+
 export interface FileStat {
     kind: Kind;
     size: number;

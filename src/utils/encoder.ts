@@ -1,5 +1,7 @@
 import { OPFSError } from './errors';
 
+import type { Encoding } from '../types';
+
 import type { BufferEncoding } from 'typescript';
 
 export function encodeString(data: string, encoding: BufferEncoding = 'utf-8'): Uint8Array {
@@ -39,21 +41,19 @@ export function encodeString(data: string, encoding: BufferEncoding = 'utf-8'): 
     }
 }
 
-export function decodeBuffer(buffer: Uint8Array, encoding: BufferEncoding = 'utf-8'): string {
+export function decodeBuffer(buffer: Uint8Array, encoding: Encoding = 'utf-8'): string {
     switch (encoding) {
         case 'utf8':
         case 'utf-8':
             return new TextDecoder().decode(buffer);
 
         case 'utf16le':
+        case 'utf-16le':
         case 'ucs2':
         case 'ucs-2':
             return decodeUtf16LE(buffer);
 
         case 'latin1':
-            return String.fromCharCode(...buffer);
-
-        case 'binary':
             return String.fromCharCode(...buffer);
 
         case 'ascii':
