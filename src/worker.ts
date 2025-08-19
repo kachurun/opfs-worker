@@ -1,20 +1,22 @@
-import { expose } from 'comlink';
+import { expose, transfer } from 'comlink';
 
 
-import { decodeBuffer } from './utils/encoder';
+import { decodeBuffer, isBinaryFileExtension } from './utils/encoder';
 import {
     FileNotFoundError,
     OPFSError,
-    PathError
+    PathError,
+    createFDError
 } from './utils/errors';
 
 import {
     basename,
     calculateFileHash,
+    calculateReadLength,
     checkOPFSSupport,
     convertBlobToUint8Array,
+    createSyncHandleSafe,
     dirname,
-    isBinaryFileExtension,
     joinPath,
     matchMinimatch,
     normalizeMinimatch,
@@ -22,12 +24,16 @@ import {
     readFileData,
     removeEntry,
     resolvePath,
+    safeCloseSyncHandle,
     splitPath,
+    validateReadWriteArgs,
+    withLock,
     writeFileData
 } from './utils/helpers';
 
-import type { DirentData, Encoding, FileStat, OPFSOptions, RenameOptions, WatchEvent, WatchOptions, WatchSnapshot } from './types';
+import type { DirentData, Encoding, FileOpenOptions, FileStat, OPFSOptions, RenameOptions, WatchEvent, WatchOptions, WatchSnapshot } from './types';
 import type { BufferEncoding } from 'typescript';
+
 
 /**
  * OPFS (Origin Private File System) File System implementation
@@ -65,6 +71,31 @@ export class OPFSWorker {
         hashAlgorithm: null,
         broadcastChannel: 'opfs-worker',
     };
+
+    /** Map of open file descriptors to their metadata */
+    private openFiles = new Map<number, {
+        path: string;
+        fileHandle: FileSystemFileHandle;
+        syncHandle: FileSystemSyncAccessHandle;
+        position: number;
+    }>();
+
+    /** Next available file descriptor number */
+    private nextFd = 1;
+
+    /**
+     * Get file info by descriptor with validation
+     * @private
+     */
+    private _getFileDescriptor(fd: number): { path: string; fileHandle: FileSystemFileHandle; syncHandle: FileSystemSyncAccessHandle; position: number } {
+        const fileInfo = this.openFiles.get(fd);
+
+        if (!fileInfo) {
+            throw new OPFSError(`Invalid file descriptor: ${ fd }`, 'EBADF');
+        }
+
+        return fileInfo;
+    }
 
 
     /**
@@ -1050,6 +1081,345 @@ export class OPFSWorker {
     }
 
     /**
+     * Open a file and return a file descriptor
+     * 
+     * @param path - The path to the file to open
+     * @param options - Options for opening the file
+     * @param options.create - Whether to create the file if it doesn't exist (default: false)
+     * @param options.exclusive - If true and create is true, fails if file already exists (default: false)
+     *                            Note: This is best-effort in OPFS, not fully atomic due to browser limitations
+     * @param options.truncate - Whether to truncate the file to zero length (default: false)
+     * @returns Promise that resolves to a file descriptor number
+     * @throws {OPFSError} If opening the file fails
+     * 
+     * @example
+     * ```typescript
+     * // Open existing file for reading
+     * const fd = await fs.open('/data/config.json');
+     * 
+     * // Create new file for writing
+     * const fd = await fs.open('/data/new.txt', { create: true });
+     * 
+     * // Create file exclusively (fails if exists)
+     * const fd = await fs.open('/data/unique.txt', { create: true, exclusive: true });
+     * 
+     * // Open and truncate file
+     * const fd = await fs.open('/data/log.txt', { create: true, truncate: true });
+     * ```
+     */
+    async open(path: string, options?: FileOpenOptions): Promise<number> {
+        await this.mount();
+
+        const { create = false, exclusive = false, truncate = false } = options || {};
+
+        // Normalize path to prevent path-related issues
+        const normalizedPath = normalizePath(resolvePath(path));
+
+        try {
+            // Use lock for atomic operations when creating files
+            if (create && exclusive) {
+                return await withLock(normalizedPath, 'exclusive', async() => {
+                    const exists = await this.exists(normalizedPath);
+
+                    if (exists) {
+                        throw new OPFSError(`File already exists: ${ normalizedPath }`, 'EEXIST', normalizedPath);
+                    }
+
+                    return this._openFile(normalizedPath, create, truncate);
+                });
+            }
+
+            return await this._openFile(normalizedPath, create, truncate);
+        }
+        catch (error) {
+            if (error instanceof OPFSError) {
+                throw error;
+            }
+
+            throw new OPFSError(`Failed to open file: ${ normalizedPath }`, 'OPEN_FAILED', normalizedPath, error);
+        }
+    }
+
+    /**
+     * Internal method to open a file (without locking)
+     * @private
+     */
+    private async _openFile(path: string, create: boolean, truncate: boolean): Promise<number> {
+        const fileHandle = await this.getFileHandle(path, create);
+
+        // Verify that we got a file handle, not a directory
+        try {
+            // If getFile() succeeds, it's a file
+            await fileHandle.getFile();
+        }
+        catch (error: any) {
+            if (error.name === 'TypeMismatchError') {
+                throw new OPFSError(`Is a directory: ${ path }`, 'EISDIR', path);
+            }
+
+            throw error;
+        }
+
+        // Create sync access handle safely with proper error mapping
+        const syncHandle = await createSyncHandleSafe(fileHandle, path);
+
+        // If truncate is requested, use efficient truncate() method
+        if (truncate) {
+            syncHandle.truncate(0);
+            syncHandle.flush();
+        }
+
+        const fd = this.nextFd++;
+
+        this.openFiles.set(fd, {
+            path,
+            fileHandle,
+            syncHandle,
+            position: 0,
+        });
+
+        return fd;
+    }
+
+    /**
+     * Close a file descriptor
+     * 
+     * @param fd - The file descriptor to close
+     * @returns Promise that resolves when the file descriptor is closed
+     * @throws {OPFSError} If the file descriptor is invalid or closing fails
+     * 
+     * @example
+     * ```typescript
+     * const fd = await fs.open('/data/file.txt');
+     * // ... use the file descriptor ...
+     * await fs.close(fd);
+     * ```
+     */
+    async close(fd: number): Promise<void> {
+        const fileInfo = this._getFileDescriptor(fd);
+
+        safeCloseSyncHandle(fd, fileInfo.syncHandle, fileInfo.path);
+
+        this.openFiles.delete(fd);
+    }
+
+    /**
+     * Read data from a file descriptor
+     * 
+     * @param fd - The file descriptor to read from
+     * @param buffer - The buffer to read data into
+     * @param offset - The offset in the buffer to start writing at
+     * @param length - The number of bytes to read
+     * @param position - The position in the file to read from (null for current position)
+     * @returns Promise that resolves to the number of bytes read and the modified buffer
+     * @throws {OPFSError} If the file descriptor is invalid or reading fails
+     * 
+     * @note This method uses Comlink.transfer() to efficiently pass the buffer as a Transferable Object,
+     *       ensuring zero-copy performance across Web Worker boundaries.
+     * 
+     * @example
+     * ```typescript
+     * const fd = await fs.open('/data/file.txt');
+     * const buffer = new Uint8Array(1024);
+     * const { bytesRead, buffer: modifiedBuffer } = await fs.read(fd, buffer, 0, 1024, null);
+     * console.log(`Read ${bytesRead} bytes`);
+     * // Use modifiedBuffer which contains the actual data
+     * await fs.close(fd);
+     * ```
+     */
+    async read(
+        fd: number,
+        buffer: Uint8Array,
+        offset: number,
+        length: number,
+        position: number | null | undefined
+    ): Promise<{ bytesRead: number; buffer: Uint8Array }> {
+        const fileInfo = this._getFileDescriptor(fd);
+
+        // Validate arguments
+        validateReadWriteArgs(buffer.length, offset, length, position);
+
+        try {
+            const readPosition = position ?? fileInfo.position;
+
+            // Get file size and calculate read length
+            const fileSize = fileInfo.syncHandle.getSize();
+            const { isEOF, actualLength } = calculateReadLength(readPosition, length, fileSize);
+
+            if (isEOF) {
+                return transfer({ bytesRead: 0, buffer }, [buffer.buffer]); // End of file
+            }
+
+            // Create a subarray view for the read operation
+            const targetBuffer = buffer.subarray(offset, offset + actualLength);
+
+            // Perform efficient positioned read
+            const bytesRead = fileInfo.syncHandle.read(targetBuffer, { at: readPosition });
+
+            // Update position if position was not explicitly specified (null means use current position)
+            if (position === null) {
+                fileInfo.position = readPosition + bytesRead;
+            }
+
+            return transfer({ bytesRead, buffer }, [buffer.buffer]);
+        }
+        catch (error) {
+            throw createFDError('read', fd, fileInfo.path, error);
+        }
+    }
+
+    /**
+     * Write data to a file descriptor
+     * 
+     * @param fd - The file descriptor to write to
+     * @param buffer - The buffer containing data to write
+     * @param offset - The offset in the buffer to start reading from (default: 0)
+     * @param length - The number of bytes to write (default: entire buffer)
+     * @param position - The position in the file to write to (null/undefined for current position)
+     * @returns Promise that resolves to the number of bytes written
+     * @throws {OPFSError} If the file descriptor is invalid or writing fails
+     * 
+     * @example
+     * ```typescript
+     * const fd = await fs.open('/data/file.txt', { create: true });
+     * const data = new TextEncoder().encode('Hello, World!');
+     * const bytesWritten = await fs.write(fd, data, 0, data.length, null);
+     * console.log(`Wrote ${bytesWritten} bytes`);
+     * await fs.close(fd);
+     * ```
+     */
+    async write(
+        fd: number,
+        buffer: Uint8Array,
+        offset: number = 0,
+        length?: number,
+        position?: number | null | undefined
+    ): Promise<number> {
+        const fileInfo = this._getFileDescriptor(fd);
+
+        // Calculate actual length to write
+        const actualLength = length ?? (buffer.length - offset);
+
+        // Validate arguments using helper
+        validateReadWriteArgs(buffer.length, offset, actualLength, position);
+
+        try {
+            // Determine write position: use specified position, or current position if null/undefined
+            const writePosition = position ?? fileInfo.position;
+
+            // Create a subarray view for the write operation
+            const sourceBuffer = buffer.subarray(offset, offset + actualLength);
+
+            // Perform efficient positioned write
+            const bytesWritten = fileInfo.syncHandle.write(sourceBuffer, { at: writePosition });
+
+            // Update position if position was null or undefined (i.e., use current position)
+            // Also update position when writing at current position (position === fileInfo.position)
+            if (position == null || position === fileInfo.position) {
+                fileInfo.position = writePosition + bytesWritten;
+            }
+
+            // Notify about the change
+            await this.notifyChange({ path: fileInfo.path, type: 'changed', isDirectory: false });
+
+            return bytesWritten;
+        }
+        catch (error) {
+            throw createFDError('write', fd, fileInfo.path, error);
+        }
+    }
+
+    /**
+     * Get file status information by file descriptor
+     * 
+     * @param fd - The file descriptor
+     * @returns Promise that resolves to FileStat object
+     * @throws {OPFSError} If the file descriptor is invalid
+     * 
+     * @example
+     * ```typescript
+     * const fd = await fs.open('/data/file.txt');
+     * const stats = await fs.fstat(fd);
+     * console.log(`File size: ${stats.size} bytes`);
+     * console.log(`Last modified: ${stats.mtime}`);
+     * 
+     * // If hashing is enabled, hash will be included
+     * if (stats.hash) {
+     *   console.log(`Hash: ${stats.hash}`);
+     * }
+     * ```
+     */
+    async fstat(fd: number): Promise<FileStat> {
+        const fileInfo = this._getFileDescriptor(fd);
+
+        // Simply reuse existing stat() method with the file path
+        return this.stat(fileInfo.path);
+    }
+
+    /**
+     * Truncate file to specified size
+     * 
+     * @param fd - The file descriptor
+     * @param size - The new size of the file (default: 0)
+     * @returns Promise that resolves when truncation is complete
+     * @throws {OPFSError} If the file descriptor is invalid or truncation fails
+     * 
+     * @example
+     * ```typescript
+     * const fd = await fs.open('/data/file.txt', { create: true });
+     * await fs.truncate(fd, 100); // Truncate to 100 bytes
+     * ```
+     */
+    async ftruncate(fd: number, size: number = 0): Promise<void> {
+        const fileInfo = this._getFileDescriptor(fd);
+
+        // Validate size parameter
+        if (size < 0 || !Number.isInteger(size)) {
+            throw new OPFSError('Invalid size', 'EINVAL');
+        }
+
+        try {
+            fileInfo.syncHandle.truncate(size);
+            fileInfo.syncHandle.flush();
+
+            // Adjust position if it's beyond the new file size
+            if (fileInfo.position > size) {
+                fileInfo.position = size;
+            }
+
+            await this.notifyChange({ path: fileInfo.path, type: 'changed', isDirectory: false });
+        }
+        catch (error) {
+            throw createFDError('truncate', fd, fileInfo.path, error);
+        }
+    }
+
+    /**
+     * Synchronize file data to storage (fsync equivalent)
+     * 
+     * @param fd - The file descriptor
+     * @returns Promise that resolves when synchronization is complete
+     * @throws {OPFSError} If the file descriptor is invalid or sync fails
+     * 
+     * @example
+     * ```typescript
+     * const fd = await fs.open('/data/file.txt', { create: true });
+     * await fs.write(fd, data);
+     * await fs.fsync(fd); // Ensure data is written to storage
+     * ```
+     */
+    async fsync(fd: number): Promise<void> {
+        const fileInfo = this._getFileDescriptor(fd);
+
+        try {
+            fileInfo.syncHandle.flush();
+        }
+        catch (error) {
+            throw createFDError('sync', fd, fileInfo.path, error);
+        }
+    }
+
+    /**
      * Dispose of resources and clean up the file system instance
      * 
      * This method should be called when the file system instance is no longer needed
@@ -1062,6 +1432,14 @@ export class OPFSWorker {
         }
 
         this.watchers.clear();
+
+        // Close all open file descriptors
+        for (const [fd, fileInfo] of this.openFiles) {
+            safeCloseSyncHandle(fd, fileInfo.syncHandle, fileInfo.path);
+        }
+
+        this.openFiles.clear();
+        this.nextFd = 1;
     }
 
     /**

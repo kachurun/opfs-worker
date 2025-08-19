@@ -1,5 +1,11 @@
 # opfs-worker
 
+## 1.1.0
+
+### Minor Changes
+
+-   Add file descriptor API
+
 ## 1.0.1
 
 ### Patch Changes

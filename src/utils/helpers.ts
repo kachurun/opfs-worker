@@ -1,91 +1,10 @@
 import { minimatch } from 'minimatch';
 
 import { encodeString } from './encoder';
-import { OPFSError, OPFSNotSupportedError } from './errors';
+import { OPFSError, OPFSNotSupportedError, mapDomError } from './errors';
 
 import type { BufferEncoding } from 'typescript';
 
-/**
- * Common binary file extensions
- */
-export const BINARY_FILE_EXTENSIONS = [
-    // Images
-    '.jpg',
-    '.jpeg',
-    '.png',
-    '.gif',
-    '.bmp',
-    '.webp',
-    '.svg',
-    '.ico',
-    '.tiff',
-    '.tga',
-    // Audio
-    '.mp3',
-    '.wav',
-    '.ogg',
-    '.flac',
-    '.aac',
-    '.wma',
-    '.m4a',
-    // Video
-    '.mp4',
-    '.avi',
-    '.mov',
-    '.wmv',
-    '.flv',
-    '.webm',
-    '.mkv',
-    '.m4v',
-    // Documents
-    '.pdf',
-    '.doc',
-    '.docx',
-    '.xls',
-    '.xlsx',
-    '.ppt',
-    '.pptx',
-    // Archives
-    '.zip',
-    '.rar',
-    '.7z',
-    '.tar',
-    '.gz',
-    '.bz2',
-    // Executables
-    '.exe',
-    '.dll',
-    '.so',
-    '.dylib',
-    '.bin',
-    // Other binary formats
-    '.dat',
-    '.db',
-    '.sqlite',
-    '.bin',
-    '.obj',
-    '.fbx',
-    '.3ds',
-] as const;
-
-/**
- * Check if a file extension indicates a binary file
- * 
- * @param path - The file path or filename
- * @returns True if the file extension suggests binary content
- * 
- * @example
- * ```typescript
- * isBinaryFileExtension('/path/to/image.jpg'); // true
- * isBinaryFileExtension('/path/to/document.txt'); // false
- * isBinaryFileExtension('data.bin'); // true
- * ```
- */
-export function isBinaryFileExtension(path: string): boolean {
-    const extension = path.toLowerCase().substring(path.lastIndexOf('.'));
-
-    return BINARY_FILE_EXTENSIONS.includes(extension as any);
-}
 
 /**
  * Check if the browser supports the OPFS API
@@ -104,7 +23,7 @@ export async function withLock<T>(
     fn: () => Promise<T>
 ): Promise<T> {
     if (typeof navigator !== 'undefined' && navigator.locks?.request) {
-        return navigator.locks.request(`opfs:${ path.replace(/\/+/g, '/').toLowerCase() }`, { mode }, fn);
+        return navigator.locks.request(`opfs:${ path.replace(/\/+/g, '/') }`, { mode }, fn);
     }
 
     return fn();
@@ -357,14 +276,11 @@ export async function writeFileData(
     options: { truncate?: boolean; append?: boolean } = {}
 ): Promise<void> {
     const writeOperation = async() => {
-        let handle: FileSystemSyncAccessHandle | null = null;
-
         const append = options.append || false;
         const truncate = !append && (options.truncate ?? true);
+        const handle = await createSyncHandleSafe(fileHandle, path || 'unknown');
 
         try {
-            handle = await fileHandle.createSyncAccessHandle();
-
             const buffer = createBuffer(data, encoding);
             const writeOffset = append ? handle.getSize() : 0;
 
@@ -514,4 +430,99 @@ export async function removeEntry(
             }
         }
     });
+}
+
+/**
+ * Validate read/write arguments for file descriptor operations
+ * 
+ * @param bufferLen - Length of the buffer
+ * @param offset - Offset in the buffer
+ * @param length - Number of bytes to read/write
+ * @param position - Position in the file (null for current position)
+ * @param opts - Options for validation
+ * @throws {OPFSError} If arguments are invalid
+ */
+export function validateReadWriteArgs(
+    bufferLen: number,
+    offset: number,
+    length: number,
+    position: number | null | undefined
+): void {
+    if (!Number.isInteger(offset) || !Number.isInteger(length)) {
+        throw new OPFSError('Invalid offset or length', 'EINVAL');
+    }
+
+    if (offset < 0 || length < 0) {
+        throw new OPFSError('Negative offset or length not allowed', 'EINVAL');
+    }
+
+    if (offset + length > bufferLen) {
+        throw new OPFSError('Operation would overflow buffer', 'ERANGE');
+    }
+
+    if (position != null && (!Number.isInteger(position) || position < 0)) {
+        throw new OPFSError('Invalid position', 'EINVAL');
+    }
+}
+
+/**
+ * Safely close a file descriptor's sync handle
+ * 
+ * @param fd - The file descriptor number (for logging)
+ * @param syncHandle - The sync handle to close
+ * @param path - The file path (for logging)
+ */
+export function safeCloseSyncHandle(fd: number, syncHandle: any, path: string): void {
+    try {
+        syncHandle.flush();
+        syncHandle.close();
+    }
+    catch (error) {
+        // Log warning but don't throw, as the fd should still be removed
+        console.warn(`Warning: Failed to properly close file descriptor ${ fd } (${ path }):`, error);
+    }
+}
+
+/**
+ * Check if position is at or beyond end of file and calculate actual read length
+ * 
+ * @param position - The position to read from
+ * @param requestedLength - The requested length to read
+ * @param fileSize - The current file size
+ * @returns Object with isEOF flag and actual length to read
+ */
+export function calculateReadLength(position: number, requestedLength: number, fileSize: number): { isEOF: boolean; actualLength: number } {
+    // Check if we're at or beyond end of file
+    if (position >= fileSize) {
+        return { isEOF: true, actualLength: 0 };
+    }
+
+    // Calculate actual length to read (don't read beyond file end)
+    const actualLength = Math.min(requestedLength, fileSize - position);
+
+    if (actualLength <= 0) {
+        return { isEOF: true, actualLength: 0 };
+    }
+
+    return { isEOF: false, actualLength };
+}
+
+/**
+ * Safely create a sync access handle with proper error mapping
+ * 
+ * @param fileHandle - The file handle to create sync access handle from
+ * @param path - The file path for error context
+ * @returns Promise that resolves to FileSystemSyncAccessHandle
+ * @throws {OPFSError} If creation fails
+ */
+export async function createSyncHandleSafe(
+    fileHandle: FileSystemFileHandle,
+    path: string
+): Promise<FileSystemSyncAccessHandle> {
+    try {
+        return await fileHandle.createSyncAccessHandle();
+    }
+    catch (error: any) {
+        throw mapDomError(error, { path, isDirectory: false });
+    }
 }

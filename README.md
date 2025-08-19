@@ -345,6 +345,11 @@ Check out the live demo powered by Vite and hosted on GitHub Pages.
 
 The complete API reference is available in the [docs/api-reference.md](docs/api-reference.md) file.
 
+**Additional Documentation:**
+
+- [File Descriptors Guide](docs/file-descriptors.md) - Comprehensive guide to low-level file I/O operations
+- [Types Reference](docs/types.md) - Complete TypeScript type definitions
+
 ### Quick API Overview
 
 **Entry Points:**
@@ -362,6 +367,20 @@ The complete API reference is available in the [docs/api-reference.md](docs/api-
 - `remove(path, options?)` - Remove files/directories
 - `copy(source, destination, options?)` - Copy files/directories
 - `rename(oldPath, newPath)` - Rename files/directories
+
+**File Descriptors (Low-level I/O):**
+
+- `open(path, options?)` - Open file and return descriptor
+- `read(fd, buffer, offset, length, position?)` - Read from descriptor (returns `{bytesRead, buffer}`)
+- `write(fd, buffer, offset?, length?, position?)` - Write to descriptor
+- `fstat(fd)` - Get stats by descriptor
+- `ftruncate(fd, size?)` - Truncate file by descriptor
+- `fsync(fd)` - Sync file data to storage
+- `close(fd)` - Close file descriptor
+
+**Note**: The `read()` method uses `Comlink.transfer()` for efficient buffer handling. **From the main window**, you must transfer buffer ownership to the worker, and **from the worker**, the buffer is transferred back to you. See [File Descriptors Guide](docs/file-descriptors.md) for complete usage examples.
+
+_For detailed file descriptor documentation, see [File Descriptors Guide](docs/file-descriptors.md)_
 
 **Advanced Features:**
 

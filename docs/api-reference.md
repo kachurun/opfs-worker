@@ -49,6 +49,9 @@ This document contains the complete API reference for OPFS Worker.
       - [`setOptions(options: { root?: string; hashAlgorithm?: null | 'SHA-1' | 'SHA-256' | 'SHA-384' | 'SHA-512'; maxFileSize?: number }): Promise<void>`](#setoptionsoptions--root-string-hashalgorithm-null--sha-1--sha-256--sha-384--sha-512-maxfilesize-number--promisevoid)
     - [Resolve Path](#resolve-path)
       - [`realpath(path: string): Promise<string>`](#realpathpath-string-promisestring)
+  - [File Descriptors](#file-descriptors)
+    - [File Descriptors Overview](#file-descriptors-overview)
+    - [File Descriptor Methods](#file-descriptor-methods)
   - [Binary File Handling](#binary-file-handling)
     - [Reading Binary Files](#reading-binary-files)
     - [Writing Binary Files](#writing-binary-files)
@@ -574,6 +577,52 @@ console.log(absolute); // '/data/file.txt'
 **Returns:** `Promise<string>` - The absolute normalized path
 
 **Throws:** `FileNotFoundError` if the path doesn't exist
+
+## File Descriptors
+
+OPFS Worker provides low-level file I/O operations through file descriptors, similar to POSIX file descriptors. File descriptors are useful for:
+
+- **Large file operations**: Reading/writing files in chunks without loading entire content into memory
+- **Streaming operations**: Processing files sequentially or in specific positions
+- **Performance-critical applications**: Direct file access without the overhead of high-level methods
+- **Binary data manipulation**: Working with raw bytes at specific file positions
+
+For comprehensive documentation on file descriptors, see [File Descriptors Guide](file-descriptors.md).
+
+### File Descriptors Overview
+
+File descriptors provide efficient, low-level access to files for reading, writing, and manipulating file data. They maintain a current position that advances with read/write operations and support both sequential and random access patterns.
+
+**Key Benefits:**
+
+- **Efficient I/O**: Direct access to file data without intermediate buffers
+- **Position control**: Read/write at specific file positions or advance automatically
+- **Resource management**: Automatic cleanup when closed
+- **Performance**: Better for large files and streaming operations
+
+### File Descriptor Methods
+
+The following methods are available for working with file descriptors:
+
+- **`open(path, options?)`** - Open a file and return a file descriptor
+- **`read(fd, buffer, offset, length, position?)`** - Read data from a file descriptor
+- **`write(fd, buffer, offset?, length?, position?)`** - Write data to a file descriptor
+- **`fstat(fd)`** - Get file status information by file descriptor
+- **`ftruncate(fd, size?)`** - Truncate file to specified size
+- **`fsync(fd)`** - Synchronize file data to storage
+- **`close(fd)`** - Close a file descriptor
+
+**Quick Example:**
+
+```typescript
+const fd = await fs.open('/data/file.txt');
+const buffer = new Uint8Array(1024);
+const bytesRead = await fs.read(fd, buffer, 0, 1024, null);
+console.log(`Read ${bytesRead} bytes`);
+await fs.close(fd);
+```
+
+**Important:** Always close file descriptors when you're done with them to prevent resource leaks.
 
 ## Binary File Handling
 

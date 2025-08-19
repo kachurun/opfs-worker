@@ -4,6 +4,94 @@ import type { Encoding } from '../types';
 
 import type { BufferEncoding } from 'typescript';
 
+
+/**
+ * Common binary file extensions
+ */
+export const BINARY_FILE_EXTENSIONS = [
+    // Images
+    '.jpg',
+    '.jpeg',
+    '.png',
+    '.gif',
+    '.bmp',
+    '.webp',
+    '.ico',
+    '.tiff',
+    '.tga',
+    // Audio
+    '.mp3',
+    '.wav',
+    '.ogg',
+    '.flac',
+    '.aac',
+    '.wma',
+    '.m4a',
+    // Video
+    '.mp4',
+    '.avi',
+    '.mov',
+    '.wmv',
+    '.flv',
+    '.webm',
+    '.mkv',
+    '.m4v',
+    // Documents
+    '.pdf',
+    '.doc',
+    '.docx',
+    '.xls',
+    '.xlsx',
+    '.ppt',
+    '.pptx',
+    // Archives
+    '.zip',
+    '.rar',
+    '.7z',
+    '.tar',
+    '.gz',
+    '.bz2',
+    // Executables
+    '.exe',
+    '.dll',
+    '.so',
+    '.dylib',
+    // Other binary formats
+    '.dat',
+    '.db',
+    '.sqlite',
+    '.bin',
+    '.obj',
+    '.fbx',
+    '.3ds',
+] as const;
+
+/**
+ * Check if a file extension indicates a binary file
+ * 
+ * @param path - The file path or filename
+ * @returns True if the file extension suggests binary content
+ * 
+ * @example
+ * ```typescript
+ * isBinaryFileExtension('/path/to/image.jpg'); // true
+ * isBinaryFileExtension('/path/to/document.txt'); // false
+ * isBinaryFileExtension('data.bin'); // true
+ * isBinaryFileExtension('data'); // true
+ * ```
+ */
+export function isBinaryFileExtension(path: string): boolean {
+    const i = path.lastIndexOf('.');
+
+    if (i <= 0) {
+        return true;
+    }
+
+    const ext = path.slice(i).toLowerCase();
+
+    return BINARY_FILE_EXTENSIONS.includes(ext as any);
+}
+
 export function encodeString(data: string, encoding: BufferEncoding = 'utf-8'): Uint8Array {
     switch (encoding) {
         case 'utf8':

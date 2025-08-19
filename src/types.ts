@@ -71,6 +71,12 @@ export interface WatchOptions {
     exclude?: string | string[];
 }
 
+export interface FileOpenOptions {
+    create?: boolean;
+    exclusive?: boolean;
+    truncate?: boolean;
+}
+
 export interface WatchSnapshot {
     pattern: string;
     include: string[];
