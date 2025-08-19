@@ -15,20 +15,19 @@ import {
     calculateReadLength,
     checkOPFSSupport,
     convertBlobToUint8Array,
+    createBuffer,
     createSyncHandleSafe,
     dirname,
     joinPath,
     matchMinimatch,
     normalizeMinimatch,
     normalizePath,
-    readFileData,
     removeEntry,
     resolvePath,
     safeCloseSyncHandle,
     splitPath,
     validateReadWriteArgs,
-    withLock,
-    writeFileData
+    withLock
 } from './utils/helpers';
 
 import type { DirentData, Encoding, FileOpenOptions, FileStat, OPFSOptions, RenameOptions, WatchEvent, WatchOptions, WatchSnapshot } from './types';
@@ -426,10 +425,23 @@ export class OPFSWorker {
         }
 
         try {
-            const fileHandle = await this.getFileHandle(path, false, this.root);
-            const buffer = await readFileData(fileHandle, path);
+            return await withLock(path, 'shared', async() => {
+                const fd = await this.open(path);
 
-            return (encoding === 'binary') ? buffer : decodeBuffer(buffer, encoding);
+                try {
+                    const { size } = await this.fstat(fd);
+                    const buffer = new Uint8Array(size);
+
+                    if (size > 0) {
+                        await this.read(fd, buffer, 0, size, 0);
+                    }
+
+                    return (encoding === 'binary') ? buffer : decodeBuffer(buffer, encoding);
+                }
+                finally {
+                    await this.close(fd);
+                }
+            });
         }
         catch (err) {
             throw new FileNotFoundError(path, err);
@@ -468,22 +480,26 @@ export class OPFSWorker {
     ): Promise<void> {
         await this.mount();
 
-        const fileExists = await this.exists(path);
-        const fileHandle = await this.getFileHandle(path, true);
-
         if (!encoding) {
             encoding = (typeof data !== 'string' || isBinaryFileExtension(path)) ? 'binary' : 'utf-8';
         }
 
-        await writeFileData(fileHandle, data, encoding, path);
+        const buffer = createBuffer(data, encoding);
 
-        // Only notify changes if the file didn't exist before or if content actually changed
-        if (!fileExists) {
-            await this.notifyChange({ path, type: 'added', isDirectory: false });
-        }
-        else {
-            await this.notifyChange({ path, type: 'changed', isDirectory: false });
-        }
+        await withLock(path, 'exclusive', async() => {
+            const existed = await this.exists(path);
+            const fd = await this.open(path, { create: true, truncate: true });
+
+            try {
+                await this.write(fd, buffer, 0, buffer.length, null, false);
+                await this.fsync(fd);
+            }
+            finally {
+                await this.close(fd);
+            }
+
+            await this.notifyChange({ path, type: existed ? 'changed' : 'added', isDirectory: false });
+        });
     }
 
     /**
@@ -515,14 +531,27 @@ export class OPFSWorker {
     ): Promise<void> {
         await this.mount();
 
-        const fileHandle = await this.getFileHandle(path, true);
-
         if (!encoding) {
             encoding = (typeof data !== 'string' || isBinaryFileExtension(path)) ? 'binary' : 'utf-8';
         }
 
-        await writeFileData(fileHandle, data, encoding, path, { append: true });
-        await this.notifyChange({ path, type: 'changed', isDirectory: false });
+        const buffer = createBuffer(data, encoding);
+
+        await withLock(path, 'exclusive', async() => {
+            const fd = await this.open(path, { create: true });
+
+            try {
+                const { size } = await this.fstat(fd);
+
+                await this.write(fd, buffer, 0, buffer.length, size, false);
+                await this.fsync(fd);
+            }
+            finally {
+                await this.close(fd);
+            }
+
+            await this.notifyChange({ path, type: 'changed', isDirectory: false });
+        });
     }
 
     /**
@@ -1276,9 +1305,10 @@ export class OPFSWorker {
      * @param offset - The offset in the buffer to start reading from (default: 0)
      * @param length - The number of bytes to write (default: entire buffer)
      * @param position - The position in the file to write to (null/undefined for current position)
+     * @param emitEvent - Whether to emit a change event (default: true)
      * @returns Promise that resolves to the number of bytes written
      * @throws {OPFSError} If the file descriptor is invalid or writing fails
-     * 
+     *
      * @example
      * ```typescript
      * const fd = await fs.open('/data/file.txt', { create: true });
@@ -1293,7 +1323,8 @@ export class OPFSWorker {
         buffer: Uint8Array,
         offset: number = 0,
         length?: number,
-        position?: number | null | undefined
+        position?: number | null | undefined,
+        emitEvent: boolean = true
     ): Promise<number> {
         const fileInfo = this._getFileDescriptor(fd);
 
@@ -1319,8 +1350,9 @@ export class OPFSWorker {
                 fileInfo.position = writePosition + bytesWritten;
             }
 
-            // Notify about the change
-            await this.notifyChange({ path: fileInfo.path, type: 'changed', isDirectory: false });
+            if (emitEvent) {
+                await this.notifyChange({ path: fileInfo.path, type: 'changed', isDirectory: false });
+            }
 
             return bytesWritten;
         }
