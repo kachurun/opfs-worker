@@ -18,17 +18,21 @@ describe('OPFSWorker', () => {
     await fsw.clear('/');
   });
 
-  it('writes and reads files', async () => {
-    await fsw.writeFile('/hello.txt', 'world');
+  it('writes and reads files as binary', async () => {
+    const data = new TextEncoder().encode('world');
+    await fsw.writeFile('/hello.txt', data);
     const content = await fsw.readFile('/hello.txt');
-    expect(content).toBe('world');
+    expect(content).toEqual(data);
   });
 
   it('appends to files', async () => {
-    await fsw.writeFile('/append.txt', 'start');
-    await fsw.appendFile('/append.txt', ' end');
+    const startData = new TextEncoder().encode('start');
+    const endData = new TextEncoder().encode(' end');
+    await fsw.writeFile('/append.txt', startData);
+    await fsw.appendFile('/append.txt', endData);
     const content = await fsw.readFile('/append.txt');
-    expect(content).toBe('start end');
+    const expected = new Uint8Array([...startData, ...endData]);
+    expect(content).toEqual(expected);
   });
 
   it('creates directories recursively and lists them', async () => {
@@ -38,7 +42,8 @@ describe('OPFSWorker', () => {
   });
 
   it('provides file stats and hash', async () => {
-    await fsw.writeFile('/hash.txt', 'data');
+    const data = new TextEncoder().encode('data');
+    await fsw.writeFile('/hash.txt', data);
     await fsw.setOptions({ hashAlgorithm: 'SHA-1' });
     const stat = await fsw.stat('/hash.txt');
     expect(stat.isFile).toBe(true);
@@ -48,7 +53,7 @@ describe('OPFSWorker', () => {
 
   it('respects maxFileSize option for hashing', async () => {
     // Create a file larger than the default 50MB limit
-    const largeData = 'x'.repeat(51 * 1024 * 1024); // 51MB
+    const largeData = new Uint8Array(51 * 1024 * 1024).fill(120); // 51MB of 'x' characters
     await fsw.writeFile('/large.txt', largeData);
     
     // Should not have hash with default 50MB limit
@@ -71,7 +76,7 @@ describe('OPFSWorker', () => {
 
   it('indexes directory structure', async () => {
     await fsw.mkdir('/dir', { recursive: true });
-    await fsw.writeFile('/dir/file.txt', '1');
+    await fsw.writeFile('/dir/file.txt', new TextEncoder().encode('1'));
     const idx = await fsw.index();
     expect([...idx.keys()].sort()).toEqual(['/', '/dir', '/dir/file.txt']);
   });
@@ -95,14 +100,16 @@ describe('OPFSWorker', () => {
   });
 
   it('syncs external entries and supports cleanBefore', async () => {
-    await fsw.writeFile('/old.txt', 'old');
+    await fsw.writeFile('/old.txt', new TextEncoder().encode('old'));
     await fsw.sync([
       ['/new.txt', 'new'],
       ['relative.txt', 'rel']
     ], { cleanBefore: true });
     expect(await fsw.exists('/old.txt')).toBe(false);
-    expect(await fsw.readFile('/new.txt')).toBe('new');
-    expect(await fsw.readFile('/relative.txt')).toBe('rel');
+    const newContent = await fsw.readFile('/new.txt');
+    const relContent = await fsw.readFile('/relative.txt');
+    expect(new TextDecoder().decode(newContent)).toBe('new');
+    expect(new TextDecoder().decode(relContent)).toBe('rel');
   });
 
   it('watches for file changes', async () => {
@@ -113,12 +120,12 @@ describe('OPFSWorker', () => {
     await fsw.mkdir('/watched', { recursive: true });
     await fsw.watch('/watched');
 
-    await fsw.writeFile('/watched/a.txt', '1');
+    await fsw.writeFile('/watched/a.txt', new TextEncoder().encode('1'));
     // Give BroadcastChannel a moment to deliver the event
     await new Promise(r => setTimeout(r, 10));
     expect(events.some(e => e.type === 'added' && e.path === '/watched/a.txt')).toBe(true);
 
-    await fsw.writeFile('/watched/a.txt', '2');
+    await fsw.writeFile('/watched/a.txt', new TextEncoder().encode('2'));
     await new Promise(r => setTimeout(r, 10));
     expect(events.some(e => e.type === 'changed' && e.path === '/watched/a.txt')).toBe(true);
 
@@ -136,7 +143,7 @@ describe('OPFSWorker', () => {
     channel.onmessage = (event) => events.push(event.data);
     await fsw.watch('/');
 
-    await fsw.writeFile('/root-file.txt', 'test');
+    await fsw.writeFile('/root-file.txt', new TextEncoder().encode('test'));
     // Give BroadcastChannel a moment to deliver the event
     await new Promise(r => setTimeout(r, 10));
     expect(events.some(e => e.type === 'added' && e.path === '/root-file.txt')).toBe(true);
@@ -158,18 +165,18 @@ describe('OPFSWorker', () => {
     // Create nested structure
     await fsw.mkdir('/shallow-test', { recursive: true });
     await fsw.mkdir('/shallow-test/nested', { recursive: true });
-    await fsw.writeFile('/shallow-test/nested/deep-file.txt', 'deep content');
+    await fsw.writeFile('/shallow-test/nested/deep-file.txt', new TextEncoder().encode('deep content'));
     
     // Watch with shallow option - watch immediate children, not the directory itself
     await fsw.watch('/shallow-test/*', { recursive: false });
     
     // Create file in immediate directory (should be detected)
-    await fsw.writeFile('/shallow-test/immediate.txt', 'immediate content');
+    await fsw.writeFile('/shallow-test/immediate.txt', new TextEncoder().encode('immediate content'));
     await new Promise(r => setTimeout(r, 10));
     expect(events.some(e => e.type === 'added' && e.path === '/shallow-test/immediate.txt')).toBe(true);
     
     // Create file in nested directory (should NOT be detected with shallow watching)
-    await fsw.writeFile('/shallow-test/nested/another-deep.txt', 'another deep content');
+    await fsw.writeFile('/shallow-test/nested/another-deep.txt', new TextEncoder().encode('another deep content'));
     await new Promise(r => setTimeout(r, 10));
     expect(events.some(e => e.type === 'added' && e.path === '/shallow-test/nested/another-deep.txt')).toBe(false);
     
@@ -186,7 +193,7 @@ describe('OPFSWorker', () => {
     channel.onmessage = (event) => events.push(event.data);
     
     // Don't watch any paths, so no events should be received
-    await fsw.writeFile('/internal-test.txt', 'test');
+    await fsw.writeFile('/internal-test.txt', new TextEncoder().encode('test'));
     await new Promise(r => setTimeout(r, 50));
     expect(events.some(e => e.type === 'changed' && e.path === '/internal-test.txt')).toBe(false);
 
@@ -211,7 +218,7 @@ describe('OPFSWorker', () => {
     await fsw.watch('/watched-path');
     
     // Make changes to the watched path
-    await fsw.writeFile('/watched-path/file.txt', 'test');
+    await fsw.writeFile('/watched-path/file.txt', new TextEncoder().encode('test'));
     // Give BroadcastChannel a moment to deliver the event
     await new Promise(r => setTimeout(r, 10));
     
@@ -240,7 +247,7 @@ describe('OPFSWorker', () => {
     await fsw.watch('/');
     
     // Create a source file
-    await fsw.writeFile('/source.txt', 'source content');
+    await fsw.writeFile('/source.txt', new TextEncoder().encode('source content'));
     
     // Copy the file
     await fsw.copy('/source.txt', '/dest.txt');
@@ -251,7 +258,8 @@ describe('OPFSWorker', () => {
     expect(events.some(e => e.type === 'added' && e.path === '/dest.txt')).toBe(true);
     
     // Verify the copy worked
-    expect(await fsw.readFile('/dest.txt')).toBe('source content');
+    const destContent = await fsw.readFile('/dest.txt');
+    expect(new TextDecoder().decode(destContent)).toBe('source content');
     
     fsw.unwatch('/');
     channel.close();
@@ -275,26 +283,26 @@ describe('OPFSWorker', () => {
     });
     
     // Create files that should match the pattern
-    await fsw.writeFile('/pattern-test/app.js', 'console.log("app")');
+    await fsw.writeFile('/pattern-test/app.js', new TextEncoder().encode('console.log("app")'));
     await new Promise(r => setTimeout(r, 10));
     expect(events.some(e => e.type === 'added' && e.path === '/pattern-test/app.js')).toBe(true);
     
-    await fsw.writeFile('/pattern-test/src/index.js', 'export default {}');
+    await fsw.writeFile('/pattern-test/src/index.js', new TextEncoder().encode('export default {}'));
     await new Promise(r => setTimeout(r, 10));
     expect(events.some(e => e.type === 'added' && e.path === '/pattern-test/src/index.js')).toBe(true);
     
     // Create files that should NOT match (excluded by pattern)
-    await fsw.writeFile('/pattern-test/dist/bundle.js', 'bundle content');
+    await fsw.writeFile('/pattern-test/dist/bundle.js', new TextEncoder().encode('bundle content'));
     await new Promise(r => setTimeout(r, 10));
     expect(events.some(e => e.type === 'added' && e.path === '/pattern-test/dist/bundle.js')).toBe(false);
     
     // Create files that should NOT match (not in include patterns)
-    await fsw.writeFile('/pattern-test/readme.md', '# Readme');
+    await fsw.writeFile('/pattern-test/readme.md', new TextEncoder().encode('# Readme'));
     await new Promise(r => setTimeout(r, 10));
     expect(events.some(e => e.type === 'added' && e.path === '/pattern-test/readme.md')).toBe(false);
     
     // Test minimatch pattern with wildcards
-    await fsw.writeFile('/pattern-test/utils.js', 'utils');
+    await fsw.writeFile('/pattern-test/utils.js', new TextEncoder().encode('utils'));
     await new Promise(r => setTimeout(r, 10));
     expect(events.some(e => e.type === 'added' && e.path === '/pattern-test/utils.js')).toBe(true);
     

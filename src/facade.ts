@@ -1,5 +1,6 @@
 import { wrap } from 'comlink';
 
+import { decodeBuffer, encodeString, isBinaryFileExtension } from './utils/encoder';
 import WorkerCtor from './worker?worker&inline';
 
 import type {
@@ -8,7 +9,6 @@ import type {
     FileOpenOptions,
     FileStat,
     OPFSOptions,
-    OPFSWorker,
     RemoteOPFSWorker,
     RenameOptions,
     WatchOptions
@@ -22,7 +22,7 @@ export class OPFSFileSystem {
     #worker: RemoteOPFSWorker;
 
     constructor(options?: OPFSOptions) {
-        const wrapped = wrap<OPFSWorker>(new WorkerCtor());
+        const wrapped = wrap<RemoteOPFSWorker>(new WorkerCtor());
 
         this.#worker = wrapped;
 
@@ -62,7 +62,16 @@ export class OPFSFileSystem {
         path: string,
         encoding?: any
     ): Promise<string | Uint8Array> {
-        return this.#worker.readFile(path, encoding);
+        // Get binary data from worker
+        const buffer = await this.#worker.readFile(path);
+
+        // If no encoding specified, auto-detect based on file extension
+        if (!encoding) {
+            encoding = isBinaryFileExtension(path) ? 'binary' : 'utf-8';
+        }
+
+        // Return binary data or decode to string
+        return (encoding === 'binary') ? buffer : decodeBuffer(buffer, encoding);
     }
 
     /**
@@ -73,7 +82,17 @@ export class OPFSFileSystem {
         data: string | Uint8Array | ArrayBuffer,
         encoding?: Encoding
     ): Promise<void> {
-        return this.#worker.writeFile(path, data, encoding);
+        // If no encoding specified, auto-detect based on file extension
+        if (!encoding) {
+            encoding = (typeof data !== 'string' || isBinaryFileExtension(path)) ? 'binary' : 'utf-8';
+        }
+
+        // Convert data to Uint8Array
+        const buffer = typeof data === 'string'
+            ? encodeString(data, encoding)
+            : (data instanceof Uint8Array ? data : new Uint8Array(data));
+
+        return this.#worker.writeFile(path, buffer);
     }
 
     /**
@@ -84,7 +103,17 @@ export class OPFSFileSystem {
         data: string | Uint8Array | ArrayBuffer,
         encoding?: Encoding
     ): Promise<void> {
-        return this.#worker.appendFile(path, data, encoding);
+        // If no encoding specified, auto-detect based on file extension
+        if (!encoding) {
+            encoding = (typeof data !== 'string' || isBinaryFileExtension(path)) ? 'binary' : 'utf-8';
+        }
+
+        // Convert data to Uint8Array
+        const buffer = typeof data === 'string'
+            ? encodeString(data, encoding)
+            : (data instanceof Uint8Array ? data : new Uint8Array(data));
+
+        return this.#worker.appendFile(path, buffer);
     }
 
     /**
@@ -258,5 +287,32 @@ export class OPFSFileSystem {
      */
     async sync(entries: [string, string | Uint8Array | Blob][], options?: { cleanBefore?: boolean }): Promise<void> {
         return this.#worker.sync(entries, options);
+    }
+
+    /**
+     * Read a file as text with automatic encoding detection
+     */
+    async readText(path: string, encoding: Encoding = 'utf-8'): Promise<string> {
+        const buffer = await this.#worker.readFile(path);
+
+        return decodeBuffer(buffer, encoding);
+    }
+
+    /**
+     * Write text to a file with specified encoding
+     */
+    async writeText(path: string, text: string, encoding: Encoding = 'utf-8'): Promise<void> {
+        const buffer = encodeString(text, encoding);
+
+        return this.#worker.writeFile(path, buffer);
+    }
+
+    /**
+     * Append text to a file with specified encoding
+     */
+    async appendText(path: string, text: string, encoding: Encoding = 'utf-8'): Promise<void> {
+        const buffer = encodeString(text, encoding);
+
+        return this.#worker.appendFile(path, buffer);
     }
 }

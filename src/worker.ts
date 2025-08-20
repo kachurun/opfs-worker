@@ -1,7 +1,5 @@
 import { expose, transfer } from 'comlink';
 
-
-import { decodeBuffer, isBinaryFileExtension } from './utils/encoder';
 import {
     FileNotFoundError,
     OPFSError,
@@ -15,7 +13,6 @@ import {
     calculateReadLength,
     checkOPFSSupport,
     convertBlobToUint8Array,
-    createBuffer,
     createSyncHandleSafe,
     dirname,
     joinPath,
@@ -30,7 +27,7 @@ import {
     withLock
 } from './utils/helpers';
 
-import type { DirentData, Encoding, FileOpenOptions, FileStat, OPFSOptions, RenameOptions, WatchEvent, WatchOptions, WatchSnapshot } from './types';
+import type { DirentData, FileOpenOptions, FileStat, OPFSOptions, RenameOptions, WatchEvent, WatchOptions, WatchSnapshot } from './types';
 
 
 /**
@@ -389,39 +386,24 @@ export class OPFSWorker {
     /**
      * Read a file from the file system
      * 
-     * Reads the contents of a file and returns it as a string or binary data
-     * depending on the specified encoding.
+     * Reads the contents of a file and returns it as binary data.
      * 
      * @param path - The path to the file to read
-     * @param encoding - The encoding to use for reading the file
-     * @returns Promise that resolves to the file contents
+     * @returns Promise that resolves to the file contents as Uint8Array
      * @throws {FileNotFoundError} If the file does not exist
      * @throws {OPFSError} If reading the file fails
      * 
      * @example
      * ```typescript
-     * // Read as text
+     * // Read as binary data
      * const content = await fs.readFile('/config/settings.json');
      * 
-     * // Read as binary
-     * const binaryData = await fs.readFile('/images/logo.png', 'binary');
-     * 
-     * // Read with specific encoding
-     * const utf8Content = await fs.readFile('/data/utf8.txt', 'utf-8');
+     * // Read binary file
+     * const binaryData = await fs.readFile('/images/logo.png');
      * ```
      */
-    async readFile(path: string, encoding: 'binary'): Promise<Uint8Array>;
-    async readFile(path: string, encoding: Encoding): Promise<string>;
-    async readFile(path: string, encoding: Encoding | 'binary'): Promise<string | Uint8Array>;
-    async readFile(
-        path: string,
-        encoding?: any
-    ): Promise<string | Uint8Array> {
+    async readFile(path: string): Promise<Uint8Array> {
         await this.mount();
-
-        if (!encoding) {
-            encoding = isBinaryFileExtension(path) ? 'binary' : 'utf-8';
-        }
 
         try {
             return await withLock(path, 'shared', async() => {
@@ -435,7 +417,7 @@ export class OPFSWorker {
                         await this.read(fd, buffer, 0, size, 0);
                     }
 
-                    return (encoding === 'binary') ? buffer : decodeBuffer(buffer, encoding);
+                    return transfer(buffer, [buffer.buffer]);
                 }
                 finally {
                     await this.close(fd);
@@ -450,40 +432,32 @@ export class OPFSWorker {
     /**
      * Write data to a file
      * 
-     * Creates or overwrites a file with the specified data. If the file already
+     * Creates or overwrites a file with the specified binary data. If the file already
      * exists, it will be truncated before writing.
      * 
      * @param path - The path to the file to write
-     * @param data - The data to write to the file (string, Uint8Array, or ArrayBuffer)
-     * @param encoding - The encoding to use when writing string data (default: 'utf-8')
+     * @param data - The binary data to write to the file (Uint8Array or ArrayBuffer)
      * @returns Promise that resolves when the write operation is complete
      * @throws {OPFSError} If writing the file fails
      * 
      * @example
      * ```typescript
-     * // Write text data
-     * await fs.writeFile('/config/settings.json', JSON.stringify({ theme: 'dark' }));
-     * 
      * // Write binary data
      * const binaryData = new Uint8Array([1, 2, 3, 4, 5]);
      * await fs.writeFile('/data/binary.dat', binaryData);
      * 
-     * // Write with specific encoding
-     * await fs.writeFile('/data/utf16.txt', 'Hello World', 'utf-16le');
+     * // Write from ArrayBuffer
+     * const arrayBuffer = new ArrayBuffer(10);
+     * await fs.writeFile('/data/buffer.dat', arrayBuffer);
      * ```
      */
     async writeFile(
         path: string,
-        data: string | Uint8Array | ArrayBuffer,
-        encoding?: Encoding
+        data: Uint8Array | ArrayBuffer
     ): Promise<void> {
         await this.mount();
 
-        if (!encoding) {
-            encoding = (typeof data !== 'string' || isBinaryFileExtension(path)) ? 'binary' : 'utf-8';
-        }
-
-        const buffer = createBuffer(data, encoding);
+        const buffer = data instanceof Uint8Array ? data : new Uint8Array(data);
 
         await withLock(path, 'exclusive', async() => {
             const existed = await this.exists(path);
@@ -504,37 +478,32 @@ export class OPFSWorker {
     /**
      * Append data to a file
      * 
-     * Adds data to the end of an existing file. If the file doesn't exist,
+     * Adds binary data to the end of an existing file. If the file doesn't exist,
      * it will be created.
      * 
      * @param path - The path to the file to append to
-     * @param data - The data to append to the file (string, Uint8Array, or ArrayBuffer)
-     * @param encoding - The encoding to use when appending string data (default: 'utf-8')
+     * @param data - The binary data to append to the file (Uint8Array or ArrayBuffer)
      * @returns Promise that resolves when the append operation is complete
      * @throws {OPFSError} If appending to the file fails
      * 
      * @example
      * ```typescript
-     * // Append text to a log file
-     * await fs.appendFile('/logs/app.log', `[${new Date().toISOString()}] User logged in\n`);
-     * 
      * // Append binary data
      * const additionalData = new Uint8Array([6, 7, 8]);
      * await fs.appendFile('/data/binary.dat', additionalData);
+     * 
+     * // Append from ArrayBuffer
+     * const arrayBuffer = new ArrayBuffer(5);
+     * await fs.appendFile('/data/buffer.dat', arrayBuffer);
      * ```
      */
     async appendFile(
         path: string,
-        data: string | Uint8Array | ArrayBuffer,
-        encoding?: Encoding
+        data: Uint8Array | ArrayBuffer
     ): Promise<void> {
         await this.mount();
 
-        if (!encoding) {
-            encoding = (typeof data !== 'string' || isBinaryFileExtension(path)) ? 'binary' : 'utf-8';
-        }
-
-        const buffer = createBuffer(data, encoding);
+        const buffer = data instanceof Uint8Array ? data : new Uint8Array(data);
 
         await withLock(path, 'exclusive', async() => {
             const fd = await this.open(path, { create: true });
@@ -1028,7 +997,7 @@ export class OPFSWorker {
             const sourceStats = await this.stat(source);
 
             if (sourceStats.isFile) {
-                const content = await this.readFile(source, 'binary');
+                const content = await this.readFile(source);
 
                 await this.writeFile(destination, content);
             }
@@ -1510,10 +1479,14 @@ export class OPFSWorker {
             for (const [path, data] of entries) {
                 const normalizedPath = normalizePath(path);
 
-                let fileData: string | Uint8Array;
+                let fileData: Uint8Array;
 
                 if (data instanceof Blob) {
                     fileData = await convertBlobToUint8Array(data);
+                }
+                else if (typeof data === 'string') {
+                    // Convert string to Uint8Array using UTF-8 encoding
+                    fileData = new TextEncoder().encode(data);
                 }
                 else {
                     fileData = data;

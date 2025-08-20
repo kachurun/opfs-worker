@@ -21,7 +21,7 @@ describe('OPFSWorker File Descriptors', () => {
 
   describe('open()', () => {
     it('opens existing file for reading', async () => {
-      await fsw.writeFile('/test.txt', 'Hello, World!');
+      await fsw.writeFile('/test.txt', new TextEncoder().encode('Hello, World!'));
       const fd = await fsw.open('/test.txt');
       
       expect(fd).toBeTypeOf('number');
@@ -40,7 +40,7 @@ describe('OPFSWorker File Descriptors', () => {
     });
 
     it('fails to create file when exclusive is true and file exists', async () => {
-      await fsw.writeFile('/exists.txt', 'content');
+      await fsw.writeFile('/exists.txt', new TextEncoder().encode('content'));
       
       await expect(
         fsw.open('/exists.txt', { create: true, exclusive: true })
@@ -48,7 +48,7 @@ describe('OPFSWorker File Descriptors', () => {
     });
 
     it('truncates file when truncate option is true', async () => {
-      await fsw.writeFile('/truncate.txt', 'long content here');
+      await fsw.writeFile('/truncate.txt', new TextEncoder().encode('long content here'));
       const fd = await fsw.open('/truncate.txt', { create: true, truncate: true });
       
       const stats = await fsw.fstat(fd);
@@ -124,7 +124,7 @@ describe('OPFSWorker File Descriptors', () => {
 
   describe('read()', () => {
     it('reads data from file descriptor', async () => {
-      await fsw.writeFile('/read.txt', 'Hello, World!');
+      await fsw.writeFile('/read.txt', new TextEncoder().encode('Hello, World!'));
       const fd = await fsw.open('/read.txt');
       
       const buffer = new Uint8Array(20);
@@ -137,7 +137,7 @@ describe('OPFSWorker File Descriptors', () => {
     });
 
     it('reads from current position when position is null', async () => {
-      await fsw.writeFile('/read-pos.txt', 'Hello, World!');
+      await fsw.writeFile('/read-pos.txt', new TextEncoder().encode('Hello, World!'));
       const fd = await fsw.open('/read-pos.txt');
       
       const buffer = new Uint8Array(20);
@@ -156,7 +156,7 @@ describe('OPFSWorker File Descriptors', () => {
     });
 
     it('returns 0 when reading beyond end of file', async () => {
-      await fsw.writeFile('/eof.txt', 'Hello');
+      await fsw.writeFile('/eof.txt', new TextEncoder().encode('Hello'));
       const fd = await fsw.open('/eof.txt');
       
       const buffer = new Uint8Array(10);
@@ -168,7 +168,7 @@ describe('OPFSWorker File Descriptors', () => {
     });
 
     it('returns 0 for zero-length read operation', async () => {
-      await fsw.writeFile('/zero-read.txt', 'Hello, World!');
+      await fsw.writeFile('/zero-read.txt', new TextEncoder().encode('Hello, World!'));
       const fd = await fsw.open('/zero-read.txt');
       
       const buffer = new Uint8Array(10);
@@ -208,7 +208,7 @@ describe('OPFSWorker File Descriptors', () => {
     });
 
     it('validates boundary cases correctly', async () => {
-      await fsw.writeFile('/boundary.txt', 'Hello, World!');
+      await fsw.writeFile('/boundary.txt', new TextEncoder().encode('Hello, World!'));
       const fd = await fsw.open('/boundary.txt');
       
       const buffer = new Uint8Array(10);
@@ -237,8 +237,8 @@ describe('OPFSWorker File Descriptors', () => {
       await fsw.close(fd);
       
       // Verify content was written
-      const content = await fsw.readFile('/write.txt', 'utf-8');
-      expect(content).toBe('Hello, World!');
+      const content = await fsw.readFile('/write.txt');
+      expect(new TextDecoder().decode(content)).toBe('Hello, World!');
     });
 
     it('writes to current position when position is null', async () => {
@@ -256,8 +256,8 @@ describe('OPFSWorker File Descriptors', () => {
       await fsw.close(fd);
       
       // Verify content was written
-      const content = await fsw.readFile('/write-pos.txt', 'utf-8');
-      expect(content).toBe('Hello, World!');
+      const content = await fsw.readFile('/write-pos.txt');
+      expect(new TextDecoder().decode(content)).toBe('Hello, World!');
     });
 
     it('uses default offset and length when not specified', async () => {
@@ -270,8 +270,8 @@ describe('OPFSWorker File Descriptors', () => {
       
       await fsw.close(fd);
       
-      const content = await fsw.readFile('/write-defaults.txt', 'utf-8');
-      expect(content).toBe('Hello, World!');
+      const content = await fsw.readFile('/write-defaults.txt');
+      expect(new TextDecoder().decode(content)).toBe('Hello, World!');
     });
 
     it('returns 0 for zero-length write operation', async () => {
@@ -285,8 +285,8 @@ describe('OPFSWorker File Descriptors', () => {
       await fsw.close(fd);
       
       // File should remain empty
-      const content = await fsw.readFile('/zero-write.txt', 'utf-8');
-      expect(content).toBe('');
+      const content = await fsw.readFile('/zero-write.txt');
+      expect(content.length).toBe(0);
     });
 
     it('validates arguments correctly', async () => {
@@ -336,7 +336,7 @@ describe('OPFSWorker File Descriptors', () => {
 
   describe('fstat()', () => {
     it('returns file statistics', async () => {
-      await fsw.writeFile('/stats.txt', 'Hello, World!');
+      await fsw.writeFile('/stats.txt', new TextEncoder().encode('Hello, World!'));
       const fd = await fsw.open('/stats.txt');
       
       const stats = await fsw.fstat(fd);
@@ -359,7 +359,7 @@ describe('OPFSWorker File Descriptors', () => {
 
   describe('ftruncate()', () => {
     it('truncates file to specified size', async () => {
-      await fsw.writeFile('/truncate-fd.txt', 'Hello, World!');
+      await fsw.writeFile('/truncate-fd.txt', new TextEncoder().encode('Hello, World!'));
       const fd = await fsw.open('/truncate-fd.txt');
       
       await fsw.ftruncate(fd, 5);
@@ -370,12 +370,12 @@ describe('OPFSWorker File Descriptors', () => {
       await fsw.close(fd);
       
       // Verify content was truncated
-      const content = await fsw.readFile('/truncate-fd.txt', 'utf-8');
-      expect(content).toBe('Hello');
+      const content = await fsw.readFile('/truncate-fd.txt');
+      expect(new TextDecoder().decode(content)).toBe('Hello');
     });
 
     it('adjusts position when truncating beyond current position', async () => {
-      await fsw.writeFile('/truncate-pos.txt', 'Hello, World!');
+      await fsw.writeFile('/truncate-pos.txt', new TextEncoder().encode('Hello, World!'));
       const fd = await fsw.open('/truncate-pos.txt');
       
       // Move to position 10 by reading with null position (current position)
