@@ -31,7 +31,6 @@ import {
 } from './utils/helpers';
 
 import type { DirentData, Encoding, FileOpenOptions, FileStat, OPFSOptions, RenameOptions, WatchEvent, WatchOptions, WatchSnapshot } from './types';
-import type { BufferEncoding } from 'typescript';
 
 
 /**
@@ -476,7 +475,7 @@ export class OPFSWorker {
     async writeFile(
         path: string,
         data: string | Uint8Array | ArrayBuffer,
-        encoding?: BufferEncoding
+        encoding?: Encoding
     ): Promise<void> {
         await this.mount();
 
@@ -527,7 +526,7 @@ export class OPFSWorker {
     async appendFile(
         path: string,
         data: string | Uint8Array | ArrayBuffer,
-        encoding?: BufferEncoding
+        encoding?: Encoding
     ): Promise<void> {
         await this.mount();
 
@@ -884,10 +883,11 @@ export class OPFSWorker {
         const { recursive = false, force = false } = options || {};
 
         const parent = await this.getDirectoryHandle(dirname(path), false);
+        const stat = await this.stat(path);
 
         await removeEntry(parent, path, { recursive, force });
 
-        await this.notifyChange({ path, type: 'removed', isDirectory: false });
+        await this.notifyChange({ path, type: 'removed', isDirectory: stat.isDirectory });
     }
 
     /**
@@ -958,12 +958,7 @@ export class OPFSWorker {
         try {
             const overwrite = options?.overwrite ?? false;
 
-            const sourceExists = await this.exists(oldPath);
-
-            if (!sourceExists) {
-                throw new FileNotFoundError(oldPath);
-            }
-
+            const sourceStat = await this.stat(oldPath);
             const destExists = await this.exists(newPath);
 
             if (destExists && !overwrite) {
@@ -974,8 +969,8 @@ export class OPFSWorker {
             await this.remove(oldPath, { recursive: true });
 
             // Notify about the rename operation
-            await this.notifyChange({ path: oldPath, type: 'removed', isDirectory: false });
-            await this.notifyChange({ path: newPath, type: 'added', isDirectory: false });
+            await this.notifyChange({ path: oldPath, type: 'removed', isDirectory: sourceStat.isDirectory });
+            await this.notifyChange({ path: newPath, type: 'added', isDirectory: sourceStat.isDirectory });
         }
         catch (error) {
             if (error instanceof OPFSError) {
@@ -1286,7 +1281,7 @@ export class OPFSWorker {
             const bytesRead = fileInfo.syncHandle.read(targetBuffer, { at: readPosition });
 
             // Update position if position was not explicitly specified (null means use current position)
-            if (position === null) {
+            if (position == null) {
                 fileInfo.position = readPosition + bytesRead;
             }
 

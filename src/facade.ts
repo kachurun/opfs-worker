@@ -14,8 +14,6 @@ import type {
     WatchOptions
 } from './types';
 
-import type { BufferEncoding } from 'typescript';
-
 /**
  * Facade class that provides a clean interface for communicating with the OPFS worker
  * while hiding Comlink implementation details.
@@ -73,7 +71,7 @@ export class OPFSFileSystem {
     async writeFile(
         path: string,
         data: string | Uint8Array | ArrayBuffer,
-        encoding?: BufferEncoding
+        encoding?: Encoding
     ): Promise<void> {
         return this.#worker.writeFile(path, data, encoding);
     }
@@ -84,7 +82,7 @@ export class OPFSFileSystem {
     async appendFile(
         path: string,
         data: string | Uint8Array | ArrayBuffer,
-        encoding?: BufferEncoding
+        encoding?: Encoding
     ): Promise<void> {
         return this.#worker.appendFile(path, data, encoding);
     }
@@ -200,7 +198,7 @@ export class OPFSFileSystem {
             fd,
             // Temp buffer to preserve the original buffer
             new Uint8Array(length),
-            offset,
+            0,
             length,
             position
         );

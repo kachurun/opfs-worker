@@ -143,12 +143,12 @@ File system entry type.
 type Kind = 'file' | 'directory';
 ```
 
-### `BufferEncoding`
+### `Encoding`
 
 Supported text encodings.
 
 ```typescript
-type BufferEncoding = 'utf-8' | 'utf-16le' | 'ascii' | 'latin1' | 'base64' | 'hex';
+type Encoding = 'utf-8' | 'utf-16le' | 'ascii' | 'latin1' | 'base64' | 'hex' | 'binary';
 ```
 
 ## Error Types

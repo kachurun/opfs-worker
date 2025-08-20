@@ -13,11 +13,11 @@ This document contains the complete API reference for OPFS Worker.
       - [`OPFSWorker`](#opfsworker)
   - [Core Methods](#core-methods)
     - [Read File](#read-file)
-      - [`readFile(path: string, encoding?: BufferEncoding | 'binary'): Promise<string | Uint8Array>`](#readfilepath-string-encoding-bufferencoding--binary-promisestring--uint8array)
+      - [`readFile(path: string, encoding?: Encoding | 'binary'): Promise<string | Uint8Array>`](#readfilepath-string-encoding-encoding--binary-promisestring--uint8array)
     - [Write File](#write-file)
-      - [`writeFile(path: string, data: string | Uint8Array | ArrayBuffer, encoding?: BufferEncoding): Promise<void>`](#writefilepath-string-data-string--uint8array--arraybuffer-encoding-bufferencoding-promisevoid)
+      - [`writeFile(path: string, data: string | Uint8Array | ArrayBuffer, encoding?: Encoding): Promise<void>`](#writefilepath-string-data-string--uint8array--arraybuffer-encoding-encoding-promisevoid)
     - [Append File](#append-file)
-      - [`appendFile(path: string, data: string | Uint8Array | ArrayBuffer, encoding?: BufferEncoding): Promise<void>`](#appendfilepath-string-data-string--uint8array--arraybuffer-encoding-bufferencoding-promisevoid)
+      - [`appendFile(path: string, data: string | Uint8Array | ArrayBuffer, encoding?: Encoding): Promise<void>`](#appendfilepath-string-data-string--uint8array--arraybuffer-encoding-encoding-promisevoid)
     - [Create Directory](#create-directory)
       - [`mkdir(path: string, options?: { recursive?: boolean }): Promise<void>`](#mkdirpath-string-options--recursive-boolean--promisevoid)
     - [Read Directory](#read-directory)
@@ -120,7 +120,7 @@ const worker = wrap(new OPFSWorker());
 
 ### Read File
 
-#### `readFile(path: string, encoding?: BufferEncoding | 'binary'): Promise<string | Uint8Array>`
+#### `readFile(path: string, encoding?: Encoding | 'binary'): Promise<string | Uint8Array>`
 
 Read a file from the file system. Supports both text and binary files.
 
@@ -157,7 +157,7 @@ const url = URL.createObjectURL(blob);
 
 ### Write File
 
-#### `writeFile(path: string, data: string | Uint8Array | ArrayBuffer, encoding?: BufferEncoding): Promise<void>`
+#### `writeFile(path: string, data: string | Uint8Array | ArrayBuffer, encoding?: Encoding): Promise<void>`
 
 Write data to a file, creating or overwriting it. Supports both text and binary data.
 
@@ -200,7 +200,7 @@ await fs.writeFile('/downloaded-image.png', new Uint8Array(arrayBuffer));
 
 ### Append File
 
-#### `appendFile(path: string, data: string | Uint8Array | ArrayBuffer, encoding?: BufferEncoding): Promise<void>`
+#### `appendFile(path: string, data: string | Uint8Array | ArrayBuffer, encoding?: Encoding): Promise<void>`
 
 Append data to the end of a file.
 

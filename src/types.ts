@@ -12,7 +12,8 @@ export type Encoding = 'ascii'
   | 'ucs-2'
   | 'base64'
   | 'latin1'
-  | 'hex';
+  | 'hex'
+  | 'binary';
 
 export interface FileStat {
     kind: Kind;

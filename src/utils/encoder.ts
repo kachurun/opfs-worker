@@ -2,8 +2,6 @@ import { OPFSError } from './errors';
 
 import type { Encoding } from '../types';
 
-import type { BufferEncoding } from 'typescript';
-
 
 /**
  * Common binary file extensions
@@ -92,13 +90,14 @@ export function isBinaryFileExtension(path: string): boolean {
     return BINARY_FILE_EXTENSIONS.includes(ext as any);
 }
 
-export function encodeString(data: string, encoding: BufferEncoding = 'utf-8'): Uint8Array {
+export function encodeString(data: string, encoding: Encoding = 'utf-8'): Uint8Array {
     switch (encoding) {
         case 'utf8':
         case 'utf-8':
             return new TextEncoder().encode(data);
 
         case 'utf16le':
+        case 'utf-16le':
         case 'ucs2':
         case 'ucs-2':
             return encodeUtf16LE(data);
@@ -130,6 +129,7 @@ export function encodeString(data: string, encoding: BufferEncoding = 'utf-8'): 
 }
 
 export function decodeBuffer(buffer: Uint8Array, encoding: Encoding = 'utf-8'): string {
+    // eslint-disable-next-line ts/switch-exhaustiveness-check
     switch (encoding) {
         case 'utf8':
         case 'utf-8':

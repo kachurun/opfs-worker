@@ -3,7 +3,7 @@ import { minimatch } from 'minimatch';
 import { encodeString } from './encoder';
 import { OPFSError, OPFSNotSupportedError, mapDomError } from './errors';
 
-import type { BufferEncoding } from 'typescript';
+import type { Encoding } from '../types';
 
 
 /**
@@ -232,7 +232,7 @@ export function extname(path: string): string {
     return filename.slice(lastDotIndex);
 }
 
-export function createBuffer(data: string | Uint8Array | ArrayBuffer, encoding: BufferEncoding = 'utf-8'): Uint8Array {
+export function createBuffer(data: string | Uint8Array | ArrayBuffer, encoding: Encoding = 'utf-8'): Uint8Array {
     if (typeof data === 'string') {
         return encodeString(data, encoding);
     }
