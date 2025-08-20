@@ -1,11 +1,9 @@
 import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
 
-import { createWorker } from '../src';
-
-import type { RemoteOPFSWorker } from '../src';
+import { createWorker, OPFSFacade } from '../src';
 
 interface FileSystemContextType {
-    fs: RemoteOPFSWorker | null;
+    fs: OPFSFacade | null;
     isInitialized: boolean;
     error: string | null;
     triggerFileTreeReload: () => void;
@@ -21,7 +19,7 @@ const FileSystemContext = createContext<FileSystemContextType>({
 export const useFileSystem = () => useContext(FileSystemContext);
 
 export const FileSystemProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-    const fsRef = useRef<RemoteOPFSWorker | null>(null);
+    const fsRef = useRef<OPFSFacade | null>(null);
     const [isInitialized, setIsInitialized] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [reloadTrigger, setReloadTrigger] = useState(0);
@@ -33,7 +31,7 @@ export const FileSystemProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     useEffect(() => {
         const initializeFileSystem = async() => {
             try {
-                const fileSystem = createWorker({ rootDir: '/opfs-worker-demo' });
+                const fileSystem = await createWorker({ root: '/opfs-worker-demo' });
 
                 fsRef.current = fileSystem;
                 setIsInitialized(true);

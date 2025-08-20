@@ -1,33 +1,20 @@
-import { wrap } from 'comlink';
+import { OPFSFileSystem } from './facade';
 
-import WorkerCtor from './worker?worker&inline';
-
-import type { OPFSOptions, OPFSWorker, RemoteOPFSWorker } from './types';
+import type { OPFSOptions } from './types';
 
 export * from './types';
 export * from './utils/errors';
 export * from './utils/helpers';
 export * from './utils/encoder';
+export { OPFSFileSystem as OPFSFacade } from './facade';
 
 /**
  * Creates a new file system instance with inline worker
  * @param options - Optional configuration options
  * @returns Promise resolving to the file system interface
  */
-export async function createWorker(
+export function createWorker(
     options?: OPFSOptions
-): Promise<RemoteOPFSWorker> {
-    const wrapped = wrap<OPFSWorker>(new WorkerCtor());
-
-    // Set up options if provided
-    if (options) {
-        // We can't pass a BroadcastChannel instance to the worker, so we need to convert it to a string first
-        if (options.broadcastChannel && options.broadcastChannel instanceof BroadcastChannel) {
-            options.broadcastChannel = options.broadcastChannel.name;
-        }
-
-        await wrapped.setOptions(options);
-    }
-
-    return wrapped;
+): OPFSFileSystem {
+    return new OPFSFileSystem(options);
 }

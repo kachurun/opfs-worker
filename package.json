@@ -25,7 +25,7 @@
     "scripts": {
         "build": "vite build && tsc -p tsconfig.build.json",
         "build:demo": "vite build demo --base=./",
-        "watch": "concurrently \"vite build --watch\" \"tsc -p tsconfig.build.json --watch\"",
+        "watch": "concurrently \"vite build --watch --mode development\" \"tsc -p tsconfig.build.json --watch\"",
         "dev": "vite serve demo",
         "preview": "vite preview demo",
         "type-check": "tsc --noEmit",
