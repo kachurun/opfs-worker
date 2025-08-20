@@ -1,6 +1,11 @@
 import type { OPFSWorker } from './worker';
 import type { Remote } from 'comlink';
 
+/**
+ * Type for paths that can be either a string or URI
+ */
+export type PathLike = string | URL;
+
 export type Kind = 'file' | 'directory';
 
 export type Encoding = 'ascii'
@@ -50,8 +55,8 @@ export interface OPFSOptions {
     root?: string;
     /** Namespace for the events (default: 'opfs-worker:${root}') */
     namespace?: string;
-    /** Hash algorithm for file hashing, or null to disable (default: null) */
-    hashAlgorithm?: null | 'SHA-1' | 'SHA-256' | 'SHA-384' | 'SHA-512';
+    /** Hash algorithm for file hashing, or false/null to disable (default: null) */
+    hashAlgorithm?: null | false | 'SHA-1' | 'SHA-256' | 'SHA-384' | 'SHA-512';
     /** Maximum file size in bytes for hashing (default: 50MB) */
     maxFileSize?: number;
     /** Custom name for the broadcast channel (default: 'opfs-worker') */

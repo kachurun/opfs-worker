@@ -1,5 +1,17 @@
 # opfs-worker
 
+## 1.2.1
+
+### Patch Changes
+
+-   Accept URI as path
+
+## 1.2.0
+
+### Minor Changes
+
+-   Low-level api (open/read/write/close)
+
 ## 1.1.0
 
 ### Minor Changes

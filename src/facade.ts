@@ -9,10 +9,23 @@ import type {
     FileOpenOptions,
     FileStat,
     OPFSOptions,
+    PathLike,
     RemoteOPFSWorker,
     RenameOptions,
     WatchOptions
 } from './types';
+
+/**
+ * Utility function to convert a PathLike to a string path
+ * If it's a URI, extracts the pathname; otherwise returns the string as-is
+ */
+function normalizePath(path: PathLike): string {
+    if (path instanceof URL) {
+        return path.pathname;
+    }
+
+    return path;
+}
 
 /**
  * Facade class that provides a clean interface for communicating with the OPFS worker
@@ -55,19 +68,20 @@ export class OPFSFileSystem {
     /**
      * Read a file from the file system
      */
-    async readFile(path: string, encoding: 'binary'): Promise<Uint8Array>;
-    async readFile(path: string, encoding: Encoding): Promise<string>;
-    async readFile(path: string, encoding?: Encoding | 'binary'): Promise<string | Uint8Array>;
+    async readFile(path: PathLike, encoding: 'binary'): Promise<Uint8Array>;
+    async readFile(path: PathLike, encoding: Encoding): Promise<string>;
+    async readFile(path: PathLike, encoding?: Encoding | 'binary'): Promise<string | Uint8Array>;
     async readFile(
-        path: string,
+        path: PathLike,
         encoding?: any
     ): Promise<string | Uint8Array> {
+        const normalizedPath = normalizePath(path);
         // Get binary data from worker
-        const buffer = await this.#worker.readFile(path);
+        const buffer = await this.#worker.readFile(normalizedPath);
 
         // If no encoding specified, auto-detect based on file extension
         if (!encoding) {
-            encoding = isBinaryFileExtension(path) ? 'binary' : 'utf-8';
+            encoding = isBinaryFileExtension(normalizedPath) ? 'binary' : 'utf-8';
         }
 
         // Return binary data or decode to string
@@ -78,13 +92,15 @@ export class OPFSFileSystem {
      * Write data to a file
      */
     async writeFile(
-        path: string,
+        path: PathLike,
         data: string | Uint8Array | ArrayBuffer,
         encoding?: Encoding
     ): Promise<void> {
+        const normalizedPath = normalizePath(path);
+
         // If no encoding specified, auto-detect based on file extension
         if (!encoding) {
-            encoding = (typeof data !== 'string' || isBinaryFileExtension(path)) ? 'binary' : 'utf-8';
+            encoding = (typeof data !== 'string' || isBinaryFileExtension(normalizedPath)) ? 'binary' : 'utf-8';
         }
 
         // Convert data to Uint8Array
@@ -92,20 +108,22 @@ export class OPFSFileSystem {
             ? encodeString(data, encoding)
             : (data instanceof Uint8Array ? data : new Uint8Array(data));
 
-        return this.#worker.writeFile(path, buffer);
+        return this.#worker.writeFile(normalizedPath, buffer);
     }
 
     /**
      * Append data to a file
      */
     async appendFile(
-        path: string,
+        path: PathLike,
         data: string | Uint8Array | ArrayBuffer,
         encoding?: Encoding
     ): Promise<void> {
+        const normalizedPath = normalizePath(path);
+
         // If no encoding specified, auto-detect based on file extension
         if (!encoding) {
-            encoding = (typeof data !== 'string' || isBinaryFileExtension(path)) ? 'binary' : 'utf-8';
+            encoding = (typeof data !== 'string' || isBinaryFileExtension(normalizedPath)) ? 'binary' : 'utf-8';
         }
 
         // Convert data to Uint8Array
@@ -113,93 +131,119 @@ export class OPFSFileSystem {
             ? encodeString(data, encoding)
             : (data instanceof Uint8Array ? data : new Uint8Array(data));
 
-        return this.#worker.appendFile(path, buffer);
+        return this.#worker.appendFile(normalizedPath, buffer);
     }
 
     /**
      * Create a directory
      */
-    async mkdir(path: string, options?: { recursive?: boolean }): Promise<void> {
-        return this.#worker.mkdir(path, options);
+    async mkdir(path: PathLike, options?: { recursive?: boolean }): Promise<void> {
+        const normalizedPath = normalizePath(path);
+
+        return this.#worker.mkdir(normalizedPath, options);
     }
 
     /**
      * Get file or directory statistics
      */
-    async stat(path: string): Promise<FileStat> {
-        return this.#worker.stat(path);
+    async stat(path: PathLike): Promise<FileStat> {
+        const normalizedPath = normalizePath(path);
+
+        return this.#worker.stat(normalizedPath);
     }
 
     /**
      * Read a directory's contents
      */
-    async readDir(path: string): Promise<DirentData[]> {
-        return this.#worker.readDir(path);
+    async readDir(path: PathLike): Promise<DirentData[]> {
+        const normalizedPath = normalizePath(path);
+
+        return this.#worker.readDir(normalizedPath);
     }
 
     /**
      * Check if a file or directory exists
      */
-    async exists(path: string): Promise<boolean> {
-        return this.#worker.exists(path);
+    async exists(path: PathLike): Promise<boolean> {
+        const normalizedPath = normalizePath(path);
+
+        return this.#worker.exists(normalizedPath);
     }
 
     /**
      * Clear all contents of a directory without removing the directory itself
      */
-    async clear(path?: string): Promise<void> {
-        return this.#worker.clear(path);
+    async clear(path?: PathLike): Promise<void> {
+        const normalizedPath = path ? normalizePath(path) : undefined;
+
+        return this.#worker.clear(normalizedPath);
     }
 
     /**
      * Remove files and directories
      */
-    async remove(path: string, options?: { recursive?: boolean; force?: boolean }): Promise<void> {
-        return this.#worker.remove(path, options);
+    async remove(path: PathLike, options?: { recursive?: boolean; force?: boolean }): Promise<void> {
+        const normalizedPath = normalizePath(path);
+
+        return this.#worker.remove(normalizedPath, options);
     }
 
     /**
      * Resolve a path to an absolute path
      */
-    async realpath(path: string): Promise<string> {
-        return this.#worker.realpath(path);
+    async realpath(path: PathLike): Promise<string> {
+        const normalizedPath = normalizePath(path);
+
+        return this.#worker.realpath(normalizedPath);
     }
 
     /**
      * Rename a file or directory
      */
-    async rename(oldPath: string, newPath: string, options?: RenameOptions): Promise<void> {
-        return this.#worker.rename(oldPath, newPath, options);
+    async rename(oldPath: PathLike, newPath: PathLike, options?: RenameOptions): Promise<void> {
+        const normalizedOldPath = normalizePath(oldPath);
+        const normalizedNewPath = normalizePath(newPath);
+
+        return this.#worker.rename(normalizedOldPath, normalizedNewPath, options);
     }
 
     /**
      * Copy files and directories
      */
-    async copy(source: string, destination: string, options?: { recursive?: boolean; overwrite?: boolean }): Promise<void> {
-        return this.#worker.copy(source, destination, options);
+    async copy(source: PathLike, destination: PathLike, options?: { recursive?: boolean; overwrite?: boolean }): Promise<void> {
+        const normalizedSource = normalizePath(source);
+        const normalizedDestination = normalizePath(destination);
+
+        return this.#worker.copy(normalizedSource, normalizedDestination, options);
     }
 
     /**
      * Start watching a file or directory for changes
      */
-    watch(path: string, options?: WatchOptions): () => void {
-        void this.#worker.watch(path, options);
+    watch(path: PathLike, options?: WatchOptions): () => void {
+        const normalizedPath = normalizePath(path);
 
-        return () => this.unwatch(path);
+        void this.#worker.watch(normalizedPath, options);
+
+        return () => this.unwatch(normalizedPath);
     }
 
     /**
      * Stop watching a previously watched path
      */
-    unwatch(path: string) {
-        void this.#worker.unwatch(path);
+    unwatch(path: PathLike) {
+        const normalizedPath = normalizePath(path);
+
+        void this.#worker.unwatch(normalizedPath);
     }
 
     /**
      * Open a file and return a file descriptor
      */
-    async open(path: string, options?: FileOpenOptions): Promise<number> {
-        return this.#worker.open(path, options);
+    async open(path: PathLike, options?: FileOpenOptions): Promise<number> {
+        const normalizedPath = normalizePath(path);
+
+        return this.#worker.open(normalizedPath, options);
     }
 
     /**
@@ -285,15 +329,18 @@ export class OPFSFileSystem {
     /**
      * Synchronize the file system with external data
      */
-    async sync(entries: [string, string | Uint8Array | Blob][], options?: { cleanBefore?: boolean }): Promise<void> {
-        return this.#worker.sync(entries, options);
+    async sync(entries: [PathLike, string | Uint8Array | Blob][], options?: { cleanBefore?: boolean }): Promise<void> {
+        const normalizedEntries = entries.map(([path, data]) => [normalizePath(path), data] as [string, string | Uint8Array | Blob]);
+
+        return this.#worker.sync(normalizedEntries, options);
     }
 
     /**
      * Read a file as text with automatic encoding detection
      */
-    async readText(path: string, encoding: Encoding = 'utf-8'): Promise<string> {
-        const buffer = await this.#worker.readFile(path);
+    async readText(path: PathLike, encoding: Encoding = 'utf-8'): Promise<string> {
+        const normalizedPath = normalizePath(path);
+        const buffer = await this.#worker.readFile(normalizedPath);
 
         return decodeBuffer(buffer, encoding);
     }
@@ -301,18 +348,20 @@ export class OPFSFileSystem {
     /**
      * Write text to a file with specified encoding
      */
-    async writeText(path: string, text: string, encoding: Encoding = 'utf-8'): Promise<void> {
+    async writeText(path: PathLike, text: string, encoding: Encoding = 'utf-8'): Promise<void> {
+        const normalizedPath = normalizePath(path);
         const buffer = encodeString(text, encoding);
 
-        return this.#worker.writeFile(path, buffer);
+        return this.#worker.writeFile(normalizedPath, buffer);
     }
 
     /**
      * Append text to a file with specified encoding
      */
-    async appendText(path: string, text: string, encoding: Encoding = 'utf-8'): Promise<void> {
+    async appendText(path: PathLike, text: string, encoding: Encoding = 'utf-8'): Promise<void> {
+        const normalizedPath = normalizePath(path);
         const buffer = encodeString(text, encoding);
 
-        return this.#worker.appendFile(path, buffer);
+        return this.#worker.appendFile(normalizedPath, buffer);
     }
 }
