@@ -21,6 +21,7 @@ A robust TypeScript library for working with Origin Private File System (OPFS) t
 ### 🚀 **Performance & Architecture**
 
 - **Web Worker-based**: Runs in a separate thread, keeping your main thread responsive
+- **Zero-copy data transfer**: Efficient binary data handling with Comlink transfer
 - **Faster than IndexedDB hacks**: Direct OPFS access without the overhead of database abstractions
 - **Efficient file watching**: Real-time change detection with minimatch patterns, no polling delays
 
@@ -157,6 +158,10 @@ async function extendedExample() {
     await fs.writeFile('/image.png', imageData);
     const binaryData = await fs.readFile('/image.png', 'binary');
 
+    // Text files are automatically handled
+    await fs.writeFile('/config.txt', 'Hello, World!');
+    const textContent = await fs.readFile('/config.txt'); // Returns string
+
     // Use file watching with BroadcastChannel
     await fs.watch('/', {
         recursive: true,
@@ -219,8 +224,9 @@ async function extendedExample() {
     // Create directories
     await worker.mkdir('/data/logs', { recursive: true });
 
-    // Append to log files
-    await worker.appendFile('/data/logs/app.log', `${new Date().toISOString()}: App started\n`);
+    // Append to log files (worker works with bytes)
+    const logEntry = new TextEncoder().encode(`${new Date().toISOString()}: App started\n`);
+    await worker.appendFile('/data/logs/app.log', logEntry);
 
     // Watch for changes
     await worker.watch('/data', { recursive: true });
@@ -354,13 +360,20 @@ The complete API reference is available in the [docs/api-reference.md](docs/api-
 
 **Entry Points:**
 
-- `createWorker(options?)` - Create file system instance with inline worker
-- `OPFSWorker` - Direct worker class for manual setup
+- `createWorker(options?)` - Create file system instance with inline worker (recommended)
+- `OPFSFileSystem` - High-level facade with automatic encoding detection
+- `OPFSWorker` - Direct webworker class
 
 **Core File Operations:**
 
-- `readFile(path, encoding?)` - Read files as text or binary
-- `writeFile(path, data, encoding?)` - Write text or binary data
+- `readFile(path, encoding?)` - Read files as text or binary with auto-detection
+- `writeFile(path, data, encoding?)` - Write text or binary data with auto-detection
+- `readText(path, encoding?)` - Read files as text with specified encoding
+- `writeText(path, text, encoding?)` - Write text with specified encoding
+- `appendText(path, text, encoding?)` - Append text with specified encoding
+
+**Common Operations:**
+
 - `mkdir(path, options?)` - Create directories
 - `readDir(path)` - List directory contents
 - `stat(path)` - Get file/directory statistics

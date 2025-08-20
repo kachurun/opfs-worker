@@ -6,7 +6,7 @@ export * from './types';
 export * from './utils/errors';
 export * from './utils/helpers';
 export * from './utils/encoder';
-export { OPFSFileSystem as OPFSFacade } from './facade';
+export * from './facade';
 
 /**
  * Creates a new file system instance with inline worker
