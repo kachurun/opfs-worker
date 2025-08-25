@@ -2,6 +2,7 @@ import { promises as fsp } from 'node:fs';
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { OPFSWorker } from '../src/worker';
 import type { WatchEvent } from '../src/types';
+import { WatchEventType } from '../src/types';
 
 const rootDir = (globalThis as any).__OPFS_ROOT__ as string;
 
@@ -99,13 +100,14 @@ describe('OPFSWorker', () => {
     expect(await fsw.exists('/clear.txt')).toBe(false);
   });
 
-  it('syncs external entries and supports cleanBefore', async () => {
+  it('syncs external entries', async () => {
     await fsw.writeFile('/old.txt', new TextEncoder().encode('old'));
-    await fsw.sync([
+    await fsw.createIndex([
       ['/new.txt', 'new'],
       ['relative.txt', 'rel']
-    ], { cleanBefore: true });
-    expect(await fsw.exists('/old.txt')).toBe(false);
+    ]);
+    // Old file should still exist since createIndex doesn't remove existing files
+    expect(await fsw.exists('/old.txt')).toBe(true);
     const newContent = await fsw.readFile('/new.txt');
     const relContent = await fsw.readFile('/relative.txt');
     expect(new TextDecoder().decode(newContent)).toBe('new');
@@ -123,15 +125,15 @@ describe('OPFSWorker', () => {
     await fsw.writeFile('/watched/a.txt', new TextEncoder().encode('1'));
     // Give BroadcastChannel a moment to deliver the event
     await new Promise(r => setTimeout(r, 10));
-    expect(events.some(e => e.type === 'added' && e.path === '/watched/a.txt')).toBe(true);
+            expect(events.some(e => e.type === WatchEventType.Added && e.path === '/watched/a.txt')).toBe(true);
 
     await fsw.writeFile('/watched/a.txt', new TextEncoder().encode('2'));
     await new Promise(r => setTimeout(r, 10));
-    expect(events.some(e => e.type === 'changed' && e.path === '/watched/a.txt')).toBe(true);
+            expect(events.some(e => e.type === WatchEventType.Changed && e.path === '/watched/a.txt')).toBe(true);
 
     await fsw.remove('/watched/a.txt');
     await new Promise(r => setTimeout(r, 10));
-    expect(events.some(e => e.type === 'removed' && e.path === '/watched/a.txt')).toBe(true);
+            expect(events.some(e => e.type === WatchEventType.Removed && e.path === '/watched/a.txt')).toBe(true);
 
     fsw.unwatch('/watched');
     channel.close();
@@ -146,11 +148,11 @@ describe('OPFSWorker', () => {
     await fsw.writeFile('/root-file.txt', new TextEncoder().encode('test'));
     // Give BroadcastChannel a moment to deliver the event
     await new Promise(r => setTimeout(r, 10));
-    expect(events.some(e => e.type === 'added' && e.path === '/root-file.txt')).toBe(true);
+            expect(events.some(e => e.type === WatchEventType.Added && e.path === '/root-file.txt')).toBe(true);
 
     await fsw.remove('/root-file.txt');
     await new Promise(r => setTimeout(r, 10));
-    expect(events.some(e => e.type === 'removed' && e.path === '/root-file.txt')).toBe(true);
+            expect(events.some(e => e.type === WatchEventType.Removed && e.path === '/root-file.txt')).toBe(true);
 
     fsw.unwatch('/');
     channel.close();
@@ -173,12 +175,12 @@ describe('OPFSWorker', () => {
     // Create file in immediate directory (should be detected)
     await fsw.writeFile('/shallow-test/immediate.txt', new TextEncoder().encode('immediate content'));
     await new Promise(r => setTimeout(r, 10));
-    expect(events.some(e => e.type === 'added' && e.path === '/shallow-test/immediate.txt')).toBe(true);
+            expect(events.some(e => e.type === WatchEventType.Added && e.path === '/shallow-test/immediate.txt')).toBe(true);
     
     // Create file in nested directory (should NOT be detected with shallow watching)
     await fsw.writeFile('/shallow-test/nested/another-deep.txt', new TextEncoder().encode('another deep content'));
     await new Promise(r => setTimeout(r, 10));
-    expect(events.some(e => e.type === 'added' && e.path === '/shallow-test/nested/another-deep.txt')).toBe(false);
+            expect(events.some(e => e.type === WatchEventType.Added && e.path === '/shallow-test/nested/another-deep.txt')).toBe(false);
     
     fsw.unwatch('/shallow-test/*');
     channel.close();
@@ -195,15 +197,15 @@ describe('OPFSWorker', () => {
     // Don't watch any paths, so no events should be received
     await fsw.writeFile('/internal-test.txt', new TextEncoder().encode('test'));
     await new Promise(r => setTimeout(r, 50));
-    expect(events.some(e => e.type === 'changed' && e.path === '/internal-test.txt')).toBe(false);
+            expect(events.some(e => e.type === WatchEventType.Changed && e.path === '/internal-test.txt')).toBe(false);
 
     await fsw.mkdir('/internal-dir', { recursive: true });
     await new Promise(r => setTimeout(r, 50));
-    expect(events.some(e => e.type === 'added' && e.path === '/internal-dir')).toBe(false);
+            expect(events.some(e => e.type === WatchEventType.Added && e.path === '/internal-dir')).toBe(false);
 
     await fsw.remove('/internal-test.txt');
     await new Promise(r => setTimeout(r, 50));
-    expect(events.some(e => e.type === 'removed' && e.path === '/internal-test.txt')).toBe(false);
+            expect(events.some(e => e.type === WatchEventType.Removed && e.path === '/internal-test.txt')).toBe(false);
     
     channel.close();
   });
@@ -223,7 +225,7 @@ describe('OPFSWorker', () => {
     await new Promise(r => setTimeout(r, 10));
     
     // Should only get one event from the watch mechanism
-    const createEvents = events.filter(e => e.type === 'added' && e.path === '/watched-path/file.txt');
+          const createEvents = events.filter(e => e.type === WatchEventType.Added && e.path === '/watched-path/file.txt');
     expect(createEvents.length).toBe(1);
     
     await fsw.unwatch('/watched-path');
@@ -255,7 +257,7 @@ describe('OPFSWorker', () => {
     await new Promise(r => setTimeout(r, 10));
     
     // Should get notification about the new file
-    expect(events.some(e => e.type === 'added' && e.path === '/dest.txt')).toBe(true);
+            expect(events.some(e => e.type === WatchEventType.Added && e.path === '/dest.txt')).toBe(true);
     
     // Verify the copy worked
     const destContent = await fsw.readFile('/dest.txt');
@@ -285,26 +287,26 @@ describe('OPFSWorker', () => {
     // Create files that should match the pattern
     await fsw.writeFile('/pattern-test/app.js', new TextEncoder().encode('console.log("app")'));
     await new Promise(r => setTimeout(r, 10));
-    expect(events.some(e => e.type === 'added' && e.path === '/pattern-test/app.js')).toBe(true);
+            expect(events.some(e => e.type === WatchEventType.Added && e.path === '/pattern-test/app.js')).toBe(true);
     
     await fsw.writeFile('/pattern-test/src/index.js', new TextEncoder().encode('export default {}'));
     await new Promise(r => setTimeout(r, 10));
-    expect(events.some(e => e.type === 'added' && e.path === '/pattern-test/src/index.js')).toBe(true);
+            expect(events.some(e => e.type === WatchEventType.Added && e.path === '/pattern-test/src/index.js')).toBe(true);
     
     // Create files that should NOT match (excluded by pattern)
     await fsw.writeFile('/pattern-test/dist/bundle.js', new TextEncoder().encode('bundle content'));
     await new Promise(r => setTimeout(r, 10));
-    expect(events.some(e => e.type === 'added' && e.path === '/pattern-test/dist/bundle.js')).toBe(false);
+            expect(events.some(e => e.type === WatchEventType.Added && e.path === '/pattern-test/dist/bundle.js')).toBe(false);
     
     // Create files that should NOT match (not in include patterns)
     await fsw.writeFile('/pattern-test/readme.md', new TextEncoder().encode('# Readme'));
     await new Promise(r => setTimeout(r, 10));
-    expect(events.some(e => e.type === 'added' && e.path === '/pattern-test/readme.md')).toBe(false);
+            expect(events.some(e => e.type === WatchEventType.Added && e.path === '/pattern-test/readme.md')).toBe(false);
     
     // Test minimatch pattern with wildcards
     await fsw.writeFile('/pattern-test/utils.js', new TextEncoder().encode('utils'));
     await new Promise(r => setTimeout(r, 10));
-    expect(events.some(e => e.type === 'added' && e.path === '/pattern-test/utils.js')).toBe(true);
+            expect(events.some(e => e.type === WatchEventType.Added && e.path === '/pattern-test/utils.js')).toBe(true);
     
     fsw.unwatch('/pattern-test/**/*.js');
     channel.close();

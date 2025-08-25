@@ -1,5 +1,6 @@
 import { expose, transfer } from 'comlink';
 
+import { WatchEventType } from './types';
 import {
     FileNotFoundError,
     OPFSError,
@@ -471,7 +472,7 @@ export class OPFSWorker {
                 await this.close(fd);
             }
 
-            await this.notifyChange({ path, type: existed ? 'changed' : 'added', isDirectory: false });
+            await this.notifyChange({ path, type: existed ? WatchEventType.Changed : WatchEventType.Added, isDirectory: false });
         });
     }
 
@@ -518,7 +519,7 @@ export class OPFSWorker {
                 await this.close(fd);
             }
 
-            await this.notifyChange({ path, type: 'changed', isDirectory: false });
+            await this.notifyChange({ path, type: WatchEventType.Changed, isDirectory: false });
         });
     }
 
@@ -575,7 +576,7 @@ export class OPFSWorker {
             }
         }
 
-        await this.notifyChange({ path, type: 'added', isDirectory: true });
+        await this.notifyChange({ path, type: WatchEventType.Added, isDirectory: true });
     }
 
     /**
@@ -806,7 +807,7 @@ export class OPFSWorker {
                 await this.remove(itemPath, { recursive: true });
             }
 
-            await this.notifyChange({ path, type: 'changed', isDirectory: true });
+            await this.notifyChange({ path, type: WatchEventType.Changed, isDirectory: true });
         }
         catch (error: any) {
             if (error instanceof OPFSError) {
@@ -856,7 +857,7 @@ export class OPFSWorker {
 
         await removeEntry(parent, path, { recursive, force });
 
-        await this.notifyChange({ path, type: 'removed', isDirectory: stat.isDirectory });
+        await this.notifyChange({ path, type: WatchEventType.Removed, isDirectory: stat.isDirectory });
     }
 
     /**
@@ -938,8 +939,8 @@ export class OPFSWorker {
             await this.remove(oldPath, { recursive: true });
 
             // Notify about the rename operation
-            await this.notifyChange({ path: oldPath, type: 'removed', isDirectory: sourceStat.isDirectory });
-            await this.notifyChange({ path: newPath, type: 'added', isDirectory: sourceStat.isDirectory });
+            await this.notifyChange({ path: oldPath, type: WatchEventType.Removed, isDirectory: sourceStat.isDirectory });
+            await this.notifyChange({ path: newPath, type: WatchEventType.Added, isDirectory: sourceStat.isDirectory });
         }
         catch (error) {
             if (error instanceof OPFSError) {
@@ -1315,7 +1316,7 @@ export class OPFSWorker {
             }
 
             if (emitEvent) {
-                await this.notifyChange({ path: fileInfo.path, type: 'changed', isDirectory: false });
+                await this.notifyChange({ path: fileInfo.path, type: WatchEventType.Changed, isDirectory: false });
             }
 
             return bytesWritten;
@@ -1383,7 +1384,7 @@ export class OPFSWorker {
                 fileInfo.position = size;
             }
 
-            await this.notifyChange({ path: fileInfo.path, type: 'changed', isDirectory: false });
+            await this.notifyChange({ path: fileInfo.path, type: WatchEventType.Changed, isDirectory: false });
         }
         catch (error) {
             throw createFDError('truncate', fd, fileInfo.path, error);
@@ -1466,16 +1467,10 @@ export class OPFSWorker {
      * await fs.sync(entries, { cleanBefore: true });
      * ```
      */
-    async sync(entries: [string, string | Uint8Array | Blob][], options?: { cleanBefore?: boolean }): Promise<void> {
+    async createIndex(entries: [string, string | Uint8Array | Blob][]): Promise<void> {
         await this.mount();
 
         try {
-            const cleanBefore = options?.cleanBefore ?? false;
-
-            if (cleanBefore) {
-                await this.clear('/');
-            }
-
             for (const [path, data] of entries) {
                 const normalizedPath = normalizePath(path);
 

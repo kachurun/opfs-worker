@@ -4,6 +4,7 @@ import { decodeBuffer, encodeString, isBinaryFileExtension } from './utils/encod
 import WorkerCtor from './worker?worker&inline';
 
 import type {
+    BinaryEncoding,
     DirentData,
     Encoding,
     FileOpenOptions,
@@ -12,6 +13,7 @@ import type {
     PathLike,
     RemoteOPFSWorker,
     RenameOptions,
+    StringEncoding,
     WatchOptions
 } from './types';
 
@@ -33,11 +35,10 @@ function normalizePath(path: PathLike): string {
  */
 export class OPFSFileSystem {
     #worker: RemoteOPFSWorker;
+    promises: OPFSFileSystem = this;
 
     constructor(options?: OPFSOptions) {
-        const wrapped = wrap<RemoteOPFSWorker>(new WorkerCtor());
-
-        this.#worker = wrapped;
+        this.#worker = wrap<RemoteOPFSWorker>(new WorkerCtor());
 
         // Set up options if provided
         if (options) {
@@ -49,6 +50,26 @@ export class OPFSFileSystem {
             // Initialize options asynchronously
             void this.setOptions(options);
         }
+    }
+
+    /**
+     * Start watching a file or directory for changes
+     */
+    watch(path: PathLike, options?: WatchOptions): () => void {
+        const normalizedPath = normalizePath(path);
+
+        void this.#worker.watch(normalizedPath, options);
+
+        return () => this.unwatch(normalizedPath);
+    }
+
+    /**
+     * Stop watching a previously watched path
+     */
+    unwatch(path: PathLike) {
+        const normalizedPath = normalizePath(path);
+
+        void this.#worker.unwatch(normalizedPath);
     }
 
     /**
@@ -68,14 +89,33 @@ export class OPFSFileSystem {
     /**
      * Read a file from the file system
      */
-    async readFile(path: PathLike, encoding: 'binary'): Promise<Uint8Array>;
-    async readFile(path: PathLike, encoding: Encoding): Promise<string>;
-    async readFile(path: PathLike, encoding?: Encoding | 'binary'): Promise<string | Uint8Array>;
+    // Overload for explicit string encoding - returns string
+    async readFile(path: PathLike, encoding: StringEncoding): Promise<string>;
+    // Overload for explicit binary encoding - returns Uint8Array
+    async readFile(path: PathLike, encoding: BinaryEncoding): Promise<Uint8Array>;
+    // Overload for options object with string encoding - returns string
+    async readFile(path: PathLike, options: { encoding: StringEncoding }): Promise<string>;
+    // Overload for options object with binary encoding - returns Uint8Array
+    async readFile(path: PathLike, options: { encoding: BinaryEncoding }): Promise<Uint8Array>;
+    // Overload for no encoding (auto-detected) - returns string | Uint8Array based on file extension
+    async readFile(path: PathLike): Promise<string | Uint8Array>;
+    // Implementation
     async readFile(
         path: PathLike,
-        encoding?: any
+        optionsOrEncoding?: Encoding | { encoding?: Encoding }
     ): Promise<string | Uint8Array> {
         const normalizedPath = normalizePath(path);
+
+        // Handle both options object and direct encoding parameter for backward compatibility
+        let encoding: Encoding | undefined;
+
+        if (typeof optionsOrEncoding === 'string') {
+            encoding = optionsOrEncoding;
+        }
+        else if (optionsOrEncoding && typeof optionsOrEncoding === 'object') {
+            encoding = optionsOrEncoding.encoding;
+        }
+
         // Get binary data from worker
         const buffer = await this.#worker.readFile(normalizedPath);
 
@@ -94,9 +134,18 @@ export class OPFSFileSystem {
     async writeFile(
         path: PathLike,
         data: string | Uint8Array | ArrayBuffer,
-        encoding?: Encoding
+        options?: { encoding?: Encoding } | Encoding
     ): Promise<void> {
         const normalizedPath = normalizePath(path);
+
+        let encoding: Encoding | undefined;
+
+        if (typeof options === 'string') {
+            encoding = options;
+        }
+        else if (options && typeof options === 'object') {
+            encoding = options.encoding;
+        }
 
         // If no encoding specified, auto-detect based on file extension
         if (!encoding) {
@@ -137,8 +186,18 @@ export class OPFSFileSystem {
     /**
      * Create a directory
      */
-    async mkdir(path: PathLike, options?: { recursive?: boolean }): Promise<void> {
+    async mkdir(path: PathLike, mode?: number | { recursive?: boolean }): Promise<void> {
         const normalizedPath = normalizePath(path);
+
+        let options: { recursive?: boolean } | undefined;
+
+        // OPFS doesn't support file modes, so we ignore the mode parameter
+        if (typeof mode === 'number') {
+            options = { recursive: false };
+        }
+        else {
+            options = mode;
+        }
 
         return this.#worker.mkdir(normalizedPath, options);
     }
@@ -189,6 +248,48 @@ export class OPFSFileSystem {
     }
 
     /**
+     * Alias for remove() for NodeJS like API compatibility
+     */
+    async unlink(path: PathLike): Promise<void> {
+        return this.remove(path);
+    }
+
+    /**
+     * Alias for remove() for NodeJS like API compatibility
+     */
+    async rm(path: PathLike, options?: { recursive?: boolean; force?: boolean }): Promise<void> {
+        return this.remove(path, options);
+    }
+
+    /**
+     * Alias for remove() for NodeJS like API compatibility
+     */
+    async rmdir(path: PathLike): Promise<void> {
+        return this.remove(path);
+    }
+
+    /**
+     * Alias for readDir() for NodeJS like API compatibility
+     */
+    async readdir(path: PathLike, _options?: unknown): Promise<DirentData[]> {
+        return this.readDir(path);
+    }
+
+    /**
+     * Alias for stat() for NodeJS like API compatibility
+     */
+    async lstat(path: PathLike): Promise<FileStat> {
+        return this.stat(path);
+    }
+
+    /**
+     * Note: OPFS doesn't support file modes, so this is a no-op and exists only for compatibility with tools like isomorphic-git
+     */
+    async chmod(_path: PathLike, _mode: number): Promise<void> {
+        return Promise.resolve();
+    }
+
+    /**
      * Resolve a path to an absolute path
      */
     async realpath(path: PathLike): Promise<string> {
@@ -215,26 +316,6 @@ export class OPFSFileSystem {
         const normalizedDestination = normalizePath(destination);
 
         return this.#worker.copy(normalizedSource, normalizedDestination, options);
-    }
-
-    /**
-     * Start watching a file or directory for changes
-     */
-    watch(path: PathLike, options?: WatchOptions): () => void {
-        const normalizedPath = normalizePath(path);
-
-        void this.#worker.watch(normalizedPath, options);
-
-        return () => this.unwatch(normalizedPath);
-    }
-
-    /**
-     * Stop watching a previously watched path
-     */
-    unwatch(path: PathLike) {
-        const normalizedPath = normalizePath(path);
-
-        void this.#worker.unwatch(normalizedPath);
     }
 
     /**
@@ -329,10 +410,10 @@ export class OPFSFileSystem {
     /**
      * Synchronize the file system with external data
      */
-    async sync(entries: [PathLike, string | Uint8Array | Blob][], options?: { cleanBefore?: boolean }): Promise<void> {
+    async createIndex(entries: [PathLike, string | Uint8Array | Blob][]): Promise<void> {
         const normalizedEntries = entries.map(([path, data]) => [normalizePath(path), data] as [string, string | Uint8Array | Blob]);
 
-        return this.#worker.sync(normalizedEntries, options);
+        return this.#worker.createIndex(normalizedEntries);
     }
 
     /**

@@ -8,7 +8,7 @@ export type PathLike = string | URL;
 
 export type Kind = 'file' | 'directory';
 
-export type Encoding = 'ascii'
+export type StringEncoding = 'ascii'
   | 'utf8'
   | 'utf-8'
   | 'utf16le'
@@ -17,8 +17,11 @@ export type Encoding = 'ascii'
   | 'ucs-2'
   | 'base64'
   | 'latin1'
-  | 'hex'
-  | 'binary';
+  | 'hex';
+
+export type BinaryEncoding = 'binary';
+
+export type Encoding = StringEncoding | BinaryEncoding;
 
 export interface FileStat {
     kind: Kind;
@@ -38,10 +41,16 @@ export interface DirentData {
     isDirectory: boolean;
 }
 
+export enum WatchEventType {
+    Added = 'added',
+    Changed = 'changed',
+    Removed = 'removed'
+}
+
 export interface WatchEvent {
     namespace: string;
     path: string;
-    type: 'added' | 'changed' | 'removed';
+    type: WatchEventType;
     isDirectory: boolean;
     timestamp: string;
     hash?: string;

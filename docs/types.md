@@ -109,6 +109,24 @@ interface OPFSOptions {
 
 ## Event Types
 
+### `WatchEventType`
+
+Enumeration of file system change event types.
+
+```typescript
+enum WatchEventType {
+    Added = 'added',
+    Changed = 'changed',
+    Removed = 'removed'
+}
+```
+
+**Values:**
+
+- `Added`: File or directory was created
+- `Changed`: File or directory was modified
+- `Removed`: File or directory was deleted
+
 ### `WatchEvent`
 
 File system change event sent via BroadcastChannel.
@@ -117,7 +135,7 @@ File system change event sent via BroadcastChannel.
 interface WatchEvent {
     namespace: string;
     path: string;
-    type: 'added' | 'changed' | 'removed';
+    type: WatchEventType;
     isDirectory: boolean;
     timestamp: string;
     hash?: string;

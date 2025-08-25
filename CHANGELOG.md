@@ -1,5 +1,17 @@
 # opfs-worker
 
+## 1.2.3
+
+### Patch Changes
+
+-   isomorphic-git compability
+
+## 1.2.2
+
+### Patch Changes
+
+-   sync -> createIndex
+
 ## 1.2.1
 
 ### Patch Changes

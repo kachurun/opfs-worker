@@ -66,7 +66,7 @@ export const LogViewer: React.FC = () => {
                 ];
 
                 // Sync without cleaning
-                await fs.sync(externalEntries);
+                await fs.createIndex(externalEntries);
                 log('✅ Synced external data without cleaning');
 
                 // Verify synced files exist
@@ -74,9 +74,9 @@ export const LogViewer: React.FC = () => {
 
                 log(`✅ Synced config content: ${ syncedConfig }`);
 
-                const syncedBinary = await fs.readFile('/sync/binary.dat', 'binary');
+                const syncedBinary = await fs.readFile('/sync/binary.dat', 'binary') as Uint8Array;
 
-                log(`✅ Synced binary data: [${ Array.from(syncedBinary).join(', ') }]`);
+                log(`✅ Synced binary data: [${ Array.from(syncedBinary).map(byte => byte.toString()).join(', ') }]`);
 
                 const syncedBlob = await fs.readFile('/sync/blob.txt');
 
@@ -246,54 +246,55 @@ export const LogViewer: React.FC = () => {
 
                 // Test watch functionality
                 log('\n👀 Testing watch functionality...');
-                
+
                 const watchEvents: any[] = [];
                 const channel = new BroadcastChannel('opfs-worker');
+
                 channel.onmessage = (event) => {
                     watchEvents.push(event.data);
-                    log(`👀 Watch event: ${event.data.type} - ${event.data.path}`);
+                    log(`👀 Watch event: ${ event.data.type } - ${ event.data.path }`);
                 };
-                
+
                 // Watch the root directory recursively (default behavior)
-                await fs.watch('/');
+                fs.watch('/');
                 log('✅ Started watching root directory recursively');
-                
+
                 // Create a file to trigger watch event
                 await fs.writeFile('/watch-test.txt', 'Watch test content');
                 await new Promise(r => setTimeout(r, 150)); // Wait for watch to detect
-                log(`✅ Watch detected ${watchEvents.length} events`);
-                
+                log(`✅ Watch detected ${ watchEvents.length } events`);
+
                 // Modify the file
                 await fs.writeFile('/watch-test.txt', 'Modified content');
                 await new Promise(r => setTimeout(r, 150)); // Wait for watch to detect
-                log(`✅ Watch detected ${watchEvents.length} events total`);
-                
+                log(`✅ Watch detected ${ watchEvents.length } events total`);
+
                 // Test shallow watching
                 log('\n👀 Testing shallow watching...');
                 await fs.mkdir('/shallow-demo', { recursive: true });
                 await fs.mkdir('/shallow-demo/nested', { recursive: true });
-                
+
                 // Watch with shallow option
-                await fs.watch('/shallow-demo', { recursive: false });
+                fs.watch('/shallow-demo', { recursive: false });
                 log('✅ Started shallow watching /shallow-demo (non-recursive)');
-                
+
                 // Create file in immediate directory (should be detected)
                 await fs.writeFile('/shallow-demo/immediate.txt', 'Immediate file');
                 await new Promise(r => setTimeout(r, 150));
-                log(`✅ Shallow watch detected immediate file changes`);
-                
+                log('✅ Shallow watch detected immediate file changes');
+
                 // Create file in nested directory (should NOT be detected with shallow watching)
                 await fs.writeFile('/shallow-demo/nested/deep.txt', 'Deep nested file');
                 await new Promise(r => setTimeout(r, 150));
-                log(`✅ Shallow watch correctly ignored nested changes`);
-                
+                log('✅ Shallow watch correctly ignored nested changes');
+
                 // Cleanup
                 fs.unwatch('/');
                 fs.unwatch('/shallow-demo');
                 await fs.remove('/watch-test.txt');
                 await fs.remove('/shallow-demo', { recursive: true });
                 channel.close();
-                
+
                 log('✅ Stopped watching and cleaned up');
 
                 // Final summary
