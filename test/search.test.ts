@@ -13,14 +13,9 @@ describe('searchInWorkspace', () => {
     await fsw.writeFile('/a.txt', new TextEncoder().encode('hello world'));
     await fsw.writeFile('/b.txt', new TextEncoder().encode(`world\nnext line`));
 
-    const results: any[] = [];
-    await fsw.search(
+    const results = await fsw.search(
       'world',
-      { useRegExp: false, matchCase: true },
-      {
-        onResult: (r) => results.push(r),
-        onDone: () => void 0,
-      }
+      { useRegExp: false, matchCase: true }
     );
 
     const files = results.map((r: any) => r.fileUri).sort();
@@ -33,16 +28,12 @@ describe('searchInWorkspace', () => {
     await fsw.writeFile('/src/app.txt', new TextEncoder().encode('hello'));
     await fsw.writeFile('/dist/app.txt', new TextEncoder().encode('hello'));
 
-    const files: string[] = [];
-    await fsw.search(
+    const results = await fsw.search(
       'hello',
-      { exclude: ['**/dist/**'] },
-      {
-        onResult: (r) => files.push(r.fileUri),
-        onDone: () => void 0,
-      }
+      { exclude: ['**/dist/**'] }
     );
 
+    const files = results.map((r: any) => r.fileUri).sort();
     expect(files.sort()).toEqual(['/src/app.txt']);
   });
 });

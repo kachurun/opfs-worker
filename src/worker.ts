@@ -1504,14 +1504,14 @@ export class OPFSWorker {
     }
 
     /**
-     * Search across files with streaming results.
+     * Search across files with callbacks for streaming results
      */
     async search(
         query: string,
         options: SearchInWorkspaceOptions | undefined,
-        callbacks: { onResult: (result: SearchInWorkspaceResult) => void; onDone: () => void; onError?: (error: string) => void },
+        callbacks?: { onResult?: (result: SearchInWorkspaceResult) => void; onDone?: () => void; onError?: (error: string) => void },
         shouldAbort?: () => boolean
-    ): Promise<void> {
+    ): Promise<SearchInWorkspaceResult[]> {
         return runSearch(this, query, options, callbacks, shouldAbort);
     }
 }

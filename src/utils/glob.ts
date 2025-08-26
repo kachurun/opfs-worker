@@ -25,20 +25,6 @@ export function matchMinimatch(path: string, pattern: string): boolean {
 }
 
 /**
- * Check if a path matches any of the provided exclude patterns (minimatch syntax)
- */
-export function isPathExcluded(path: string, patterns?: string | string[]): boolean {
-    if (!patterns || (Array.isArray(patterns) && patterns.length === 0)) {
-        return false;
-    }
-
-    const normalized = normalizePath(path);
-    const list = Array.isArray(patterns) ? patterns : [patterns];
-
-    return list.some(pattern => minimatch(normalized, pattern, { dot: true }));
-}
-
-/**
  * Parse .gitignore/.ignore content into ignore and unignore patterns
  */
 export function parseIgnoreFile(content: string): { ignore: string[]; unignore: string[] } {

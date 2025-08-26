@@ -1,8 +1,8 @@
-import { isBinaryFileExtension } from './utils/encoder';
-import { parseIgnoreFile, shouldIncludePath } from './utils/glob';
-import { parseSizeToBytes } from './utils/helpers';
+import { isBinaryFileExtension } from '../utils/encoder';
+import { parseIgnoreFile, shouldIncludePath } from '../utils/glob';
+import { parseSizeToBytes } from '../utils/helpers';
 
-import type { SearchInWorkspaceOptions, SearchInWorkspaceResult, SearchMatch } from './types';
+import type { SearchInWorkspaceOptions, SearchInWorkspaceResult, SearchMatch } from '../types';
 
 interface FSHost {
     readDir: (path: string) => Promise<Array<{ name: string; isDirectory: boolean }>>;
@@ -13,6 +13,13 @@ interface FSHost {
 
 const DEFAULT_EXCLUDES = ['**/node_modules/**', '**/.git/**', '**/dist/**', '**/build/**'];
 
+/**
+ * Loads ignore patterns from .gitignore and .ignore files in the workspace root.
+ * 
+ * @param host - The file system host interface for reading files
+ * @param includeIgnored - If true, returns undefined (no ignore patterns applied)
+ * @returns Object containing ignore and unignore patterns, or undefined if no patterns should be applied
+ */
 async function loadIgnoreSet(host: FSHost, includeIgnored: boolean): Promise<{ ignore: string[]; unignore: string[] } | undefined> {
     if (includeIgnored) {
         return undefined;
@@ -43,16 +50,34 @@ async function loadIgnoreSet(host: FSHost, includeIgnored: boolean): Promise<{ i
     }
 }
 
-function buildMatcher(query: string, opts: { useRegExp: boolean; matchCase: boolean; multiline: boolean; dotAll: boolean }) {
+/**
+ * Builds a search matcher based on the query and search options.
+ * Creates either a regular expression matcher or a plain text matcher.
+ * 
+ * @param query - The search query string
+ * @param opts - Search options including regex flags and case sensitivity
+ * @returns Object containing either a regex matcher or plain text matcher
+ */
+function buildMatcher(query: string, opts: { useRegExp: boolean; matchCase: boolean; multiline: boolean; dotAll: boolean }): { regex: RegExp; plain: string | null } {
     if (opts.useRegExp) {
         const flags = `${ opts.matchCase ? '' : 'i' }${ opts.multiline ? 'm' : '' }${ opts.dotAll ? 's' : '' }g`;
 
         return { regex: new RegExp(query, flags), plain: null as string | null };
     }
 
-    return { regex: null as RegExp | null, plain: opts.matchCase ? query : query.toLowerCase() };
+    // For plain text, we'll create a regex with proper escaping and case sensitivity
+    const escapedQuery = escapeRegExp(query);
+    const flags = `${ opts.matchCase ? '' : 'i' }g`;
+
+    return { regex: new RegExp(escapedQuery, flags), plain: null as string | null };
 }
 
+/**
+ * Creates a function that checks if a match occurs at a word boundary.
+ * Used for whole word matching to ensure matches don't occur in the middle of words.
+ * 
+ * @returns Function that takes text and match boundaries and returns true if at word boundary
+ */
 function createWordBoundaryChecker(): (text: string, start: number, end: number) => boolean {
     return (text: string, start: number, end: number): boolean => {
         const left: string = start - 1 >= 0 ? text[start - 1] ?? '' : '';
@@ -63,6 +88,13 @@ function createWordBoundaryChecker(): (text: string, start: number, end: number)
     };
 }
 
+/**
+ * Collects the starting positions of all lines in a text content.
+ * Used for efficient line number calculation during search result processing.
+ * 
+ * @param content - The text content to analyze
+ * @returns Array of character indices where each line starts
+ */
 function collectLineStarts(content: string): number[] {
     const lineStarts: number[] = [0];
 
@@ -75,6 +107,14 @@ function collectLineStarts(content: string): number[] {
     return lineStarts;
 }
 
+/**
+ * Performs binary search to find the line number for a given character index.
+ * More efficient than linear search for large files with many lines.
+ * 
+ * @param lineStarts - Array of line start positions from collectLineStarts
+ * @param index - Character index to find the line number for
+ * @returns The 1-based line number where the character index is located
+ */
 function binarySearchLine(lineStarts: number[], index: number): number {
     let lineNum = 1;
     let lo = 0;
@@ -96,9 +136,22 @@ function binarySearchLine(lineStarts: number[], index: number): number {
     return lineNum;
 }
 
-function scanRegex(
+/**
+ * Scans text content to find search matches using regex.
+ * Handles both regex patterns and plain text with support for whole word boundaries and result limits.
+ * 
+ * @param content - The text content to search in
+ * @param matcher - Object containing the regex to use for matching
+ * @param matchWholeWord - Whether to only match at word boundaries
+ * @param isWholeWordBoundary - Function to check word boundaries
+ * @param maxResults - Maximum total results to return
+ * @param maxResultsPerFile - Maximum results per file
+ * @param shouldAbort - Optional function to check if search should be aborted
+ * @returns Object containing found matches and whether global limit was reached
+ */
+function scanContent(
     content: string,
-    regex: RegExp,
+    matcher: { regex: RegExp; plain: string | null },
     matchWholeWord: boolean,
     isWholeWordBoundary: (text: string, start: number, end: number) => boolean,
     maxResults: number,
@@ -111,11 +164,14 @@ function scanRegex(
     let perFile = 0;
     let m: RegExpExecArray | null;
 
-    regex.lastIndex = 0;
+    // matcher.regex is now always defined since we create it in buildMatcher
+    const searchRegex = matcher.regex;
+
+    searchRegex.lastIndex = 0;
     let lastIndexGuard = -1;
 
     // eslint-disable-next-line no-cond-assign
-    while ((m = regex.exec(content)) !== null) {
+    while ((m = searchRegex.exec(content)) !== null) {
         if (shouldAbort?.()) {
             return { matches, reachedGlobalLimit: true };
         }
@@ -125,15 +181,15 @@ function scanRegex(
         const matchLen = text.length;
 
         if (matchLen === 0) {
-            if (regex.lastIndex === lastIndexGuard) {
+            if (searchRegex.lastIndex === lastIndexGuard) {
                 break;
             }
 
-            regex.lastIndex = startIdx + 1;
-            lastIndexGuard = regex.lastIndex;
+            searchRegex.lastIndex = startIdx + 1;
+            lastIndexGuard = searchRegex.lastIndex;
         }
         else {
-            lastIndexGuard = regex.lastIndex;
+            lastIndexGuard = searchRegex.lastIndex;
         }
 
         const lineNum = binarySearchLine(lineStarts, startIdx);
@@ -168,80 +224,36 @@ function scanRegex(
     return { matches, reachedGlobalLimit: false };
 }
 
-function scanPlain(
-    text: string,
-    plain: string,
-    matchCase: boolean,
-    matchWholeWord: boolean,
-    isWholeWordBoundary: (text: string, start: number, end: number) => boolean,
-    maxResults: number,
-    maxResultsPerFile: number,
-    shouldAbort?: () => boolean
-): { matches: SearchMatch[]; reachedGlobalLimit: boolean } {
-    const matches: SearchMatch[] = [];
-    const content = matchCase ? text : text.toLowerCase();
-    const lines = content.split(/\n/);
-    const originalLines = text.split(/\n/);
-    let total = 0;
-    let perFile = 0;
-    let runningOffset = 0;
-
-    for (let i = 0; i < lines.length; i++) {
-        if (shouldAbort?.()) {
-            return { matches, reachedGlobalLimit: true };
-        }
-
-        const line = lines[i];
-        const originalLine = originalLines[i];
-
-        if (line === undefined || originalLine === undefined) {
-            continue;
-        }
-
-        let idx = 0;
-
-        while (true) {
-            idx = line.indexOf(plain, idx);
-            if (idx === -1) {
-                break;
-            }
-
-            const start = idx;
-            const end = idx + plain.length;
-
-            if (matchWholeWord && !isWholeWordBoundary(originalLine, start, end)) {
-                idx = start + 1;
-
-                continue;
-            }
-
-            matches.push({ line: i + 1, character: start + 1, length: plain.length, lineText: originalLine.replace(/\r$/, ''), byteOffset: runningOffset + start });
-            if (++total >= maxResults) {
-                return { matches, reachedGlobalLimit: true };
-            }
-            if (++perFile >= maxResultsPerFile) {
-                break;
-            }
-
-            idx = start + 1;
-        }
-
-        runningOffset += originalLine.length + 1;
-        if (perFile >= maxResultsPerFile) {
-            break;
-        }
-    }
-
-    return { matches, reachedGlobalLimit: false };
+/**
+ * Escapes special regex characters in a string to make it safe for use in RegExp constructor.
+ * This allows plain text searches to work correctly without regex interpretation.
+ * 
+ * @param string - The string to escape
+ * @returns The escaped string safe for regex construction
+ */
+function escapeRegExp(string: string): string {
+    return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+/**
+ * Main search function that searches for text patterns across the entire workspace.
+ * Recursively walks through directories, applies filters, and searches file contents.
+ * 
+ * @param host - The file system host interface for file operations
+ * @param query - The search query string or regex pattern
+ * @param options - Search configuration options including filters, limits, and matching behavior
+ * @param callbacks - Callback functions for handling results, completion, and errors
+ * @param shouldAbort - Optional function to check if the search should be aborted early
+ * @returns Promise that resolves to an array of search results
+ */
 export async function searchInWorkspace(
     host: FSHost,
     query: string,
     options: SearchInWorkspaceOptions | undefined,
-    callbacks: { onResult: (result: SearchInWorkspaceResult) => void; onDone: () => void; onError?: (error: string) => void },
+    callbacks?: { onResult?: (result: SearchInWorkspaceResult) => void; onDone?: () => void; onError?: (error: string) => void },
     shouldAbort?: () => boolean
-): Promise<void> {
+): Promise<SearchInWorkspaceResult[]> {
+    const results: SearchInWorkspaceResult[] = [];
     const root = options?.root ?? '/';
     const maxFileSizeBytes = parseSizeToBytes(options?.maxFileSize, 20 * 1024 * 1024);
 
@@ -263,21 +275,27 @@ export async function searchInWorkspace(
     const dotAll = options?.dotAll ?? false;
 
     const ignoreSet = await loadIgnoreSet(host, includeIgnored);
-    let matcher: { regex: RegExp | null; plain: string | null };
+    let matcher: { regex: RegExp; plain: string | null };
 
     try {
         matcher = buildMatcher(query, { useRegExp, matchCase, multiline, dotAll });
     }
     catch (err) {
-        callbacks.onError?.(`Invalid regex: ${ (err as Error)?.message ?? String(err) }`);
-        callbacks.onDone();
+        callbacks?.onDone?.();
 
-        return;
+        throw new Error(`Invalid regex: ${ (err as Error)?.message ?? String(err) }`);
     }
 
     const isWholeWordBoundary = createWordBoundaryChecker();
     let totalMatches = 0;
 
+    /**
+     * Recursively walks through directories to find and search files.
+     * Applies filters, checks file sizes, and performs text search on matching files.
+     * 
+     * @param dirPath - The directory path to walk
+     * @returns Promise that resolves to true if search should stop, false otherwise
+     */
     const walk = async(dirPath: string): Promise<boolean> => {
         if (shouldAbort?.()) {
             return true;
@@ -317,17 +335,11 @@ export async function searchInWorkspace(
             const fileBuffer = await host.readFile(fullPath);
             const text = new TextDecoder().decode(fileBuffer);
 
-            let result: { matches: SearchMatch[]; reachedGlobalLimit: boolean };
-
-            if (matcher.regex) {
-                result = scanRegex(text, matcher.regex, matchWholeWord, isWholeWordBoundary, maxResults - totalMatches, maxResultsPerFile, shouldAbort);
-            }
-            else {
-                result = scanPlain(text, matcher.plain!, matchCase, matchWholeWord, isWholeWordBoundary, maxResults - totalMatches, maxResultsPerFile, shouldAbort);
-            }
+            const result = scanContent(text, matcher, matchWholeWord, isWholeWordBoundary, maxResults - totalMatches, maxResultsPerFile, shouldAbort);
 
             if (result.matches.length > 0) {
-                callbacks.onResult({ root, fileUri: fullPath, matches: result.matches });
+                callbacks?.onResult?.({ root, fileUri: fullPath, matches: result.matches });
+                results.push({ root, fileUri: fullPath, matches: result.matches });
             }
 
             totalMatches += result.matches.length;
@@ -343,10 +355,12 @@ export async function searchInWorkspace(
         await walk('/');
     }
     catch (err) {
-        callbacks.onError?.((err as Error)?.message ?? String(err));
+        callbacks?.onError?.((err as Error)?.message ?? String(err));
     }
     finally {
-        callbacks.onDone();
+        callbacks?.onDone?.();
     }
+
+    return results;
 }
 
