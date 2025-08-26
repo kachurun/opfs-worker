@@ -1,5 +1,3 @@
-import { minimatch } from 'minimatch';
-
 import { encodeString } from './encoder';
 import { OPFSError, OPFSNotSupportedError, mapDomError } from './errors';
 
@@ -131,38 +129,36 @@ export function normalizePath(path: string): string {
     return path.startsWith('/') ? path : `/${ path }`;
 }
 
-export function normalizeMinimatch(path: string, recursive: boolean = false): string {
-    path = path.replace(/\/$/, '');
-    if (recursive && !path.includes('*')) {
-        return `${ path }/**`;
-    }
-
-    return path;
-}
-
-export function matchMinimatch(path: string, pattern: string): boolean {
-    return minimatch(path, pattern, {
-        dot: true,
-        matchBase: true,
-    });
-}
 
 /**
- * Check if a path matches any of the provided exclude patterns (minimatch syntax)
- *
- * @param path - Absolute or relative path
- * @param patterns - Glob pattern(s) to match against
- * @returns true if excluded, false otherwise
+ * Parse human-readable size strings like '20M', '512K', '1G' into bytes
  */
-export function isPathExcluded(path: string, patterns?: string | string[]): boolean {
-    if (!patterns || (Array.isArray(patterns) && patterns.length === 0)) {
-        return false;
+export function parseSizeToBytes(input?: string, defaultValue: number = 20 * 1024 * 1024): number {
+    if (!input) {
+        return defaultValue;
     }
 
-    const normalized = normalizePath(path);
-    const list = Array.isArray(patterns) ? patterns : [patterns];
+    const trimmed = String(input).trim();
+    const match = /^([0-9]+)\s*([kKmMgG]?)$/.exec(trimmed);
 
-    return list.some(pattern => minimatch(normalized, pattern, { dot: true }));
+    if (!match) {
+        return defaultValue;
+    }
+
+    const value = Number(match[1]);
+    const suffix = match[2]!.toUpperCase();
+
+    switch (suffix) {
+        case 'K':
+            return value * 1024;
+        case 'M':
+            return value * 1024 * 1024;
+        case 'G':
+            return value * 1024 * 1024 * 1024;
+
+        default:
+            return value; // bytes
+    }
 }
 
 /**
@@ -322,19 +318,18 @@ export async function convertBlobToUint8Array(blob: Blob): Promise<Uint8Array> {
  *
  * @param parentHandle - The parent directory handle
  * @param path - The full path of the entry to remove
- * @param options - Remove options (recursive, force, useTrash)
+ * @param options - Remove options (recursive, force)
  */
 export async function removeEntry(
     parentHandle: FileSystemDirectoryHandle,
     path: string,
-    options: { recursive?: boolean; force?: boolean; useTrash?: boolean } = {}
+    options: { recursive?: boolean; force?: boolean } = {}
 ): Promise<void> {
     const name = basename(path);
 
     return withLock(path, 'exclusive', async() => {
         const recursive = options.recursive ?? false;
         const force = options.force ?? false;
-        const useTrash = options.useTrash ?? false;
 
         try {
             await parentHandle.removeEntry(name, { recursive });

@@ -1,5 +1,6 @@
 import { expose, transfer } from 'comlink';
 
+import { searchInWorkspace as runSearch } from './search';
 import { WatchEventType } from './types';
 import {
     FileNotFoundError,
@@ -7,6 +8,11 @@ import {
     PathError,
     createFDError
 } from './utils/errors';
+
+import {
+    matchMinimatch,
+    normalizeMinimatch
+} from './utils/glob';
 
 import {
     basename,
@@ -17,8 +23,6 @@ import {
     createSyncHandleSafe,
     dirname,
     joinPath,
-    matchMinimatch,
-    normalizeMinimatch,
     normalizePath,
     removeEntry,
     resolvePath,
@@ -28,7 +32,7 @@ import {
     withLock
 } from './utils/helpers';
 
-import type { DirentData, FileOpenOptions, FileStat, OPFSOptions, RenameOptions, WatchEvent, WatchOptions, WatchSnapshot } from './types';
+import type { DirentData, FileOpenOptions, FileStat, OPFSOptions, RenameOptions, SearchInWorkspaceOptions, SearchInWorkspaceResult, WatchEvent, WatchOptions, WatchSnapshot } from './types';
 
 
 /**
@@ -1497,6 +1501,18 @@ export class OPFSWorker {
 
             throw new OPFSError('Failed to sync file system', 'SYNC_FAILED', undefined, error);
         }
+    }
+
+    /**
+     * Search across files with streaming results.
+     */
+    async search(
+        query: string,
+        options: SearchInWorkspaceOptions | undefined,
+        callbacks: { onResult: (result: SearchInWorkspaceResult) => void; onDone: () => void; onError?: (error: string) => void },
+        shouldAbort?: () => boolean
+    ): Promise<void> {
+        return runSearch(this, query, options, callbacks, shouldAbort);
     }
 }
 
