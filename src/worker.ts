@@ -64,7 +64,7 @@ export class OPFSWorker {
         root: '/',
         namespace: '',
         maxFileSize: 50 * 1024 * 1024,
-        hashAlgorithm: false,
+        hashAlgorithm: 'etag',
         broadcastChannel: 'opfs-worker',
     };
 
@@ -618,7 +618,7 @@ export class OPFSWorker {
 
         const name = basename(path);
         const parentDir = await this.getDirectoryHandle(dirname(path), false);
-        const includeHash = this.options.hashAlgorithm !== null;
+        const hashAlgorithm = this.options.hashAlgorithm;
 
         try {
             const fileHandle = await parentDir.getFileHandle(name, { create: false });
@@ -633,9 +633,13 @@ export class OPFSWorker {
                 isDirectory: false,
             };
 
-            if (includeHash && this.options.hashAlgorithm) {
+            if (hashAlgorithm === 'etag') {
+                baseStat.hash = `${ file.lastModified.toString(36) }-${ file.size.toString(36) }`;
+            }
+            // Crypto hash
+            else if (typeof hashAlgorithm === 'string') {
                 try {
-                    const hash = await calculateFileHash(file, this.options.hashAlgorithm, this.options.maxFileSize);
+                    const hash = await calculateFileHash(file, hashAlgorithm, this.options.maxFileSize);
 
                     baseStat.hash = hash;
                 }

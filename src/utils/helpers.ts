@@ -334,7 +334,6 @@ export async function removeEntry(
     return withLock(path, 'exclusive', async() => {
         const recursive = options.recursive ?? false;
         const force = options.force ?? false;
-        const useTrash = options.useTrash ?? false;
 
         try {
             await parentHandle.removeEntry(name, { recursive });
