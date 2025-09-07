@@ -197,14 +197,14 @@ The library provides comprehensive error handling with specific error types that
 - `TimeoutError` - Thrown when an operation times out
 - `FileBusyError` - Thrown when a file is busy (locked by another operation)
 - `FileTypeError` - Thrown when file/directory type expectations don't match
-  - Usage: `new FileTypeError('Is a directory: /path/to/dir', 'EISDIR', '/path/to/dir')`
+  - Usage: `new FileTypeError('directory', '/path/to/dir')`
 - `ValidationError` - Thrown for validation failures (invalid arguments, formats, etc.)
   - Usage: `new ValidationError('Invalid size', 'EINVAL', '/path/to/file')`
 - `OperationAbortedError` - Thrown when an operation is aborted
 - `IOError` - Thrown for I/O operation failures
 - `OperationNotSupportedError` - Thrown when an operation is not supported
 - `DirectoryOperationError` - Thrown when directory operations fail
-  - Usage: `new DirectoryOperationError('Failed to remove entry: /path/to/dir', 'RM_FAILED', '/path/to/dir')`
+  - Usage: `new DirectoryOperationError('RM_FAILED', '/path/to/dir')`
 - `InitializationFailedError` - Thrown when OPFS initialization fails
 - `FileSystemOperationError` - Thrown when file system operations fail
 - `PathResolutionFailedError` - Thrown when path resolution fails

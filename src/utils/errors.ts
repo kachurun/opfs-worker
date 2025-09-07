@@ -47,7 +47,7 @@ export class OPFSError extends Error {
  */
 export class OPFSNotSupportedError extends OPFSError {
     constructor(cause?: unknown) {
-        super('OPFS is not supported in this browser', 'OPFS_NOT_SUPPORTED', undefined, undefined, cause);
+        super('OPFS is not supported in this browser', 'ENOTSUP', undefined, undefined, cause);
     }
 }
 
@@ -80,7 +80,7 @@ export class ExistenceError extends OPFSError {
  */
 export class PermissionError extends OPFSError {
     constructor(path: string, operation: string, cause?: unknown) {
-        super(`Permission denied for ${ operation } on: ${ path }`, 'PERMISSION_DENIED', path, operation, cause);
+        super(`Permission denied for ${ operation } on: ${ path }`, 'EACCES', path, operation, cause);
     }
 }
 
@@ -90,15 +90,6 @@ export class PermissionError extends OPFSError {
 export class StorageError extends OPFSError {
     constructor(message: string, path?: string, cause?: unknown) {
         super(message, 'ENOSPC', path, 'write', cause);
-    }
-}
-
-/**
- * Error thrown when an operation times out
- */
-export class TimeoutError extends OPFSError {
-    constructor(operation: string, path?: string, cause?: unknown) {
-        super(`Operation timed out: ${ operation }`, 'TIMEOUT_ERROR', path, operation, cause);
     }
 }
 
@@ -115,7 +106,7 @@ export class FileBusyError extends OPFSError {
  * Error thrown when file/directory type expectations don't match
  */
 export class FileTypeError extends OPFSError {
-    constructor(expectedType: 'file' | 'directory', actualType: 'file' | 'directory', path: string, cause?: unknown) {
+    constructor(actualType: 'file' | 'directory', path: string, cause?: unknown) {
         const message = actualType === 'directory'
             ? `Is a directory: ${ path }`
             : `Not a directory: ${ path }`;
@@ -172,19 +163,14 @@ export class OperationNotSupportedError extends OPFSError {
  * Error thrown when directory operations fail
  */
 export class DirectoryOperationError extends OPFSError {
-    constructor(operation: 'remove' | 'clear' | 'root', path: string, cause?: unknown) {
+    constructor(code: string, path: string, cause?: unknown) {
         const messages = {
-            remove: `Failed to remove entry: ${ path }`,
-            clear: `Directory not empty: ${ path }. Use recursive option to force removal.`,
-            root: 'Cannot remove root directory',
-        };
-        const codes = {
-            remove: 'RM_FAILED',
-            clear: 'ENOTEMPTY',
-            root: 'EROOT',
+            RM_FAILED: `Failed to remove entry: ${ path }`,
+            ENOTEMPTY: `Directory not empty: ${ path }. Use recursive option to force removal.`,
+            EROOT: 'Cannot remove root directory',
         };
 
-        super(messages[operation], codes[operation], path, 'unlink', cause);
+        super(messages[code as keyof typeof messages] || `Directory operation failed: ${ path }`, code, path, 'unlink', cause);
     }
 }
 
@@ -204,15 +190,6 @@ export class InitializationFailedError extends OPFSError {
 export class FileSystemOperationError extends OPFSError {
     constructor(operation: string, path: string, cause?: unknown) {
         super(`Failed to ${ operation }: ${ path }`, `${ operation.toUpperCase() }_FAILED`, path, operation, cause);
-    }
-}
-
-/**
- * Error thrown when path resolution fails
- */
-export class PathResolutionFailedError extends OPFSError {
-    constructor(path: string, cause?: unknown) {
-        super(`Failed to resolve path: ${ path }`, 'REALPATH_FAILED', path, 'realpath', cause);
     }
 }
 
@@ -266,10 +243,10 @@ export function mapDomError(error: any, context?: { path?: string; isDirectory?:
         case 'TypeMismatchError':
             if (isDirectory !== undefined) {
                 if (isDirectory) {
-                    return new FileTypeError('file', 'directory', path || 'unknown', error);
+                    return new FileTypeError('directory', path || 'unknown', error);
                 }
                 else {
-                    return new FileTypeError('directory', 'file', path || 'unknown', error);
+                    return new FileTypeError('file', path || 'unknown', error);
                 }
             }
 

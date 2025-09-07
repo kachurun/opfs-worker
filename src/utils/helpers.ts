@@ -352,13 +352,13 @@ export async function removeEntry(
                 }
             }
             else if (e.name === 'InvalidModificationError') {
-                throw new DirectoryOperationError('clear', path, e);
+                throw new DirectoryOperationError('ENOTEMPTY', path, e);
             }
             else if (e.name === 'TypeMismatchError' && !recursive) {
-                throw new FileTypeError('file', 'directory', path, e);
+                throw new FileTypeError('directory', path, e);
             }
             else {
-                throw new DirectoryOperationError('remove', path, e);
+                throw new DirectoryOperationError('RM_FAILED', path, e);
             }
         }
     });

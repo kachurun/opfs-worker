@@ -572,7 +572,7 @@ export class OPFSWorker {
                 }
 
                 if (err.name === 'TypeMismatchError') {
-                    throw new FileTypeError('directory', 'file', segment!, err);
+                    throw new FileTypeError('file', segment!, err);
                 }
 
                 throw new FileSystemOperationError('create directory', segment!, err);
@@ -856,7 +856,7 @@ export class OPFSWorker {
 
         // Special handling for root directory
         if (path === '/') {
-            throw new DirectoryOperationError('root', path);
+            throw new DirectoryOperationError('EROOT', path);
         }
 
         const { recursive = false, force = false } = options || {};
@@ -1013,7 +1013,7 @@ export class OPFSWorker {
             }
             else {
                 if (!recursive) {
-                    throw new FileTypeError('file', 'directory', source);
+                    throw new FileTypeError('directory', source);
                 }
 
                 await this.mkdir(destination, { recursive: true });
