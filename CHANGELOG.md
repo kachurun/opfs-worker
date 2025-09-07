@@ -1,5 +1,11 @@
 # opfs-worker
 
+## 1.3.0
+
+### Minor Changes
+
+-   Error handling fixes
+
 ## 1.2.4
 
 ### Patch Changes
