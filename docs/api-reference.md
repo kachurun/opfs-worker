@@ -147,7 +147,7 @@ const url = URL.createObjectURL(blob);
 
 **Returns:** `Promise<string | Uint8Array>` - File contents as string or binary data
 
-**Throws:** `FileNotFoundError` if the file doesn't exist
+**Throws:** `ExistenceError` if the file doesn't exist
 
 **Binary File Handling:**
 
@@ -576,7 +576,7 @@ console.log(absolute); // '/data/file.txt'
 
 **Returns:** `Promise<string>` - The absolute normalized path
 
-**Throws:** `FileNotFoundError` if the path doesn't exist
+**Throws:** `ExistenceError` if the path doesn't exist
 
 ## File Descriptors
 

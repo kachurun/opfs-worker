@@ -79,9 +79,9 @@ const fd = await fs.open('/data/log.txt', { create: true, truncate: true });
 
 **Throws:**
 
-- `OPFSError` with code `'EEXIST'` if file exists and `exclusive: true`
-- `OPFSError` with code `'EISDIR'` if path is a directory
-- `OPFSError` with code `'OPEN_FAILED'` for other failures
+- `AlreadyExistsError` if file exists and `exclusive: true`
+- `FileTypeError` if path is a directory
+- `FileSystemOperationError` for other failures
 
 **⚠️ Race Condition Warning**: The `exclusive` option provides **best-effort atomicity only**. **Race conditions ARE possible** if two workers try to create the same file simultaneously. OPFS does not provide true file locking, so don't rely on `exclusive` for critical synchronization. If you need real atomicity, implement your own locking mechanism.
 
@@ -436,14 +436,15 @@ try {
 }
 ```
 
-**Common Error Codes:**
+**Common Error Types:**
 
-- `'EEXIST'`: File already exists (with `exclusive: true`)
-- `'EISDIR'`: Path is a directory
-- `'OPEN_FAILED'`: General open failure
-- `'READ_FAILED'`: Read operation failure
-- `'WRITE_FAILED'`: Write operation failure
-- `'SYNC_FAILED'`: Sync operation failure
+- `AlreadyExistsError`: File already exists (with `exclusive: true`)
+- `ExistenceError`: File not found
+- `FileTypeError`: Path is directory when file expected (or vice versa)
+- `ValidationError`: Invalid arguments (offset, length, etc.)
+- `FileSystemOperationError`: General file system operation failures
+- `IOError`: I/O operation failures
+- `PermissionError`: Permission denied
 
 ## Performance Considerations
 

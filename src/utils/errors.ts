@@ -1,15 +1,44 @@
 /**
- * Base error class for all OPFS-related errors
+ * Error code to numeric errno mapping (Node.js compatible)
+ */
+const ERROR_CODE_TO_ERRNO: Record<string, number> = {
+    ENOENT: -2, // No such file or directory
+    EISDIR: -21, // Is a directory
+    ENOTDIR: -20, // Not a directory
+    EACCES: -13, // Permission denied
+    EEXIST: -17, // File exists
+    ENOTEMPTY: -39, // Directory not empty
+    EINVAL: -22, // Invalid argument
+    EIO: -5, // I/O error
+    ENOSPC: -28, // No space left on device
+    EBUSY: -16, // Device or resource busy
+    EINTR: -4, // Interrupted system call
+    ENOTSUP: -95, // Operation not supported
+    ERANGE: -34, // Result too large
+    EBADF: -9, // Bad file descriptor
+    EROOT: -1, // Custom: Cannot remove root directory
+};
+
+/**
+ * Base error class for all OPFS-related errors (Node.js SystemError compatible)
  */
 export class OPFSError extends Error {
+    public readonly errno: number;
+    public readonly syscall?: string;
+    public readonly path?: string;
+
     constructor(
         message: string,
-        public readonly code: string,
-        public readonly path?: string,
+        code: string,
+        path?: string,
+        syscall?: string,
         cause?: any
     ) {
         super(message, { cause });
-        this.name = 'OPFSError';
+        this.name = code;
+        this.errno = ERROR_CODE_TO_ERRNO[code] || -1;
+        this.path = path;
+        this.syscall = syscall;
     }
 }
 
@@ -18,17 +47,7 @@ export class OPFSError extends Error {
  */
 export class OPFSNotSupportedError extends OPFSError {
     constructor(cause?: unknown) {
-        super('OPFS is not supported in this browser', 'OPFS_NOT_SUPPORTED', undefined, cause);
-    }
-}
-
-
-/**
- * Error thrown when OPFS is not mounted
- */
-export class OPFSNotMountedError extends OPFSError {
-    constructor(cause?: unknown) {
-        super('OPFS is not mounted', 'OPFS_NOT_MOUNTED', undefined, cause);
+        super('OPFS is not supported in this browser', 'OPFS_NOT_SUPPORTED', undefined, undefined, cause);
     }
 }
 
@@ -37,25 +56,22 @@ export class OPFSNotMountedError extends OPFSError {
  */
 export class PathError extends OPFSError {
     constructor(message: string, path: string, cause?: unknown) {
-        super(message, 'INVALID_PATH', path, cause);
+        super(message, 'INVALID_PATH', path, 'access', cause);
     }
 }
 
 /**
- * Error thrown when a requested file doesn't exist
+ * Error thrown when files or directories don't exist
  */
-export class FileNotFoundError extends OPFSError {
-    constructor(path: string, cause?: unknown) {
-        super(`File not found: ${ path }`, 'FILE_NOT_FOUND', path, cause);
-    }
-}
+export class ExistenceError extends OPFSError {
+    constructor(type: 'file' | 'directory' | 'source', path: string, cause?: unknown) {
+        const messages = {
+            file: `File not found: ${ path }`,
+            directory: `Directory not found: ${ path }`,
+            source: `Source does not exist: ${ path }`,
+        };
 
-/**
- * Error thrown when a requested directory doesn't exist
- */
-export class DirectoryNotFoundError extends OPFSError {
-    constructor(path: string, cause?: unknown) {
-        super(`Directory not found: ${ path }`, 'DIRECTORY_NOT_FOUND', path, cause);
+        super(messages[type], 'ENOENT', path, 'access', cause);
     }
 }
 
@@ -64,7 +80,7 @@ export class DirectoryNotFoundError extends OPFSError {
  */
 export class PermissionError extends OPFSError {
     constructor(path: string, operation: string, cause?: unknown) {
-        super(`Permission denied for ${ operation } on: ${ path }`, 'PERMISSION_DENIED', path, cause);
+        super(`Permission denied for ${ operation } on: ${ path }`, 'PERMISSION_DENIED', path, operation, cause);
     }
 }
 
@@ -73,7 +89,7 @@ export class PermissionError extends OPFSError {
  */
 export class StorageError extends OPFSError {
     constructor(message: string, path?: string, cause?: unknown) {
-        super(message, 'STORAGE_ERROR', path, cause);
+        super(message, 'ENOSPC', path, 'write', cause);
     }
 }
 
@@ -82,10 +98,132 @@ export class StorageError extends OPFSError {
  */
 export class TimeoutError extends OPFSError {
     constructor(operation: string, path?: string, cause?: unknown) {
-        super(`Operation timed out: ${ operation }`, 'TIMEOUT_ERROR', path, cause);
+        super(`Operation timed out: ${ operation }`, 'TIMEOUT_ERROR', path, operation, cause);
     }
 }
 
+/**
+ * Error thrown when a file is busy (locked by another operation)
+ */
+export class FileBusyError extends OPFSError {
+    constructor(path: string, cause?: unknown) {
+        super(`File is busy: ${ path }`, 'EBUSY', path, 'open', cause);
+    }
+}
+
+/**
+ * Error thrown when file/directory type expectations don't match
+ */
+export class FileTypeError extends OPFSError {
+    constructor(expectedType: 'file' | 'directory', actualType: 'file' | 'directory', path: string, cause?: unknown) {
+        const message = actualType === 'directory'
+            ? `Is a directory: ${ path }`
+            : `Not a directory: ${ path }`;
+        const code = actualType === 'directory' ? 'EISDIR' : 'ENOTDIR';
+
+        super(message, code, path, 'access', cause);
+    }
+}
+
+/**
+ * Error thrown for validation failures (invalid arguments, formats, etc.)
+ */
+export class ValidationError extends OPFSError {
+    constructor(type: 'argument' | 'format' | 'descriptor' | 'overflow', message: string, path?: string, cause?: unknown) {
+        const codes = {
+            argument: 'EINVAL',
+            format: 'INVALID_FORMAT',
+            descriptor: 'EBADF',
+            overflow: 'ERANGE',
+        };
+
+        super(message, codes[type], path, 'validate', cause);
+    }
+}
+
+/**
+ * Error thrown when an operation is aborted
+ */
+export class OperationAbortedError extends OPFSError {
+    constructor(path: string, cause?: unknown) {
+        super(`Operation aborted: ${ path }`, 'EINTR', path, 'interrupt', cause);
+    }
+}
+
+/**
+ * Error thrown for I/O operation failures
+ */
+export class IOError extends OPFSError {
+    constructor(message: string, path?: string, cause?: unknown) {
+        super(message, 'EIO', path, 'io', cause);
+    }
+}
+
+/**
+ * Error thrown when an operation is not supported
+ */
+export class OperationNotSupportedError extends OPFSError {
+    constructor(path: string, cause?: unknown) {
+        super(`Operation not supported: ${ path }`, 'ENOTSUP', path, 'operation', cause);
+    }
+}
+
+/**
+ * Error thrown when directory operations fail
+ */
+export class DirectoryOperationError extends OPFSError {
+    constructor(operation: 'remove' | 'clear' | 'root', path: string, cause?: unknown) {
+        const messages = {
+            remove: `Failed to remove entry: ${ path }`,
+            clear: `Directory not empty: ${ path }. Use recursive option to force removal.`,
+            root: 'Cannot remove root directory',
+        };
+        const codes = {
+            remove: 'RM_FAILED',
+            clear: 'ENOTEMPTY',
+            root: 'EROOT',
+        };
+
+        super(messages[operation], codes[operation], path, 'unlink', cause);
+    }
+}
+
+
+/**
+ * Error thrown when OPFS initialization fails
+ */
+export class InitializationFailedError extends OPFSError {
+    constructor(path: string, cause?: unknown) {
+        super('Failed to initialize OPFS', 'INIT_FAILED', path, 'init', cause);
+    }
+}
+
+/**
+ * Error thrown when file system operations fail
+ */
+export class FileSystemOperationError extends OPFSError {
+    constructor(operation: string, path: string, cause?: unknown) {
+        super(`Failed to ${ operation }: ${ path }`, `${ operation.toUpperCase() }_FAILED`, path, operation, cause);
+    }
+}
+
+/**
+ * Error thrown when path resolution fails
+ */
+export class PathResolutionFailedError extends OPFSError {
+    constructor(path: string, cause?: unknown) {
+        super(`Failed to resolve path: ${ path }`, 'REALPATH_FAILED', path, 'realpath', cause);
+    }
+}
+
+/**
+ * Error thrown when a file or directory already exists
+ */
+export class AlreadyExistsError extends OPFSError {
+    constructor(path: string, cause?: unknown) {
+        super(`Destination already exists: ${ path }`, 'EEXIST', path, 'open', cause);
+    }
+}
 
 /**
  * Create an OPFSError with file descriptor context
@@ -97,9 +235,9 @@ export class TimeoutError extends OPFSError {
  * @returns OPFSError with appropriate context
  */
 export function createFDError(operation: string, fd: number, path: string, error?: any): OPFSError {
-    const errorCode = `${ operation.toUpperCase() }_FAILED` as any;
+    const errorCode = `${ operation.toUpperCase() }_FAILED` as 'READ_FAILED' | 'WRITE_FAILED' | 'CLOSE_FAILED';
 
-    return new OPFSError(`Failed to ${ operation } file descriptor: ${ fd }`, errorCode, path, error);
+    return new OPFSError(`Failed to ${ operation } file descriptor: ${ fd }`, errorCode, path, operation, error);
 }
 
 /**
@@ -117,44 +255,44 @@ export function mapDomError(error: any, context?: { path?: string; isDirectory?:
 
     switch (error.name) {
         case 'InvalidStateError':
-            return new OPFSError(`File is busy: ${ path || 'unknown' }`, 'EBUSY', path, error);
+            return new FileBusyError(path || 'unknown', error);
 
         case 'QuotaExceededError':
-            return new OPFSError(`No space left on device: ${ path || 'unknown' }`, 'ENOSPC', path, error);
+            return new StorageError(`No space left on device: ${ path || 'unknown' }`, path, error);
 
         case 'NotFoundError':
-            return new OPFSError(`No such file or directory: ${ path || 'unknown' }`, 'ENOENT', path, error);
+            return new ExistenceError('file', path!, error);
 
         case 'TypeMismatchError':
             if (isDirectory !== undefined) {
                 if (isDirectory) {
-                    return new OPFSError(`Not a directory: ${ path || 'unknown' }`, 'ENOTDIR', path, error);
+                    return new FileTypeError('file', 'directory', path || 'unknown', error);
                 }
                 else {
-                    return new OPFSError(`Is a directory: ${ path || 'unknown' }`, 'EISDIR', path, error);
+                    return new FileTypeError('directory', 'file', path || 'unknown', error);
                 }
             }
 
             // Fall through to default for ambiguous cases
-            return new OPFSError(`Type mismatch: ${ path || 'unknown' }`, 'EINVAL', path, error);
+            return new ValidationError('argument', `Type mismatch: ${ path || 'unknown' }`, path, error);
 
         case 'NotAllowedError':
         case 'SecurityError':
-            return new OPFSError(`Permission denied: ${ path || 'unknown' }`, 'EACCES', path, error);
+            return new PermissionError(path!, 'unknown', error);
 
         case 'InvalidModificationError':
-            return new OPFSError(`Invalid modification: ${ path || 'unknown' }`, 'EINVAL', path, error);
+            return new ValidationError('argument', `Invalid modification: ${ path || 'unknown' }`, path, error);
 
         case 'AbortError':
-            return new OPFSError(`Operation aborted: ${ path || 'unknown' }`, 'EINTR', path, error);
+            return new OperationAbortedError(path || 'unknown', error);
 
         case 'OperationError':
-            return new OPFSError(`Operation failed: ${ path || 'unknown' }`, 'EIO', path, error);
+            return new IOError(`Operation failed: ${ path || 'unknown' }`, path, error);
 
         case 'TypeError':
-            return new OPFSError(`Operation not supported: ${ path || 'unknown' }`, 'ENOTSUP', path, error);
+            return new OperationNotSupportedError(path || 'unknown', error);
 
         default:
-            return new OPFSError(`I/O error: ${ path || 'unknown' }`, 'EIO', path, error);
+            return new IOError(`I/O error: ${ path || 'unknown' }`, path, error);
     }
 }

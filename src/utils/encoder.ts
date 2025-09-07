@@ -1,4 +1,4 @@
-import { OPFSError } from './errors';
+import { ValidationError } from './errors';
 
 import type { Encoding } from '../types';
 
@@ -116,7 +116,7 @@ export function encodeString(data: string, encoding: Encoding = 'utf-8'): Uint8A
 
         case 'hex':
             if (!/^[\da-f]+$/i.test(data) || data.length % 2 !== 0) {
-                throw new OPFSError('Invalid hex string', 'INVALID_HEX_FORMAT');
+                throw new ValidationError('format', 'Invalid hex string');
             }
 
             return Uint8Array.from(data.match(/.{1,2}/g)!.map(b => parseInt(b, 16)));

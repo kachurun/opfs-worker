@@ -1,7 +1,14 @@
 import { minimatch } from 'minimatch';
 
 import { encodeString } from './encoder';
-import { OPFSError, OPFSNotSupportedError, mapDomError } from './errors';
+import {
+    DirectoryOperationError,
+    ExistenceError,
+    FileTypeError,
+    OPFSNotSupportedError,
+    ValidationError,
+    mapDomError
+} from './errors';
 
 import type { Encoding } from '../types';
 
@@ -341,17 +348,17 @@ export async function removeEntry(
         catch (e: any) {
             if (e.name === 'NotFoundError') {
                 if (!force) {
-                    throw new OPFSError(`No such file or directory: ${ path }`, 'ENOENT', undefined, e);
+                    throw new ExistenceError('file', path, e);
                 }
             }
             else if (e.name === 'InvalidModificationError') {
-                throw new OPFSError(`Directory not empty: ${ path }. Use recursive option to force removal.`, 'ENOTEMPTY', undefined, e);
+                throw new DirectoryOperationError('clear', path, e);
             }
             else if (e.name === 'TypeMismatchError' && !recursive) {
-                throw new OPFSError(`Cannot remove directory without recursive option: ${ path }`, 'EISDIR', undefined, e);
+                throw new FileTypeError('file', 'directory', path, e);
             }
             else {
-                throw new OPFSError(`Failed to remove entry: ${ path }`, 'RM_FAILED', undefined, e);
+                throw new DirectoryOperationError('remove', path, e);
             }
         }
     });
@@ -374,19 +381,19 @@ export function validateReadWriteArgs(
     position: number | null | undefined
 ): void {
     if (!Number.isInteger(offset) || !Number.isInteger(length)) {
-        throw new OPFSError('Invalid offset or length', 'EINVAL');
+        throw new ValidationError('argument', 'Invalid offset or length');
     }
 
     if (offset < 0 || length < 0) {
-        throw new OPFSError('Negative offset or length not allowed', 'EINVAL');
+        throw new ValidationError('argument', 'Negative offset or length not allowed');
     }
 
     if (offset + length > bufferLen) {
-        throw new OPFSError('Operation would overflow buffer', 'ERANGE');
+        throw new ValidationError('overflow', 'Operation would overflow buffer');
     }
 
     if (position != null && (!Number.isInteger(position) || position < 0)) {
-        throw new OPFSError('Invalid position', 'EINVAL');
+        throw new ValidationError('argument', 'Invalid position');
     }
 }
 

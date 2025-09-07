@@ -171,16 +171,62 @@ type Encoding = 'utf-8' | 'utf-16le' | 'ascii' | 'latin1' | 'base64' | 'hex' | '
 
 ## Error Types
 
-The library provides comprehensive error handling with specific error types:
+The library provides comprehensive error handling with specific error types that are Node.js SystemError compatible:
 
-- `OPFSError` - Base error class for all OPFS-related errors
+### Base Error Class
+
+- `OPFSError` - Base error class for all OPFS-related errors (Node.js SystemError compatible)
+
+**Properties:**
+
+- `errno: number` - Numeric error code (e.g., -2 for ENOENT)
+- `syscall?: string` - System call name (e.g., 'open', 'read', 'write')
+- `path?: string` - File path when applicable
+- `name: string` - Error class name ('OPFSError')
+- `message: string` - Human-readable error message
+- `cause?: any` - Underlying error (Node.js 16+ feature)
+
+### Specialized Error Classes
+
 - `OPFSNotSupportedError` - Thrown when OPFS is not supported in the browser
-- `OPFSNotMountedError` - Thrown when OPFS is not mounted
 - `PathError` - Thrown for invalid paths or path traversal attempts
-- `FileNotFoundError` - Thrown when a requested file doesn't exist
-- `DirectoryNotFoundError` - Thrown when a requested directory doesn't exist
+- `ExistenceError` - Thrown when files or directories don't exist
+  - Usage: `new ExistenceError('File not found: /path/to/file', 'ENOENT', '/path/to/file')`
 - `PermissionError` - Thrown when permission is denied for an operation
 - `StorageError` - Thrown when an operation fails due to insufficient storage
 - `TimeoutError` - Thrown when an operation times out
+- `FileBusyError` - Thrown when a file is busy (locked by another operation)
+- `FileTypeError` - Thrown when file/directory type expectations don't match
+  - Usage: `new FileTypeError('Is a directory: /path/to/dir', 'EISDIR', '/path/to/dir')`
+- `ValidationError` - Thrown for validation failures (invalid arguments, formats, etc.)
+  - Usage: `new ValidationError('Invalid size', 'EINVAL', '/path/to/file')`
+- `OperationAbortedError` - Thrown when an operation is aborted
+- `IOError` - Thrown for I/O operation failures
+- `OperationNotSupportedError` - Thrown when an operation is not supported
+- `DirectoryOperationError` - Thrown when directory operations fail
+  - Usage: `new DirectoryOperationError('Failed to remove entry: /path/to/dir', 'RM_FAILED', '/path/to/dir')`
+- `InitializationFailedError` - Thrown when OPFS initialization fails
+- `FileSystemOperationError` - Thrown when file system operations fail
+- `PathResolutionFailedError` - Thrown when path resolution fails
+- `AlreadyExistsError` - Thrown when a file or directory already exists
+
+### Error Code Mapping
+
+The library uses standard POSIX error codes with numeric errno mapping:
+
+- `ENOENT` (-2) - No such file or directory
+- `EISDIR` (-21) - Is a directory
+- `ENOTDIR` (-20) - Not a directory
+- `EACCES` (-13) - Permission denied
+- `EEXIST` (-17) - File exists
+- `ENOTEMPTY` (-39) - Directory not empty
+- `EINVAL` (-22) - Invalid argument
+- `EIO` (-5) - I/O error
+- `ENOSPC` (-28) - No space left on device
+- `EBUSY` (-16) - Device or resource busy
+- `EINTR` (-4) - Interrupted system call
+- `ENOTSUP` (-95) - Operation not supported
+- `ERANGE` (-34) - Result too large
+- `EBADF` (-9) - Bad file descriptor
 
 Each error type extends the base `OPFSError` class and provides specific error codes and context information for better debugging.

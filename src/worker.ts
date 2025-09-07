@@ -2,10 +2,18 @@ import { expose, transfer } from 'comlink';
 
 import { WatchEventType } from './types';
 import {
-    FileNotFoundError,
+    AlreadyExistsError,
+    DirectoryOperationError,
+    ExistenceError,
+    FileSystemOperationError,
+    FileTypeError,
+    InitializationFailedError,
     OPFSError,
+    OperationNotSupportedError,
     PathError,
-    createFDError
+    ValidationError,
+    createFDError,
+    mapDomError
 } from './utils/errors';
 
 import {
@@ -87,7 +95,7 @@ export class OPFSWorker {
         const fileInfo = this.openFiles.get(fd);
 
         if (!fileInfo) {
-            throw new OPFSError(`Invalid file descriptor: ${ fd }`, 'EBADF');
+            throw new ValidationError('descriptor', `Invalid file descriptor: ${ fd }`);
         }
 
         return fileInfo;
@@ -211,7 +219,7 @@ export class OPFSWorker {
                 resolve(true);
             }
             catch (error) {
-                reject(new OPFSError('Failed to initialize OPFS', 'INIT_FAILED', root, error));
+                reject(new InitializationFailedError(root, error));
             }
             finally {
                 this.mountingPromise = null;
@@ -426,7 +434,7 @@ export class OPFSWorker {
             });
         }
         catch (err) {
-            throw new FileNotFoundError(path, err);
+            throw new ExistenceError('file', path, err);
         }
     }
 
@@ -560,19 +568,14 @@ export class OPFSWorker {
             }
             catch (err: any) {
                 if (err.name === 'NotFoundError') {
-                    throw new OPFSError(
-                        `Parent directory does not exist: ${ joinPath(segments.slice(0, i + 1)) }`,
-                        'ENOENT',
-                        undefined,
-                        err
-                    );
+                    throw new ExistenceError('directory', joinPath(segments.slice(0, i + 1)), err);
                 }
 
                 if (err.name === 'TypeMismatchError') {
-                    throw new OPFSError(`Path segment is not a directory: ${ segment }`, 'ENOTDIR', undefined, err);
+                    throw new FileTypeError('directory', 'file', segment!, err);
                 }
 
-                throw new OPFSError('Failed to create directory', 'MKDIR_FAILED', undefined, err);
+                throw new FileSystemOperationError('create directory', segment!, err);
             }
         }
 
@@ -617,10 +620,12 @@ export class OPFSWorker {
         }
 
         const name = basename(path);
-        const parentDir = await this.getDirectoryHandle(dirname(path), false);
-        const hashAlgorithm = this.options.hashAlgorithm;
+        let parentDir: FileSystemDirectoryHandle;
 
         try {
+            parentDir = await this.getDirectoryHandle(dirname(path), false);
+            const hashAlgorithm = this.options.hashAlgorithm;
+
             const fileHandle = await parentDir.getFileHandle(name, { create: false });
             const file = await fileHandle.getFile();
 
@@ -651,13 +656,17 @@ export class OPFSWorker {
             return baseStat;
         }
         catch (e: any) {
-            if (e.name !== 'TypeMismatchError' && e.name !== 'NotFoundError') {
-                throw new OPFSError('Failed to stat (file)', 'STAT_FAILED', undefined, e);
+            if (e.name === 'NotFoundError') {
+                throw new ExistenceError('file', path, e);
+            }
+
+            if (e.name !== 'TypeMismatchError') {
+                throw new FileSystemOperationError('stat', path, e);
             }
         }
 
         try {
-            await parentDir.getDirectoryHandle(name, { create: false });
+            await parentDir!.getDirectoryHandle(name, { create: false });
 
             return {
                 kind: 'directory',
@@ -669,11 +678,7 @@ export class OPFSWorker {
             };
         }
         catch (e: any) {
-            if (e.name === 'NotFoundError') {
-                throw new OPFSError(`No such file or directory: ${ path }`, 'ENOENT', undefined, e);
-            }
-
-            throw new OPFSError('Failed to stat (directory)', 'STAT_FAILED', undefined, e);
+            throw new FileSystemOperationError('stat', path, e);
         }
     }
 
@@ -818,7 +823,7 @@ export class OPFSWorker {
                 throw error;
             }
 
-            throw new OPFSError(`Failed to clear directory: ${ path }`, 'CLEAR_FAILED', undefined, error);
+            throw mapDomError(error, { path, isDirectory: true });
         }
     }
 
@@ -851,7 +856,7 @@ export class OPFSWorker {
 
         // Special handling for root directory
         if (path === '/') {
-            throw new OPFSError('Cannot remove root directory', 'EROOT');
+            throw new DirectoryOperationError('root', path);
         }
 
         const { recursive = false, force = false } = options || {};
@@ -890,7 +895,7 @@ export class OPFSWorker {
             const exists = await this.exists(normalizedPath);
 
             if (!exists) {
-                throw new FileNotFoundError(normalizedPath);
+                throw new ExistenceError('file', normalizedPath);
             }
 
             return normalizedPath;
@@ -900,7 +905,7 @@ export class OPFSWorker {
                 throw error;
             }
 
-            throw new OPFSError(`Failed to resolve path: ${ path }`, 'REALPATH_FAILED', undefined, error);
+            throw mapDomError(error, { path });
         }
     }
 
@@ -936,7 +941,7 @@ export class OPFSWorker {
             const destExists = await this.exists(newPath);
 
             if (destExists && !overwrite) {
-                throw new OPFSError(`Destination already exists: ${ newPath }`, 'EEXIST', undefined);
+                throw new AlreadyExistsError(newPath);
             }
 
             await this.copy(oldPath, newPath, { recursive: true, overwrite });
@@ -951,7 +956,7 @@ export class OPFSWorker {
                 throw error;
             }
 
-            throw new OPFSError(`Failed to rename from ${ oldPath } to ${ newPath }`, 'RENAME_FAILED', undefined, error);
+            throw mapDomError(error, { path: oldPath });
         }
     }
 
@@ -990,13 +995,13 @@ export class OPFSWorker {
             const sourceExists = await this.exists(source);
 
             if (!sourceExists) {
-                throw new OPFSError(`Source does not exist: ${ source }`, 'ENOENT', undefined);
+                throw new ExistenceError('source', source);
             }
 
             const destExists = await this.exists(destination);
 
             if (destExists && !overwrite) {
-                throw new OPFSError(`Destination already exists: ${ destination }`, 'EEXIST', undefined);
+                throw new AlreadyExistsError(destination);
             }
 
             const sourceStats = await this.stat(source);
@@ -1008,7 +1013,7 @@ export class OPFSWorker {
             }
             else {
                 if (!recursive) {
-                    throw new OPFSError(`Cannot copy directory without recursive option: ${ source }`, 'EISDIR', undefined);
+                    throw new FileTypeError('file', 'directory', source);
                 }
 
                 await this.mkdir(destination, { recursive: true });
@@ -1028,7 +1033,7 @@ export class OPFSWorker {
                 throw error;
             }
 
-            throw new OPFSError(`Failed to copy from ${ source } to ${ destination }`, 'CP_FAILED', undefined, error);
+            throw mapDomError(error, { path: source });
         }
     }
 
@@ -1059,7 +1064,7 @@ export class OPFSWorker {
      */
     async watch(path: string, options?: WatchOptions): Promise<void> {
         if (!this.options.broadcastChannel) {
-            throw new OPFSError('This instance is not configured to send events. Please specify options.broadcastChannel to enable watching.', 'ENOENT');
+            throw new OperationNotSupportedError('This instance is not configured to send events. Please specify options.broadcastChannel to enable watching.');
         }
 
         const snapshot: WatchSnapshot = {
@@ -1120,7 +1125,7 @@ export class OPFSWorker {
                     const exists = await this.exists(normalizedPath);
 
                     if (exists) {
-                        throw new OPFSError(`File already exists: ${ normalizedPath }`, 'EEXIST', normalizedPath);
+                        throw new AlreadyExistsError(normalizedPath);
                     }
 
                     return this._openFile(normalizedPath, create, truncate);
@@ -1134,7 +1139,7 @@ export class OPFSWorker {
                 throw error;
             }
 
-            throw new OPFSError(`Failed to open file: ${ normalizedPath }`, 'OPEN_FAILED', normalizedPath, error);
+            throw mapDomError(error, { path: normalizedPath, isDirectory: false });
         }
     }
 
@@ -1151,11 +1156,7 @@ export class OPFSWorker {
             await fileHandle.getFile();
         }
         catch (error: any) {
-            if (error.name === 'TypeMismatchError') {
-                throw new OPFSError(`Is a directory: ${ path }`, 'EISDIR', path);
-            }
-
-            throw error;
+            throw mapDomError(error, { path, isDirectory: true });
         }
 
         // Create sync access handle safely with proper error mapping
@@ -1376,7 +1377,7 @@ export class OPFSWorker {
 
         // Validate size parameter
         if (size < 0 || !Number.isInteger(size)) {
-            throw new OPFSError('Invalid size', 'EINVAL');
+            throw new ValidationError('argument', 'Invalid size');
         }
 
         try {
@@ -1499,7 +1500,7 @@ export class OPFSWorker {
                 throw error;
             }
 
-            throw new OPFSError('Failed to sync file system', 'SYNC_FAILED', undefined, error);
+            throw mapDomError(error);
         }
     }
 }
