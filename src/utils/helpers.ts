@@ -2,9 +2,6 @@ import { minimatch } from 'minimatch';
 
 import { encodeString } from './encoder';
 import {
-    DirectoryOperationError,
-    ExistenceError,
-    FileTypeError,
     OPFSNotSupportedError,
     ValidationError,
     mapDomError
@@ -329,7 +326,10 @@ export async function convertBlobToUint8Array(blob: Blob): Promise<Uint8Array> {
  *
  * @param parentHandle - The parent directory handle
  * @param path - The full path of the entry to remove
- * @param options - Remove options (recursive, force, useTrash)
+ * @param options - Remove options
+ * @param options.recursive - Whether to remove directories and their contents recursively
+ * @param options.force - Whether to ignore errors if the path doesn't exist
+ * @param options.useTrash - Placeholder for trash support (currently unused)
  */
 export async function removeEntry(
     parentHandle: FileSystemDirectoryHandle,
@@ -346,20 +346,17 @@ export async function removeEntry(
             await parentHandle.removeEntry(name, { recursive });
         }
         catch (e: any) {
-            if (e.name === 'NotFoundError') {
-                if (!force) {
-                    throw new ExistenceError('file', path, e);
-                }
+            if (e.name === 'NotFoundError' && force) {
+                return;
             }
-            else if (e.name === 'InvalidModificationError') {
-                throw new DirectoryOperationError('ENOTEMPTY', path, e);
-            }
-            else if (e.name === 'TypeMismatchError' && !recursive) {
-                throw new FileTypeError('directory', path, e);
-            }
-            else {
-                throw new DirectoryOperationError('RM_FAILED', path, e);
-            }
+
+            const isDirectory = e.name === 'TypeMismatchError' && !recursive;
+
+            throw mapDomError(e, {
+                path,
+                operation: 'remove',
+                isDirectory,
+            });
         }
     });
 }
@@ -371,7 +368,6 @@ export async function removeEntry(
  * @param offset - Offset in the buffer
  * @param length - Number of bytes to read/write
  * @param position - Position in the file (null for current position)
- * @param opts - Options for validation
  * @throws {OPFSError} If arguments are invalid
  */
 export function validateReadWriteArgs(

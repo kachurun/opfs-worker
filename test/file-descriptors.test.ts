@@ -44,7 +44,7 @@ describe('OPFSWorker File Descriptors', () => {
       
       await expect(
         fsw.open('/exists.txt', { create: true, exclusive: true })
-      ).rejects.toThrow('File already exists');
+      ).rejects.toMatchObject({ name: 'EEXIST' });
     });
 
     it('truncates file when truncate option is true', async () => {
@@ -62,7 +62,7 @@ describe('OPFSWorker File Descriptors', () => {
       
       await expect(
         fsw.open('/testdir')
-      ).rejects.toMatchObject({ code: 'OPEN_FAILED' });
+      ).rejects.toMatchObject({ name: 'EISDIR' });
     });
 
     it('allows opening the same file multiple times (like Node.js fs)', async () => {
@@ -87,7 +87,7 @@ describe('OPFSWorker File Descriptors', () => {
     it('throws ENOENT when trying to open non-existent file without create', async () => {
       await expect(
         fsw.open('/nope.txt')
-      ).rejects.toMatchObject({ code: 'OPEN_FAILED' });
+      ).rejects.toMatchObject({ name: 'ENOENT' });
     });
   });
 
@@ -100,13 +100,13 @@ describe('OPFSWorker File Descriptors', () => {
       // Should not be able to use closed fd
       await expect(
         fsw.read(fd, new Uint8Array(10), 0, 10, null)
-      ).rejects.toMatchObject({ code: 'EBADF' });
+      ).rejects.toMatchObject({ name: 'EBADF' });
     });
 
     it('throws EBADF for invalid file descriptor', async () => {
       await expect(
         fsw.close(999)
-      ).rejects.toMatchObject({ code: 'EBADF' });
+      ).rejects.toMatchObject({ name: 'EBADF' });
     });
 
     it('throws EBADF when closing already closed file descriptor', async () => {
@@ -118,7 +118,7 @@ describe('OPFSWorker File Descriptors', () => {
       // Second close should throw EBADF
       await expect(
         fsw.close(fd)
-      ).rejects.toMatchObject({ code: 'EBADF' });
+      ).rejects.toMatchObject({ name: 'EBADF' });
     });
   });
 
@@ -187,22 +187,22 @@ describe('OPFSWorker File Descriptors', () => {
       // Invalid offset
       await expect(
         fsw.read(fd, buffer, -1, 5, 0)
-      ).rejects.toMatchObject({ code: 'EINVAL' });
+      ).rejects.toMatchObject({ name: 'EINVAL' });
       
       // Invalid length
       await expect(
         fsw.read(fd, buffer, 0, -1, 0)
-      ).rejects.toMatchObject({ code: 'EINVAL' });
+      ).rejects.toMatchObject({ name: 'EINVAL' });
       
       // Buffer overflow
       await expect(
         fsw.read(fd, buffer, 5, 10, 0)
-      ).rejects.toMatchObject({ code: 'ERANGE' });
+      ).rejects.toMatchObject({ name: 'ERANGE' });
       
       // Invalid position
       await expect(
         fsw.read(fd, buffer, 0, 5, -1)
-      ).rejects.toMatchObject({ code: 'EINVAL' });
+      ).rejects.toMatchObject({ name: 'EINVAL' });
       
       await fsw.close(fd);
     });
@@ -297,22 +297,22 @@ describe('OPFSWorker File Descriptors', () => {
       // Invalid offset
       await expect(
         fsw.write(fd, data, -1, 5, 0)
-      ).rejects.toMatchObject({ code: 'EINVAL' });
+      ).rejects.toMatchObject({ name: 'EINVAL' });
       
       // Invalid length
       await expect(
         fsw.write(fd, data, 0, -1, 0)
-      ).rejects.toMatchObject({ code: 'EINVAL' });
+      ).rejects.toMatchObject({ name: 'EINVAL' });
       
       // Buffer overflow
       await expect(
         fsw.write(fd, data, 5, 10, 0)
-      ).rejects.toMatchObject({ code: 'ERANGE' });
+      ).rejects.toMatchObject({ name: 'ERANGE' });
       
       // Invalid position
       await expect(
         fsw.write(fd, data, 0, 5, -1)
-      ).rejects.toMatchObject({ code: 'EINVAL' });
+      ).rejects.toMatchObject({ name: 'EINVAL' });
       
       await fsw.close(fd);
     });
@@ -353,7 +353,7 @@ describe('OPFSWorker File Descriptors', () => {
     it('throws EBADF for invalid file descriptor', async () => {
       await expect(
         fsw.fstat(999)
-      ).rejects.toMatchObject({ code: 'EBADF' });
+      ).rejects.toMatchObject({ name: 'EBADF' });
     });
   });
 
@@ -402,12 +402,12 @@ describe('OPFSWorker File Descriptors', () => {
       // Negative size
       await expect(
         fsw.ftruncate(fd, -1)
-      ).rejects.toMatchObject({ code: 'EINVAL' });
+      ).rejects.toMatchObject({ name: 'EINVAL' });
       
       // Non-integer size
       await expect(
         fsw.ftruncate(fd, 3.14)
-      ).rejects.toMatchObject({ code: 'EINVAL' });
+      ).rejects.toMatchObject({ name: 'EINVAL' });
       
       await fsw.close(fd);
     });
@@ -429,7 +429,7 @@ describe('OPFSWorker File Descriptors', () => {
     it('throws EBADF for invalid file descriptor', async () => {
       await expect(
         fsw.fsync(999)
-      ).rejects.toMatchObject({ code: 'EBADF' });
+      ).rejects.toMatchObject({ name: 'EBADF' });
     });
   });
 

@@ -218,17 +218,31 @@ export function createFDError(operation: string, fd: number, path: string, error
 }
 
 /**
+ * Context for mapping DOM errors to OPFS errors
+ */
+export interface MapDomErrorContext {
+    /** File path for context-specific errors */
+    path?: string;
+    /** Whether the operation involves a directory (for TypeMismatchError) */
+    isDirectory?: boolean;
+    /** Type of existence for NotFoundError (default: 'file') */
+    existenceType?: 'file' | 'directory';
+    /** When 'remove', maps InvalidModificationError to ENOTEMPTY and default to RM_FAILED */
+    operation?: 'remove';
+}
+
+/**
  * Map DOM exceptions to OPFS error codes
- * 
+ *
  * @param error - The DOM exception to map
  * @param context - Context information for better error mapping
- * @param context.path - File path for context-specific errors
- * @param context.isDirectory - Whether the operation involves a directory
  * @returns OPFSError with appropriate error code
  */
-export function mapDomError(error: any, context?: { path?: string; isDirectory?: boolean }): OPFSError {
+export function mapDomError(error: any, context?: MapDomErrorContext): OPFSError {
     const path = context?.path;
     const isDirectory = context?.isDirectory;
+    const existenceType = context?.existenceType ?? 'file';
+    const operation = context?.operation;
 
     switch (error.name) {
         case 'InvalidStateError':
@@ -238,7 +252,7 @@ export function mapDomError(error: any, context?: { path?: string; isDirectory?:
             return new StorageError(`No space left on device: ${ path || 'unknown' }`, path, error);
 
         case 'NotFoundError':
-            return new ExistenceError('file', path!, error);
+            return new ExistenceError(existenceType, path!, error);
 
         case 'TypeMismatchError':
             if (isDirectory !== undefined) {
@@ -258,6 +272,10 @@ export function mapDomError(error: any, context?: { path?: string; isDirectory?:
             return new PermissionError(path!, 'unknown', error);
 
         case 'InvalidModificationError':
+            if (operation === 'remove') {
+                return new DirectoryOperationError('ENOTEMPTY', path!, error);
+            }
+
             return new ValidationError('argument', `Invalid modification: ${ path || 'unknown' }`, path, error);
 
         case 'AbortError':
@@ -270,6 +288,10 @@ export function mapDomError(error: any, context?: { path?: string; isDirectory?:
             return new OperationNotSupportedError(path || 'unknown', error);
 
         default:
+            if (operation === 'remove') {
+                return new DirectoryOperationError('RM_FAILED', path!, error);
+            }
+
             return new IOError(`I/O error: ${ path || 'unknown' }`, path, error);
     }
 }

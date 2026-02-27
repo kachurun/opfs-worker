@@ -35,10 +35,12 @@ function normalizePath(path: PathLike): string {
  */
 export class OPFSFileSystem {
     #worker: RemoteOPFSWorker;
+    #workerInstance: Worker;
     promises: OPFSFileSystem = this;
 
     constructor(options?: OPFSOptions) {
-        this.#worker = wrap<RemoteOPFSWorker>(new WorkerCtor());
+        this.#workerInstance = new WorkerCtor();
+        this.#worker = wrap<RemoteOPFSWorker>(this.#workerInstance);
 
         // Set up options if provided
         if (options) {
@@ -401,13 +403,6 @@ export class OPFSFileSystem {
     }
 
     /**
-     * Dispose of resources and clean up the file system instance
-     */
-    dispose() {
-        void this.#worker.dispose();
-    }
-
-    /**
      * Synchronize the file system with external data
      */
     async createIndex(entries: [PathLike, string | Uint8Array | Blob][]): Promise<void> {
@@ -444,5 +439,22 @@ export class OPFSFileSystem {
         const buffer = encodeString(text, encoding);
 
         return this.#worker.appendFile(normalizedPath, buffer);
+    }
+
+    /**
+     * Dispose of resources, detach the worker and clean up the file system instance
+     */
+    dispose() {
+        const worker = this.#worker;
+        const workerInstance = this.#workerInstance;
+
+        void (async() => {
+            try {
+                await worker.dispose();
+            }
+            finally {
+                workerInstance.terminate();
+            }
+        })();
     }
 }

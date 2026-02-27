@@ -108,8 +108,7 @@ export class OPFSWorker {
      * This method is called by internal operations to notify clients about
      * changes, even when no specific paths are being watched.
      * 
-     * @param path - The path that was changed
-     * @param type - The type of change (create, change, delete)
+     * @param event - The event describing the change
      */
     private async notifyChange(event: Omit<WatchEvent, 'timestamp' | 'hash' | 'namespace'>): Promise<void> {
         // This instance not configured to send events
@@ -186,7 +185,6 @@ export class OPFSWorker {
      * This method sets up the root directory for all subsequent operations.
      * If no root is specified, it will use the OPFS root directory.
      * 
-     * @param root - The root path for the file system (default: '/')
      * @returns Promise that resolves to true if initialization was successful
      * @throws {OPFSError} If initialization fails
      * 
@@ -568,11 +566,14 @@ export class OPFSWorker {
             }
             catch (err: any) {
                 if (err.name === 'NotFoundError') {
-                    throw new ExistenceError('directory', joinPath(segments.slice(0, i + 1)), err);
+                    throw mapDomError(err, {
+                        path: joinPath(segments.slice(0, i + 1)),
+                        existenceType: 'directory',
+                    });
                 }
 
                 if (err.name === 'TypeMismatchError') {
-                    throw new FileTypeError('file', segment!, err);
+                    throw mapDomError(err, { path: segment!, isDirectory: false });
                 }
 
                 throw new FileSystemOperationError('create directory', segment!, err);
@@ -1134,12 +1135,19 @@ export class OPFSWorker {
 
             return await this._openFile(normalizedPath, create, truncate);
         }
-        catch (error) {
+        catch (error: any) {
             if (error instanceof OPFSError) {
                 throw error;
             }
 
-            throw mapDomError(error, { path: normalizedPath, isDirectory: false });
+            // TypeMismatchError here means the path actually refers to a directory
+            // so we map it as a directory-type error (EISDIR) for better Node.js parity.
+            const isTypeMismatchDirectory = error && error.name === 'TypeMismatchError';
+
+            throw mapDomError(error, {
+                path: normalizedPath,
+                isDirectory: !!isTypeMismatchDirectory,
+            });
         }
     }
 
@@ -1451,8 +1459,6 @@ export class OPFSWorker {
      * This is useful for importing data from external sources or syncing with remote data.
      * 
      * @param entries - Array of [path, data] tuples to sync
-     * @param options - Options for synchronization
-     * @param options.cleanBefore - Whether to clear the file system before syncing (default: false)
      * @returns Promise that resolves when synchronization is complete
      * @throws {OPFSError} If the synchronization fails
      * 
