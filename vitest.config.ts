@@ -8,16 +8,21 @@ export default defineConfig({
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json', 'html'],
+      include: ['src/**/*.{ts,tsx}'],
       exclude: [
         'node_modules/',
+        'demo/**',
         'src/test/',
-        'src/demo/',
+        'src/index.ts',
+        'src/index.pure.ts',
+        'src/createOPFSWorker.ts',
+        'src/worker.entry.ts',
         '**/*.d.ts',
-        '**/*.config.*'
-      ]
-    }
+        '**/*.config.*',
+      ],
+    },
   },
   esbuild: {
-    target: 'es2022'
-  }
-}); 
+    target: 'es2022',
+  },
+});

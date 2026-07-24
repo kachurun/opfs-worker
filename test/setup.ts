@@ -18,8 +18,21 @@ function typeMismatch(): any {
     return err;
 }
 
+/** Tracks open sync handles per absolute path — mirrors OPFS "one handle at a time" */
+const openSyncHandles = new Set<string>();
+
+function noModificationAllowed(): any {
+    const err: any = new Error('NoModificationAllowedError');
+
+    err.name = 'NoModificationAllowedError';
+
+    return err;
+}
+
 class NodeSyncAccessHandle {
     private fd: number;
+    private closed = false;
+
     constructor(private filePath: string) {
         this.fd = openSync(this.filePath, 'r+');
     }
@@ -45,7 +58,13 @@ class NodeSyncAccessHandle {
     }
 
     close(): void {
+        if (this.closed) {
+            return;
+        }
+
+        this.closed = true;
         closeSync(this.fd);
+        openSyncHandles.delete(this.filePath);
     }
 }
 
@@ -53,6 +72,13 @@ class NodeFileHandle {
     kind = 'file' as const;
     constructor(public path: string) {}
     async createSyncAccessHandle(): Promise<NodeSyncAccessHandle> {
+        // OPFS allows only one FileSystemSyncAccessHandle per file at a time
+        if (openSyncHandles.has(this.path)) {
+            throw noModificationAllowed();
+        }
+
+        openSyncHandles.add(this.path);
+
         return new NodeSyncAccessHandle(this.path);
     }
 
@@ -162,12 +188,103 @@ const rootDir = mkdtempSync(path.join(tmpdir(), 'opfs-worker-'));
 
 (globalThis as any).__OPFS_ROOT__ = rootDir;
 
-// Mock navigator.storage.getDirectory for Node.js environment
 Object.defineProperty(globalThis, 'navigator', {
     value: {
         storage: {
             getDirectory: async() => new NodeDirectoryHandle(rootDir),
         },
+        // Web Locks API mock: shared locks run concurrently; exclusive locks serialize per name
+        locks: (() => {
+            type Waiter = { mode: 'shared' | 'exclusive'; resolve: () => void };
+
+            const holders = new Map<string, { shared: number; exclusive: boolean }>();
+            const waiters = new Map<string, Waiter[]>();
+
+            function getState(name: string) {
+                if (!holders.has(name)) {
+                    holders.set(name, { shared: 0, exclusive: false });
+                }
+
+                return holders.get(name)!;
+            }
+
+            function tryGrant(name: string) {
+                const queue = waiters.get(name);
+
+                if (!queue || queue.length === 0) {
+                    return;
+                }
+
+                const state = getState(name);
+
+                while (queue.length > 0) {
+                    const head = queue[0]!;
+
+                    if (head.mode === 'exclusive') {
+                        if (state.shared === 0 && !state.exclusive) {
+                            queue.shift();
+                            state.exclusive = true;
+                            head.resolve();
+                        }
+                        break;
+                    }
+
+                    if (!state.exclusive) {
+                        queue.shift();
+                        state.shared++;
+                        head.resolve();
+
+                        continue;
+                    }
+                    break;
+                }
+            }
+
+            return {
+                request: async <T>(
+                    name: string,
+                    options: { mode?: 'shared' | 'exclusive' },
+                    callback: () => Promise<T>
+                ): Promise<T> => {
+                    const mode = options.mode ?? 'exclusive';
+                    const state = getState(name);
+
+                    const canGrantImmediately = mode === 'exclusive'
+                        ? state.shared === 0 && !state.exclusive
+                        : !state.exclusive;
+
+                    if (!canGrantImmediately) {
+                        await new Promise<void>((resolve) => {
+                            if (!waiters.has(name)) {
+                                waiters.set(name, []);
+                            }
+
+                            waiters.get(name)!.push({ mode, resolve });
+                        });
+                    }
+                    else if (mode === 'exclusive') {
+                        state.exclusive = true;
+                    }
+                    else {
+                        state.shared++;
+                    }
+
+                    try {
+                        return await callback();
+                    }
+                    finally {
+                        if (mode === 'exclusive') {
+                            state.exclusive = false;
+                        }
+                        else {
+                            state.shared = Math.max(0, state.shared - 1);
+                        }
+
+                        tryGrant(name);
+                    }
+                },
+            };
+        })(),
     },
     writable: true,
     configurable: true,

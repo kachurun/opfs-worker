@@ -1,4 +1,4 @@
-import type { OPFSWorker } from './worker';
+import type { OPFSWorker } from './OPFSWorker';
 import type { Remote } from 'comlink';
 
 /**

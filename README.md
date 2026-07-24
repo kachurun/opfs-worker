@@ -1,6 +1,6 @@
 # OPFS Worker
 
-[![npm version](https://img.shields.io/npm/v/opfs-worker)](https://www.npmjs.com/package/opfs-worker)
+[npm version](https://www.npmjs.com/package/opfs-worker)
 
 A robust TypeScript library for working with Origin Private File System (OPFS) through Web Workers, providing a Node.js-like file system API for browser environments.
 
@@ -41,7 +41,7 @@ A robust TypeScript library for working with Origin Private File System (OPFS) t
 
 - **Complete API**: `readFile`, `writeFile`, `mkdir`, `remove`, `copy`, `rename`, and more
 - **Binary file support**: Handle images, documents, and any binary data seamlessly
-- **Hash support**: Built-in file hash calculation (SHA-1, SHA-256, SHA-384, SHA-512)
+- **Hash support**: Cheap `etag` by default (`mtime-size`), plus optional content hashes (SHA-1 / SHA-256 / SHA-384 / SHA-512)
 - **File indexing**: Complete file system indexing with metadata and search
 
 ### 🔄 **Advanced Features**
@@ -115,37 +115,43 @@ npm install opfs-worker
 
 **Dependencies:**
 
-- `comlink` - Required for both modes (automatically included with inline mode)
-- A bundler with Web Worker support (Vite, Webpack, Rollup, etc.) - Required for manual worker setup
+- Modes 1 and 2 depend on `comlink` (worker communication is handled for you)
+- Mode 3 does not use Comlink — you run the class inside your own worker
+- Modes 1 and 2 ship an inlined worker, so your bundler does not need a `?worker` setup
 
 ## Quick Start
 
-This library provides two ways to use OPFS with Web Workers:
+OPFS sync I/O only works inside a dedicated Web Worker. The library covers three common setups:
 
-### Inline Worker (Recommended)
+|            | Import                                  | Best when                                                         |
+| ---------- | --------------------------------------- | ----------------------------------------------------------------- |
+| **Mode 1** | `createOPFS()` from `opfs-worker`       | You want a Node-like `fs` API on the main thread                  |
+| **Mode 2** | `createOPFSWorker()` from `opfs-worker` | You want the low-level worker API, but still from the main thread |
+| **Mode 3** | `OPFSWorker` from `opfs-worker/pure`    | Your code already runs inside a worker                            |
 
-The easiest way to get started - just import and use:
+Modes 1 and 2 both pull Comlink. Mode 3 does not.
+
+### Mode 1: Node-like facade (recommended)
+
+The usual path. `createOPFS()` starts an inlined worker and returns a facade with a Node-like API — strings, encodings, auto-detection. Comlink stays under the hood.
+
+> 1.x alias: `createWorker` still works and returns the same facade — prefer `createOPFS`.
 
 ```typescript
-import { createWorker } from 'opfs-worker';
+import { createOPFS } from 'opfs-worker';
 
 async function basicExample() {
-    // Create a file system instance with default root path '/'
-    const fs = await createWorker();
+    const fs = createOPFS();
 
-    // Write a file
     await fs.writeFile('/config.json', JSON.stringify({ theme: 'dark' }));
-
-    // Read the file back
     const config = await fs.readFile('/config.json');
-    console.log(JSON.parse(config));
+    console.log(JSON.parse(config as string));
 }
 
-// Extended example with all options
 async function extendedExample() {
     const broadcastChannel = new BroadcastChannel('my-app-events');
 
-    const fs = await createWorker({
+    const fs = createOPFS({
         root: '/my-app',
         namespace: 'my-app:fs',
         hashAlgorithm: 'SHA-256',
@@ -153,16 +159,13 @@ async function extendedExample() {
         broadcastChannel
     });
 
-    // Handle binary files
-    const imageData = new Uint8Array([58, /* binary data */]);
+    const imageData = new Uint8Array([58 /* binary data */]);
     await fs.writeFile('/image.png', imageData);
     const binaryData = await fs.readFile('/image.png', 'binary');
 
-    // Text files are automatically handled
     await fs.writeFile('/config.txt', 'Hello, World!');
-    const textContent = await fs.readFile('/config.txt'); // Returns string
+    const textContent = await fs.readFile('/config.txt'); // string
 
-    // Use file watching with BroadcastChannel
     await fs.watch('/', {
         recursive: true,
         include: ['*.json'],
@@ -170,97 +173,85 @@ async function extendedExample() {
     });
 
     broadcastChannel.onmessage = (event) => {
-        console.log(`File changed: `, event.data);
-    };
-
-    // Get file statistics with hashing
-    const stats = await fs.stat('/image.png');
-
-    console.log(
-      `File size: ${stats.size} bytes`,
-      `Hash: ${stats.hash}`
-    );
-}
-```
-
-> **Note:** File change events are sent via BroadcastChannel. Set the `broadcastChannel` option to customize the channel name, or use the default 'opfs-worker' channel. The watch system only sends events for watched paths, making it efficient and focused.
-
-### Manual Worker Setup
-
-For more control over the worker lifecycle, use the worker directly with your bundler:
-
-```typescript
-import OPFSWorker from 'opfs-worker/raw?worker';
-import { wrap } from 'comlink';
-
-async function basicExample() {
-    // Create and wrap the worker with default root path '/'
-    const worker = wrap(new OPFSWorker());
-
-    // Use the file system
-    await worker.writeFile('/config.json', JSON.stringify({ theme: 'dark' }));
-    const config = await worker.readFile('/config.json');
-    console.log(JSON.parse(config));
-}
-
-// Extended example with all options
-async function extendedExample() {
-    // Create with all available options
-    const worker = wrap(new OPFSWorker({
-        root: '/my-app',
-        namespace: 'my-app:fs',
-        hashAlgorithm: 'SHA-256',
-        maxFileSize: 100 * 1024 * 1024, // 100MB
-        broadcastChannel: 'my-app-events' // You can't pass a BroadcastChannel instance to the worker, so you must use a broadcast channel name here
-    }));
-
-    // Bulk sync from external data
-    const entries = [
-        ['/data/config.json', JSON.stringify({ version: '1.0' })],
-        ['/data/users.json', JSON.stringify([{ id: 1, name: 'John' }])]
-    ];
-    await worker.sync(entries, { cleanBefore: true });
-
-    // Create directories
-    await worker.mkdir('/data/logs', { recursive: true });
-
-    // Append to log files (worker works with bytes)
-    const logEntry = new TextEncoder().encode(`${new Date().toISOString()}: App started\n`);
-    await worker.appendFile('/data/logs/app.log', logEntry);
-
-    // Watch for changes
-    await worker.watch('/data', { recursive: true });
-
-    const channel = new BroadcastChannel('my-app-events');
-    channel.onmessage = (event) => {
         console.log('File changed:', event.data);
     };
+
+    const stats = await fs.stat('/image.png');
+    console.log(`File size: ${stats.size} bytes`, `Hash: ${stats.hash}`);
 }
 ```
 
-**Note:** Manual worker setup requires a bundler that supports Web Workers (like Vite, Webpack, Rollup, etc.) and the `comlink` package for communication between the main thread and worker.
+> Watch events go over `BroadcastChannel` (default name `opfs-worker`). Pass `broadcastChannel` to customize. Only watched paths emit events.
+
+### Mode 2: Raw worker API from the main thread
+
+Same package entry, same inlined worker but without the facade. You get a Comlink proxy to `OPFSWorker`: bytes in, bytes out. Useful if you want to wrap it yourself or prefer the lower-level API.
+
+```typescript
+import { createOPFSWorker } from 'opfs-worker';
+
+const { fs, dispose } = createOPFSWorker({
+    root: '/my-app',
+    namespace: 'my-app:fs',
+    hashAlgorithm: 'SHA-256',
+    maxFileSize: 100 * 1024 * 1024,
+    broadcastChannel: 'my-app-events',
+});
+
+await fs.writeFile('/config.json', new TextEncoder().encode(JSON.stringify({ theme: 'dark' })));
+const bytes = await fs.readFile('/config.json');
+console.log(JSON.parse(new TextDecoder().decode(bytes)));
+
+dispose(); // worker.dispose() + terminate()
+```
+
+> Want your own facade? Our `OPFSFacade` is built on `createOPFSWorker` — copy [`src/OPFSFacade.ts`](src/OPFSFacade.ts), swap the imports to `opfs-worker` and change what you need.
+
+### Mode 3: `OPFSWorker` inside your own worker
+
+If you already have a worker (or want full control over it), import the class and use it directly. No nested worker, no Comlink. Bundling that worker and talking to the main thread — if you need that at all — is up to you.
+
+```typescript
+// my-app.worker.ts  (this file IS the worker)
+import { OPFSWorker } from 'opfs-worker/pure';
+
+const fs = new OPFSWorker({
+    root: '/my-app',
+    namespace: 'my-app:fs',
+    hashAlgorithm: 'SHA-256',
+    broadcastChannel: 'my-app-events', // name only — BroadcastChannel instances can't cross the wire
+});
+
+await fs.writeFile('/config.json', new TextEncoder().encode(JSON.stringify({ theme: 'dark' })));
+const bytes = await fs.readFile('/config.json');
+console.log(JSON.parse(new TextDecoder().decode(bytes)));
+```
+
+`opfs-worker/pure` does not call Comlink `expose()`, so it will not take over your worker's message port.
 
 ### Hash Algorithm Configuration
 
-The file system supports global hash algorithm configuration. Instead of passing hash options to individual methods, you can set the hash algorithm once and it will be used for all file operations that support hashing.
+Set once via options / `setOptions()` — used by `stat()`, `index()`, and watch events.
+
+Default is `'etag'`: a cheap weak tag from `File.lastModified` + size (no content read). Switch to a SHA algorithm when you need a real content hash.
 
 ```typescript
-import { createWorker } from 'opfs-worker';
+import { createOPFS } from 'opfs-worker';
 
 async function hashExample() {
-    const fs = await createWorker();
-
-    // Enable SHA-256 hashing globally
-    fs.setOptions({ hashAlgorithm: 'SHA-256' });
-
-    // Write a file
+    // Default: etag (fast, no content read)
+    const fs = createOPFS();
     await fs.writeFile('/data.txt', 'Hello World');
 
-    // Get stats - hash will be included automatically
-    const stats = await fs.stat('/data.txt');
-    console.log(`Hash: ${stats.hash}`); // SHA-256 hash
+    const etagStat = await fs.stat('/data.txt');
+    console.log(`ETag: ${etagStat.hash}`); // e.g. "m1abc-c"  (mtime36-size36)
 
-    // Get file system index - all files will include hashes
+    // Opt into a cryptographic content hash
+    await fs.setOptions({ hashAlgorithm: 'SHA-256' });
+    const shaStat = await fs.stat('/data.txt');
+    console.log(`SHA-256: ${shaStat.hash}`);
+
+    // Index / watch events also include hash when enabled
     const index = await fs.index();
     for (const [path, stat] of index) {
         if (stat.isFile && stat.hash) {
@@ -268,7 +259,6 @@ async function hashExample() {
         }
     }
 
-    // Watch events will also include hash information
     const channel = new BroadcastChannel('opfs-worker');
     channel.onmessage = (event) => {
         if (event.data.hash) {
@@ -277,52 +267,45 @@ async function hashExample() {
     };
 }
 
-// Configure maximum file size for hashing
+// maxFileSize only applies to SHA-* (content) hashing — etag ignores it
 async function maxFileSizeExample() {
-    const fs = await createWorker();
-
-    // Set custom maximum file size (100MB instead of default 50MB)
-    fs.setOptions({
+    const fs = createOPFS({
         hashAlgorithm: 'SHA-256',
-        maxFileSize: 100 * 1024 * 1024 // 100MB
+        maxFileSize: 100 * 1024 * 1024 // 100MB (default 50MB)
     });
 
-    // Files up to 100MB will be hashed
-    // Files larger than this will not have hash information
     const stats = await fs.stat('/large-file.dat');
     if (stats.hash) {
         console.log(`Hash: ${stats.hash}`);
     } else {
-        console.log('File too large for hashing');
+        console.log('File too large for content hashing');
     }
 }
 ```
 
 **Supported Hash Algorithms:**
 
-- `'SHA-1'` - Fastest, good for general use (default)
-- `'SHA-256'` - More secure, widely supported
-- `'SHA-384'` - Higher security
-- `'SHA-512'` - Highest security
-- `null` - Disable hashing for maximum performance
+- `'etag'` — **default**. Weak tag from mtime + size; free, no content read
+- `'SHA-1'` / `'SHA-256'` / `'SHA-384'` / `'SHA-512'` — content hashes via Web Crypto (bounded by `maxFileSize`)
+- `null` / `false` — disable hashing
 
-**Note:** When hashing is enabled, it affects all file operations including `stat()`, `index()`, and watch events. Set to `null` when you don't need hash information to improve performance.
+**Note:** Prefer `'etag'` for watch / change-detection. Use SHA only when you need integrity of file bytes. Set to `null`/`false` if you don't need `hash` at all.
 
 ### Root Path Configuration
 
 The file system supports configuring the root path through options. The root path determines where in OPFS the file system's root will be created. All file paths passed to the API are relative to this root path.
 
 ```typescript
-import { createWorker } from 'opfs-worker';
+import { createOPFS } from 'opfs-worker';
 
 async function rootPathExample() {
     // Use default root path '/'
-    const fsDefault = await createWorker();
+    const fsDefault = createOPFS();
     await fsDefault.writeFile('/config.json', '{}');
     // This creates /config.json in OPFS root
 
     // Use custom root path
-    const fsCustom = await createWorker({ root: '/my-app' });
+    const fsCustom = createOPFS({ root: '/my-app' });
     await fsCustom.writeFile('/config.json', '{}');
     // This creates /my-app/config.json in OPFS root
 
@@ -360,9 +343,10 @@ The complete API reference is available in the [docs/api-reference.md](docs/api-
 
 **Entry Points:**
 
-- `createWorker(options?)` - Create file system instance with inline worker (recommended)
-- `OPFSFileSystem` - High-level facade with automatic encoding detection
-- `OPFSWorker` - Direct webworker class
+- `createOPFS(options?)` — Mode 1: Node-like facade on the main thread
+- `createOPFSWorker(options?)` — Mode 2: raw `OPFSWorker` proxy on the main thread
+- `OPFSWorker` from `opfs-worker/pure` — Mode 3: use the class inside your own worker
+- `OPFSFacade` — Mode 1 class returned by `createOPFS`
 
 **Core File Operations:**
 
@@ -462,7 +446,6 @@ npm run test:coverage
 
 ```bash
 npm run lint
-npm run lint:fix
 ```
 
 ## License

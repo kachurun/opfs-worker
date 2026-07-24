@@ -7,10 +7,12 @@ This document contains the complete API reference for OPFS Worker.
 - [API Reference](#api-reference)
   - [Table of Contents](#table-of-contents)
   - [Entry Points](#entry-points)
-    - [Mode 1: Inline Worker](#mode-1-inline-worker)
-      - [`createWorker(options?: OPFSOptions)`](#createworkeroptions-opfsoptions)
-    - [Mode 2: Manual Worker Setup](#mode-2-manual-worker-setup)
-      - [`OPFSWorker`](#opfsworker)
+    - [Mode 1: Node-like facade](#mode-1-node-like-facade)
+      - [`createOPFS(options?: OPFSOptions)`](#createopfsoptions-opfsoptions)
+    - [Mode 2: Raw worker API from the main thread](#mode-2-raw-worker-api-from-the-main-thread)
+      - [`createOPFSWorker(options?: OPFSOptions)`](#createopfsworkeroptions-opfsoptions)
+    - [Mode 3: `OPFSWorker` inside your own worker](#mode-3-opfsworker-inside-your-own-worker)
+      - [`OPFSWorker` from `opfs-worker/pure`](#opfsworker-from-opfs-workerpure)
   - [Core Methods](#core-methods)
     - [Read File](#read-file)
       - [`readFile(path: string, encoding?: Encoding | 'binary'): Promise<string | Uint8Array>`](#readfilepath-string-encoding-encoding--binary-promisestring--uint8array)
@@ -46,7 +48,7 @@ This document contains the complete API reference for OPFS Worker.
     - [Dispose](#dispose)
       - [`dispose(): void`](#dispose-void)
     - [Configuration](#configuration)
-      - [`setOptions(options: { root?: string; hashAlgorithm?: null | 'SHA-1' | 'SHA-256' | 'SHA-384' | 'SHA-512'; maxFileSize?: number }): Promise<void>`](#setoptionsoptions--root-string-hashalgorithm-null--sha-1--sha-256--sha-384--sha-512-maxfilesize-number--promisevoid)
+      - [`setOptions(options: { root?: string; hashAlgorithm?: null | false | 'etag' | 'SHA-1' | 'SHA-256' | 'SHA-384' | 'SHA-512'; maxFileSize?: number }): Promise<void>`](#setoptionsoptions--root-string-hashalgorithm-null--false--etag--sha-1--sha-256--sha-384--sha-512-maxfilesize-number--promisevoid)
     - [Resolve Path](#resolve-path)
       - [`realpath(path: string): Promise<string>`](#realpathpath-string-promisestring)
   - [File Descriptors](#file-descriptors)
@@ -65,26 +67,23 @@ This document contains the complete API reference for OPFS Worker.
 
 ## Entry Points
 
-### Mode 1: Inline Worker
+### Mode 1: Node-like facade
 
-#### `createWorker(options?: OPFSOptions)`
+#### `createOPFS(options?: OPFSOptions)`
 
-Creates a new file system instance with an inline worker.
+Starts an inlined worker and returns a facade with a Node-like API (strings, encodings, auto-detection). Comlink is used under the hood.
 
 ```typescript
-import { createWorker } from 'opfs-worker';
+import { createOPFS } from 'opfs-worker';
 
-// Basic usage
-const fs = await createWorker();
+const fs = createOPFS();
 
-// With options
-const fs = await createWorker({
+const fsCustom = createOPFS({
     root: '/my-app',
     hashAlgorithm: 'SHA-256',
     broadcastChannel: 'my-app-events'
 });
 
-// Listen for file change events via BroadcastChannel
 const channel = new BroadcastChannel('my-app-events');
 channel.onmessage = (event) => {
     console.log('File changed:', event.data);
@@ -99,22 +98,48 @@ channel.onmessage = (event) => {
   - `hashAlgorithm` (optional): Hash algorithm for file hashing
   - `broadcastChannel` (optional): Custom name for the broadcast channel (default: 'opfs-worker')
 
-**Returns:** `Promise<RemoteOPFSWorker>` - A remote file system interface
+**Returns:** `OPFSFacade`
 
-### Mode 2: Manual Worker Setup
+### Mode 2: Raw worker API from the main thread
 
-#### `OPFSWorker`
+#### `createOPFSWorker(options?: OPFSOptions)`
 
-The worker class that can be imported directly.
+Same entry as Mode 1, but without the facade. Returns a Comlink proxy to `OPFSWorker` (bytes in / bytes out). Useful if you want to wrap it yourself or prefer the lower-level API. The built-in `OPFSFacade` is itself built on this function, so it doubles as a reference implementation for your own wrapper.
 
 ```typescript
-import OPFSWorker from 'opfs-worker/raw?worker';
-import { wrap } from 'comlink';
+import { createOPFSWorker } from 'opfs-worker';
 
-const worker = wrap(new OPFSWorker());
+const { fs, worker, dispose } = createOPFSWorker({
+    root: '/my-app',
+    broadcastChannel: 'my-app-events',
+});
+
+await fs.writeFile('/config.json', new TextEncoder().encode('{}'));
+dispose();
 ```
 
-**Note:** This approach requires a bundler that supports Web Workers (Vite, Webpack, Rollup, etc.) and the `comlink` package.
+**Returns:** `{ fs, worker, dispose }` — `fs` is `RemoteOPFSWorker`, `worker` is the browser `Worker`, `dispose()` cleans up both.
+
+**Deprecated aliases (1.x compatibility):** `createWorker` → `createOPFS`, `OPFSFileSystem` → `OPFSFacade`. `opfs-worker/raw` is removed — use `opfs-worker/pure`.
+
+### Mode 3: `OPFSWorker` inside your own worker
+
+#### `OPFSWorker` from `opfs-worker/pure`
+
+Use the class directly inside a worker you control. No nested worker, no Comlink. How you bundle that worker and talk to the main thread is up to you.
+
+```typescript
+import { OPFSWorker } from 'opfs-worker/pure';
+
+const fs = new OPFSWorker({
+    root: '/my-app',
+    broadcastChannel: 'my-app-events', // name only
+});
+
+await fs.writeFile('/config.json', new TextEncoder().encode('{}'));
+```
+
+`opfs-worker/pure` does not call Comlink `expose()`, so it will not take over your worker's message port.
 
 ## Core Methods
 
@@ -471,7 +496,7 @@ channel.onmessage = (event) => {
   - `options.include` (optional): Glob patterns to include in watching (minimatch syntax, default: `['**']`)
   - `options.exclude` (optional): Glob patterns to exclude from watching (minimatch syntax, default: `[]`)
 
-**Note:** File change events are sent via BroadcastChannel. Set the `broadcastChannel` option to customize the channel name, or use the default 'opfs-worker' channel. The `createWorker()` function automatically handles the BroadcastChannel setup.
+**Note:** File change events are sent via BroadcastChannel. Set the `broadcastChannel` option to customize the channel name, or use the default 'opfs-worker' channel. The `createOPFS()` function automatically handles the BroadcastChannel setup.
 
 #### Watch Behavior
 
@@ -529,7 +554,7 @@ fs.dispose();
 
 ### Configuration
 
-#### `setOptions(options: { root?: string; hashAlgorithm?: null | 'SHA-1' | 'SHA-256' | 'SHA-384' | 'SHA-512'; maxFileSize?: number }): Promise<void>`
+#### `setOptions(options: { root?: string; hashAlgorithm?: null | false | 'etag' | 'SHA-1' | 'SHA-256' | 'SHA-384' | 'SHA-512'; maxFileSize?: number }): Promise<void>`
 
 Update configuration options for the file system, including root path, hash algorithm, and maximum file size for hashing.
 
@@ -537,10 +562,10 @@ Update configuration options for the file system, including root path, hash algo
 // Change root path (automatically remounts)
 await fs.setOptions({ root: '/new-app' });
 
-// Enable SHA-256 hashing for all file operations
+// Default is 'etag' (mtime + size, no content read). Opt into SHA when needed:
 await fs.setOptions({ hashAlgorithm: 'SHA-256' });
 
-// Set custom maximum file size for hashing (100MB)
+// Set custom maximum file size for SHA-* hashing (100MB)
 await fs.setOptions({ maxFileSize: 100 * 1024 * 1024 });
 
 // Disable hashing
@@ -549,16 +574,16 @@ await fs.setOptions({ hashAlgorithm: null });
 // Update multiple options at once
 await fs.setOptions({
     root: '/my-app',
-    hashAlgorithm: 'SHA-1',
-    maxFileSize: 50 * 1024 * 1024 // 50MB
+    hashAlgorithm: 'etag',
+    maxFileSize: 50 * 1024 * 1024 // 50MB (only used by SHA-*)
 });
 ```
 
 **Parameters:**
 
 - `options.root` (optional): Root path for the file system
-- `options.hashAlgorithm` (optional): Hash algorithm to use, or `null` to disable hashing
-- `options.maxFileSize` (optional): Maximum file size in bytes for hashing (default: 50MB)
+- `options.hashAlgorithm` (optional): `'etag'` (default), `'SHA-*'`, or `null`/`false` to disable
+- `options.maxFileSize` (optional): Maximum file size in bytes for SHA-\* hashing (default: 50MB); ignored by `'etag'`
 
 **Note:** When the `root` option is changed, the file system automatically remounts to the new location. All other options are updated immediately.
 

@@ -21,13 +21,22 @@ export function checkOPFSSupport(): void {
     }
 }
 
+/**
+ * Run a callback while holding an exclusive lock on a path
+ *
+ * Locks are always exclusive: OPFS permits a single sync access handle per file,
+ * so readers can't share access either.
+ *
+ * @param path - The path to lock
+ * @param fn - The callback to run while holding the lock
+ * @returns The value returned by the callback
+ */
 export async function withLock<T>(
     path: string,
-    mode: 'shared' | 'exclusive',
     fn: () => Promise<T>
 ): Promise<T> {
     if (typeof navigator !== 'undefined' && navigator.locks?.request) {
-        return navigator.locks.request(`opfs:${ path.replace(/\/+/g, '/') }`, { mode }, fn);
+        return navigator.locks.request(`opfs:${ path.replace(/\/+/g, '/') }`, { mode: 'exclusive' }, fn);
     }
 
     return fn();
@@ -338,7 +347,7 @@ export async function removeEntry(
 ): Promise<void> {
     const name = basename(path);
 
-    return withLock(path, 'exclusive', async() => {
+    return withLock(path, async() => {
         const recursive = options.recursive ?? false;
         const force = options.force ?? false;
 

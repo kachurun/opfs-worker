@@ -5,20 +5,26 @@
     "type": "module",
     "main": "dist/index.js",
     "types": "dist/index.d.ts",
+    "source": "src/index.ts",
     "exports": {
         ".": {
             "types": "./dist/index.d.ts",
+            "source": "./src/index.ts",
             "import": "./dist/index.js",
             "require": "./dist/index.cjs"
         },
-        "./raw": {
-            "types": "./dist/raw.d.ts",
-            "import": "./dist/raw.js",
-            "require": "./dist/raw.cjs"
+        "./pure": {
+            "types": "./dist/index.pure.d.ts",
+            "source": "./src/index.pure.ts",
+            "import": "./dist/index.pure.js",
+            "require": "./dist/index.pure.cjs"
         }
     },
+    "sideEffects": false,
     "files": [
         "dist/**/*",
+        "src/**/*",
+        "docs/**/*",
         "README.md",
         "LICENSE"
     ],
@@ -28,12 +34,12 @@
         "dev": "concurrently \"vite build --watch --mode development\" \"tsc -p tsconfig.build.json --watch\"",
         "preview": "vite preview demo",
         "type-check": "tsc --noEmit",
-        "lint": "eslint src --ext .ts,.tsx",
-        "lint:fix": "eslint src --ext .ts,.tsx --fix",
+        "lint": "eslint src --ext .ts,.tsx --fix --max-warnings=9999 --quiet",
         "test": "vitest --run",
         "test:coverage": "vitest --coverage",
         "prepublishOnly": "bun run lint && bun run type-check && bun run build",
-        "version": "changeset && changeset version",
+        "changelog": "changeset",
+        "version-packages": "changeset version",
         "release": "changeset publish"
     },
     "keywords": [

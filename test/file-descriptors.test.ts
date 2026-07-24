@@ -1,6 +1,6 @@
 import { promises as fsp } from 'node:fs';
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { OPFSWorker } from '../src/worker';
+import { OPFSWorker } from '../src/OPFSWorker';
 
 const rootDir = (globalThis as any).__OPFS_ROOT__ as string;
 
@@ -67,19 +67,18 @@ describe('OPFSWorker File Descriptors', () => {
 
     it('allows opening the same file multiple times (like Node.js fs)', async () => {
       const fd1 = await fsw.open('/multi-open.txt', { create: true });
-      
+
       // Should be able to open the same file again and get a different FD
       const fd2 = await fsw.open('/multi-open.txt');
-      
-      // Both should succeed and have different file descriptors
+
       expect(fd1).toBeTypeOf('number');
       expect(fd2).toBeTypeOf('number');
       expect(fd1).not.toBe(fd2);
-      
+
       // Both should be able to read/write independently
       await fsw.write(fd1, new TextEncoder().encode('Hello'));
       await fsw.write(fd2, new TextEncoder().encode('World'));
-      
+
       await fsw.close(fd1);
       await fsw.close(fd2);
     });

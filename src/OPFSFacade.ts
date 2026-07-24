@@ -1,7 +1,5 @@
-import { wrap } from 'comlink';
-
+import { createOPFSWorker } from './createOPFSWorker';
 import { decodeBuffer, encodeString, isBinaryFileExtension } from './utils/encoder';
-import WorkerCtor from './worker?worker&inline';
 
 import type {
     BinaryEncoding,
@@ -30,28 +28,21 @@ function normalizePath(path: PathLike): string {
 }
 
 /**
- * Facade class that provides a clean interface for communicating with the OPFS worker
- * while hiding Comlink implementation details.
+ * Mode 1: Node-like facade with encoding helpers and string/binary auto-detection,
+ * built on top of the raw worker API from {@link createOPFSWorker}.
+ *
+ * Use {@link createOPFS} to create one.
  */
-export class OPFSFileSystem {
-    #worker: RemoteOPFSWorker;
-    #workerInstance: Worker;
-    promises: OPFSFileSystem = this;
+export class OPFSFacade {
+    #fs: RemoteOPFSWorker;
+    #dispose: () => void;
+    promises: OPFSFacade = this;
 
     constructor(options?: OPFSOptions) {
-        this.#workerInstance = new WorkerCtor();
-        this.#worker = wrap<RemoteOPFSWorker>(this.#workerInstance);
+        const raw = createOPFSWorker(options);
 
-        // Set up options if provided
-        if (options) {
-            // We can't pass a BroadcastChannel instance to the worker, so we need to convert it to a string first
-            if (options.broadcastChannel && options.broadcastChannel instanceof BroadcastChannel) {
-                options.broadcastChannel = options.broadcastChannel.name;
-            }
-
-            // Initialize options asynchronously
-            void this.setOptions(options);
-        }
+        this.#fs = raw.fs;
+        this.#dispose = raw.dispose;
     }
 
     /**
@@ -60,7 +51,7 @@ export class OPFSFileSystem {
     watch(path: PathLike, options?: WatchOptions): () => void {
         const normalizedPath = normalizePath(path);
 
-        void this.#worker.watch(normalizedPath, options);
+        void this.#fs.watch(normalizedPath, options);
 
         return () => this.unwatch(normalizedPath);
     }
@@ -71,21 +62,21 @@ export class OPFSFileSystem {
     unwatch(path: PathLike) {
         const normalizedPath = normalizePath(path);
 
-        void this.#worker.unwatch(normalizedPath);
+        void this.#fs.unwatch(normalizedPath);
     }
 
     /**
      * Update configuration options
      */
     async setOptions(options: OPFSOptions) {
-        return this.#worker.setOptions(options);
+        return this.#fs.setOptions(options);
     }
 
     /**
      * Get a complete index of all files and directories in the file system
      */
     async index(): Promise<Map<string, FileStat>> {
-        return this.#worker.index();
+        return this.#fs.index();
     }
 
     /**
@@ -118,15 +109,14 @@ export class OPFSFileSystem {
             encoding = optionsOrEncoding.encoding;
         }
 
-        // Get binary data from worker
-        const buffer = await this.#worker.readFile(normalizedPath);
+        // Same-path reads are serialized by the worker's exclusive path lock
+        const buffer = await this.#fs.readFile(normalizedPath);
 
         // If no encoding specified, auto-detect based on file extension
         if (!encoding) {
             encoding = isBinaryFileExtension(normalizedPath) ? 'binary' : 'utf-8';
         }
 
-        // Return binary data or decode to string
         return (encoding === 'binary') ? buffer : decodeBuffer(buffer, encoding);
     }
 
@@ -159,7 +149,7 @@ export class OPFSFileSystem {
             ? encodeString(data, encoding)
             : (data instanceof Uint8Array ? data : new Uint8Array(data));
 
-        return this.#worker.writeFile(normalizedPath, buffer);
+        return this.#fs.writeFile(normalizedPath, buffer);
     }
 
     /**
@@ -182,7 +172,7 @@ export class OPFSFileSystem {
             ? encodeString(data, encoding)
             : (data instanceof Uint8Array ? data : new Uint8Array(data));
 
-        return this.#worker.appendFile(normalizedPath, buffer);
+        return this.#fs.appendFile(normalizedPath, buffer);
     }
 
     /**
@@ -201,7 +191,7 @@ export class OPFSFileSystem {
             options = mode;
         }
 
-        return this.#worker.mkdir(normalizedPath, options);
+        return this.#fs.mkdir(normalizedPath, options);
     }
 
     /**
@@ -210,7 +200,7 @@ export class OPFSFileSystem {
     async stat(path: PathLike): Promise<FileStat> {
         const normalizedPath = normalizePath(path);
 
-        return this.#worker.stat(normalizedPath);
+        return this.#fs.stat(normalizedPath);
     }
 
     /**
@@ -219,7 +209,7 @@ export class OPFSFileSystem {
     async readDir(path: PathLike): Promise<DirentData[]> {
         const normalizedPath = normalizePath(path);
 
-        return this.#worker.readDir(normalizedPath);
+        return this.#fs.readDir(normalizedPath);
     }
 
     /**
@@ -228,7 +218,7 @@ export class OPFSFileSystem {
     async exists(path: PathLike): Promise<boolean> {
         const normalizedPath = normalizePath(path);
 
-        return this.#worker.exists(normalizedPath);
+        return this.#fs.exists(normalizedPath);
     }
 
     /**
@@ -237,7 +227,7 @@ export class OPFSFileSystem {
     async clear(path?: PathLike): Promise<void> {
         const normalizedPath = path ? normalizePath(path) : undefined;
 
-        return this.#worker.clear(normalizedPath);
+        return this.#fs.clear(normalizedPath);
     }
 
     /**
@@ -246,7 +236,7 @@ export class OPFSFileSystem {
     async remove(path: PathLike, options?: { recursive?: boolean; force?: boolean }): Promise<void> {
         const normalizedPath = normalizePath(path);
 
-        return this.#worker.remove(normalizedPath, options);
+        return this.#fs.remove(normalizedPath, options);
     }
 
     /**
@@ -297,7 +287,7 @@ export class OPFSFileSystem {
     async realpath(path: PathLike): Promise<string> {
         const normalizedPath = normalizePath(path);
 
-        return this.#worker.realpath(normalizedPath);
+        return this.#fs.realpath(normalizedPath);
     }
 
     /**
@@ -307,7 +297,7 @@ export class OPFSFileSystem {
         const normalizedOldPath = normalizePath(oldPath);
         const normalizedNewPath = normalizePath(newPath);
 
-        return this.#worker.rename(normalizedOldPath, normalizedNewPath, options);
+        return this.#fs.rename(normalizedOldPath, normalizedNewPath, options);
     }
 
     /**
@@ -317,7 +307,7 @@ export class OPFSFileSystem {
         const normalizedSource = normalizePath(source);
         const normalizedDestination = normalizePath(destination);
 
-        return this.#worker.copy(normalizedSource, normalizedDestination, options);
+        return this.#fs.copy(normalizedSource, normalizedDestination, options);
     }
 
     /**
@@ -326,14 +316,14 @@ export class OPFSFileSystem {
     async open(path: PathLike, options?: FileOpenOptions): Promise<number> {
         const normalizedPath = normalizePath(path);
 
-        return this.#worker.open(normalizedPath, options);
+        return this.#fs.open(normalizedPath, options);
     }
 
     /**
      * Close a file descriptor
      */
     async close(fd: number): Promise<void> {
-        return this.#worker.close(fd);
+        return this.#fs.close(fd);
     }
 
     /**
@@ -350,7 +340,7 @@ export class OPFSFileSystem {
         length: number,
         position?: number | null | undefined
     ): Promise<{ bytesRead: number; buffer: Uint8Array }> {
-        const { bytesRead, buffer: transferred } = await this.#worker.read(
+        const { bytesRead, buffer: transferred } = await this.#fs.read(
             fd,
             // Temp buffer to preserve the original buffer
             new Uint8Array(length),
@@ -378,28 +368,28 @@ export class OPFSFileSystem {
         position?: number | null | undefined,
         emitEvent?: boolean
     ): Promise<number> {
-        return this.#worker.write(fd, buffer, offset, length, position, emitEvent);
+        return this.#fs.write(fd, buffer, offset, length, position, emitEvent);
     }
 
     /**
      * Get file status information by file descriptor
      */
     async fstat(fd: number): Promise<FileStat> {
-        return this.#worker.fstat(fd);
+        return this.#fs.fstat(fd);
     }
 
     /**
      * Truncate file to specified size
      */
     async ftruncate(fd: number, size?: number): Promise<void> {
-        return this.#worker.ftruncate(fd, size);
+        return this.#fs.ftruncate(fd, size);
     }
 
     /**
      * Synchronize file data to storage (fsync equivalent)
      */
     async fsync(fd: number): Promise<void> {
-        return this.#worker.fsync(fd);
+        return this.#fs.fsync(fd);
     }
 
     /**
@@ -408,7 +398,7 @@ export class OPFSFileSystem {
     async createIndex(entries: [PathLike, string | Uint8Array | Blob][]): Promise<void> {
         const normalizedEntries = entries.map(([path, data]) => [normalizePath(path), data] as [string, string | Uint8Array | Blob]);
 
-        return this.#worker.createIndex(normalizedEntries);
+        return this.#fs.createIndex(normalizedEntries);
     }
 
     /**
@@ -416,7 +406,7 @@ export class OPFSFileSystem {
      */
     async readText(path: PathLike, encoding: Encoding = 'utf-8'): Promise<string> {
         const normalizedPath = normalizePath(path);
-        const buffer = await this.#worker.readFile(normalizedPath);
+        const buffer = await this.#fs.readFile(normalizedPath);
 
         return decodeBuffer(buffer, encoding);
     }
@@ -428,7 +418,7 @@ export class OPFSFileSystem {
         const normalizedPath = normalizePath(path);
         const buffer = encodeString(text, encoding);
 
-        return this.#worker.writeFile(normalizedPath, buffer);
+        return this.#fs.writeFile(normalizedPath, buffer);
     }
 
     /**
@@ -438,23 +428,33 @@ export class OPFSFileSystem {
         const normalizedPath = normalizePath(path);
         const buffer = encodeString(text, encoding);
 
-        return this.#worker.appendFile(normalizedPath, buffer);
+        return this.#fs.appendFile(normalizedPath, buffer);
     }
 
     /**
      * Dispose of resources, detach the worker and clean up the file system instance
      */
     dispose() {
-        const worker = this.#worker;
-        const workerInstance = this.#workerInstance;
-
-        void (async() => {
-            try {
-                await worker.dispose();
-            }
-            finally {
-                workerInstance.terminate();
-            }
-        })();
+        this.#dispose();
     }
 }
+
+/**
+ * Mode 1: start an inlined worker and get a Node-like `fs` API on top of it.
+ *
+ * For the raw worker API without the facade, use {@link createOPFSWorker}.
+ * To use the worker class inside your own worker, see `opfs-worker/pure`.
+ */
+export function createOPFS(options?: OPFSOptions): OPFSFacade {
+    return new OPFSFacade(options);
+}
+
+/**
+ * @deprecated Use {@link createOPFS}. Kept for 1.x compatibility — still returns the facade.
+ */
+export const createWorker = createOPFS;
+
+/**
+ * @deprecated Use {@link OPFSFacade}.
+ */
+export { OPFSFacade as OPFSFileSystem };

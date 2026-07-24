@@ -1,4 +1,4 @@
-import { expose, transfer } from 'comlink';
+import { transfer } from 'comlink';
 
 import { WatchEventType } from './types';
 import {
@@ -48,9 +48,8 @@ import type { DirentData, FileOpenOptions, FileStat, OPFSOptions, RenameOptions,
  * 
  * @example
  * ```typescript
- * const fs = new OPFSFileSystem();
- * await fs.init('/my-app');
- * await fs.writeFile('/data/config.json', JSON.stringify({ theme: 'dark' }));
+ * const fs = new OPFSWorker();
+ * await fs.writeFile('/data/config.json', new TextEncoder().encode(JSON.stringify({ theme: 'dark' })));
  * const config = await fs.readFile('/data/config.json');
  * ```
  */
@@ -75,6 +74,13 @@ export class OPFSWorker {
         hashAlgorithm: 'etag',
         broadcastChannel: 'opfs-worker',
     };
+
+    /** Shared sync handles per path (OPFS allows only one handle per file) */
+    private openHandles = new Map<string, {
+        fileHandle: FileSystemFileHandle;
+        syncHandle: FileSystemSyncAccessHandle;
+        refCount: number;
+    }>();
 
     /** Map of open file descriptors to their metadata */
     private openFiles = new Map<number, {
@@ -162,7 +168,7 @@ export class OPFSWorker {
     }
 
     /**
-     * Creates a new OPFSFileSystem instance
+     * Creates a new OPFSWorker instance
      * 
      * @param options - Optional configuration options
      * @param options.root - Root path for the file system (default: '/')
@@ -190,7 +196,7 @@ export class OPFSWorker {
      * 
      * @example
      * ```typescript
-     * const fs = new OPFSFileSystem();
+     * const fs = new OPFSWorker();
      * 
      * // Use OPFS root (default)
      * await fs.mount();
@@ -413,7 +419,7 @@ export class OPFSWorker {
         await this.mount();
 
         try {
-            return await withLock(path, 'shared', async() => {
+            return await withLock(path, async() => {
                 const fd = await this.open(path);
 
                 try {
@@ -432,7 +438,11 @@ export class OPFSWorker {
             });
         }
         catch (err) {
-            throw new ExistenceError('file', path, err);
+            if (err instanceof OPFSError) {
+                throw err;
+            }
+
+            throw mapDomError(err, { path, isDirectory: false });
         }
     }
 
@@ -466,7 +476,7 @@ export class OPFSWorker {
 
         const buffer = data instanceof Uint8Array ? data : new Uint8Array(data);
 
-        await withLock(path, 'exclusive', async() => {
+        await withLock(path, async() => {
             const existed = await this.exists(path);
             const fd = await this.open(path, { create: true, truncate: true });
 
@@ -512,7 +522,7 @@ export class OPFSWorker {
 
         const buffer = data instanceof Uint8Array ? data : new Uint8Array(data);
 
-        await withLock(path, 'exclusive', async() => {
+        await withLock(path, async() => {
             const fd = await this.open(path, { create: true });
 
             try {
@@ -1122,7 +1132,7 @@ export class OPFSWorker {
         try {
             // Use lock for atomic operations when creating files
             if (create && exclusive) {
-                return await withLock(normalizedPath, 'exclusive', async() => {
+                return await withLock(normalizedPath, async() => {
                     const exists = await this.exists(normalizedPath);
 
                     if (exists) {
@@ -1153,35 +1163,44 @@ export class OPFSWorker {
 
     /**
      * Internal method to open a file (without locking)
+     *
+     * Multiple FDs for the same path share one sync access handle (OPFS limit),
+     * with independent per-FD positions — similar to Node.js.
      * @private
      */
     private async _openFile(path: string, create: boolean, truncate: boolean): Promise<number> {
-        const fileHandle = await this.getFileHandle(path, create);
+        let shared = this.openHandles.get(path);
 
-        // Verify that we got a file handle, not a directory
-        try {
-            // If getFile() succeeds, it's a file
-            await fileHandle.getFile();
+        if (!shared) {
+            const fileHandle = await this.getFileHandle(path, create);
+
+            // Verify that we got a file handle, not a directory
+            try {
+                await fileHandle.getFile();
+            }
+            catch (error: any) {
+                throw mapDomError(error, { path, isDirectory: true });
+            }
+
+            const syncHandle = await createSyncHandleSafe(fileHandle, path);
+
+            shared = { fileHandle, syncHandle, refCount: 0 };
+            this.openHandles.set(path, shared);
         }
-        catch (error: any) {
-            throw mapDomError(error, { path, isDirectory: true });
-        }
 
-        // Create sync access handle safely with proper error mapping
-        const syncHandle = await createSyncHandleSafe(fileHandle, path);
+        shared.refCount++;
 
-        // If truncate is requested, use efficient truncate() method
         if (truncate) {
-            syncHandle.truncate(0);
-            syncHandle.flush();
+            shared.syncHandle.truncate(0);
+            shared.syncHandle.flush();
         }
 
         const fd = this.nextFd++;
 
         this.openFiles.set(fd, {
             path,
-            fileHandle,
-            syncHandle,
+            fileHandle: shared.fileHandle,
+            syncHandle: shared.syncHandle,
             position: 0,
         });
 
@@ -1205,9 +1224,21 @@ export class OPFSWorker {
     async close(fd: number): Promise<void> {
         const fileInfo = this._getFileDescriptor(fd);
 
-        safeCloseSyncHandle(fd, fileInfo.syncHandle, fileInfo.path);
-
         this.openFiles.delete(fd);
+
+        const shared = this.openHandles.get(fileInfo.path);
+
+        if (!shared) {
+            return;
+        }
+
+        shared.refCount--;
+
+        // Only close the underlying sync handle when the last FD for this path is gone
+        if (shared.refCount <= 0) {
+            safeCloseSyncHandle(fd, shared.syncHandle, fileInfo.path);
+            this.openHandles.delete(fileInfo.path);
+        }
     }
 
     /**
@@ -1443,11 +1474,12 @@ export class OPFSWorker {
 
         this.watchers.clear();
 
-        // Close all open file descriptors
-        for (const [fd, fileInfo] of this.openFiles) {
-            safeCloseSyncHandle(fd, fileInfo.syncHandle, fileInfo.path);
+        // Close each shared sync handle once (not per FD)
+        for (const [path, shared] of this.openHandles) {
+            safeCloseSyncHandle(-1, shared.syncHandle, path);
         }
 
+        this.openHandles.clear();
         this.openFiles.clear();
         this.nextFd = 1;
     }
@@ -1509,9 +1541,4 @@ export class OPFSWorker {
             throw mapDomError(error);
         }
     }
-}
-
-// Only expose the worker when running in a Web Worker environment
-if (typeof globalThis !== 'undefined' && globalThis.constructor.name === 'DedicatedWorkerGlobalScope') {
-    expose(new OPFSWorker());
 }

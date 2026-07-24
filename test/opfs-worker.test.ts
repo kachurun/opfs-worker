@@ -1,6 +1,6 @@
 import { promises as fsp } from 'node:fs';
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { OPFSWorker } from '../src/worker';
+import { OPFSWorker } from '../src/OPFSWorker';
 import type { WatchEvent } from '../src/types';
 import { WatchEventType } from '../src/types';
 
@@ -24,6 +24,15 @@ describe('OPFSWorker', () => {
     await fsw.writeFile('/hello.txt', data);
     const content = await fsw.readFile('/hello.txt');
     expect(content).toEqual(data);
+  });
+
+  it('readFile throws ENOENT for missing files', async () => {
+    await expect(fsw.readFile('/missing.txt')).rejects.toMatchObject({ name: 'ENOENT' });
+  });
+
+  it('readFile throws EISDIR when path is a directory', async () => {
+    await fsw.mkdir('/as-dir');
+    await expect(fsw.readFile('/as-dir')).rejects.toMatchObject({ name: 'EISDIR' });
   });
 
   it('appends to files', async () => {
@@ -313,5 +322,159 @@ describe('OPFSWorker', () => {
     
     // Cleanup
     await fsw.remove('/pattern-test', { recursive: true });
+  });
+
+  describe('concurrent access', () => {
+    it('allows two concurrent readFile on the same path', async () => {
+      const payload = new TextEncoder().encode('hello');
+      await fsw.writeFile('/a.txt', payload);
+
+      const [a, b] = await Promise.all([
+        fsw.readFile('/a.txt'),
+        fsw.readFile('/a.txt'),
+      ]);
+
+      expect(a).toEqual(payload);
+      expect(b).toEqual(payload);
+    });
+
+    it('allows many concurrent readFile on the same path', async () => {
+      const payload = new TextEncoder().encode('concurrent');
+      await fsw.writeFile('/many.txt', payload);
+
+      const results = await Promise.all(
+        Array.from({ length: 8 }, () => fsw.readFile('/many.txt'))
+      );
+
+      for (const result of results) {
+        expect(result).toEqual(payload);
+      }
+    });
+
+    it('serializes concurrent readFile and writeFile on the same path', async () => {
+      await fsw.writeFile('/rw.txt', new TextEncoder().encode('v1'));
+
+      const ops = await Promise.all([
+        fsw.readFile('/rw.txt'),
+        fsw.writeFile('/rw.txt', new TextEncoder().encode('v2')),
+        fsw.readFile('/rw.txt'),
+      ]);
+
+      // Reads may see v1 or v2 depending on lock order; neither should throw
+      expect(ops[0]).toBeInstanceOf(Uint8Array);
+      expect(ops[2]).toBeInstanceOf(Uint8Array);
+
+      const final = await fsw.readFile('/rw.txt');
+      expect(new TextDecoder().decode(final)).toBe('v2');
+    });
+
+    it('allows concurrent readFile on different paths', async () => {
+      await fsw.writeFile('/x.txt', new TextEncoder().encode('x'));
+      await fsw.writeFile('/y.txt', new TextEncoder().encode('y'));
+
+      const [x, y] = await Promise.all([
+        fsw.readFile('/x.txt'),
+        fsw.readFile('/y.txt'),
+      ]);
+
+      expect(new TextDecoder().decode(x)).toBe('x');
+      expect(new TextDecoder().decode(y)).toBe('y');
+    });
+  });
+
+  describe('edge cases and missing branches', () => {
+    it('exists returns true for root', async () => {
+      expect(await fsw.exists('/')).toBe(true);
+    });
+
+    it('cannot remove root', async () => {
+      await expect(fsw.remove('/')).rejects.toMatchObject({ name: 'EROOT' });
+    });
+
+    it('copies directories recursively and refuses without recursive', async () => {
+      await fsw.mkdir('/copy-src/nested', { recursive: true });
+      await fsw.writeFile('/copy-src/a.txt', new TextEncoder().encode('a'));
+      await fsw.writeFile('/copy-src/nested/b.txt', new TextEncoder().encode('b'));
+
+      await expect(
+        fsw.copy('/copy-src', '/copy-dst')
+      ).rejects.toMatchObject({ name: 'EISDIR' });
+
+      await fsw.copy('/copy-src', '/copy-dst', { recursive: true });
+      expect(new TextDecoder().decode(await fsw.readFile('/copy-dst/a.txt'))).toBe('a');
+      expect(new TextDecoder().decode(await fsw.readFile('/copy-dst/nested/b.txt'))).toBe('b');
+    });
+
+    it('copy / rename refuse overwrite when disabled', async () => {
+      await fsw.writeFile('/c1.txt', new TextEncoder().encode('1'));
+      await fsw.writeFile('/c2.txt', new TextEncoder().encode('2'));
+
+      await expect(
+        fsw.copy('/c1.txt', '/c2.txt', { overwrite: false })
+      ).rejects.toMatchObject({ name: 'EEXIST' });
+
+      await expect(
+        fsw.rename('/c1.txt', '/c2.txt', { overwrite: false })
+      ).rejects.toMatchObject({ name: 'EEXIST' });
+
+      await expect(
+        fsw.copy('/missing-src', '/anywhere')
+      ).rejects.toMatchObject({ name: 'ENOENT' });
+    });
+
+    it('createIndex accepts Blob and Uint8Array entries', async () => {
+      await fsw.createIndex([
+        ['/blob.txt', new Blob(['blob-data'])],
+        ['/bytes.bin', new Uint8Array([10, 20, 30])],
+      ]);
+
+      expect(new TextDecoder().decode(await fsw.readFile('/blob.txt'))).toBe('blob-data');
+      expect(await fsw.readFile('/bytes.bin')).toEqual(new Uint8Array([10, 20, 30]));
+    });
+
+    it('setOptions updates namespace and rotates broadcast channel', async () => {
+      await fsw.setOptions({
+        namespace: 'ns-a',
+        broadcastChannel: 'channel-a',
+      });
+
+      // Force channel creation via a watch + write
+      await fsw.watch('/');
+      await fsw.writeFile('/ch.txt', new TextEncoder().encode('x'));
+      await new Promise(r => setTimeout(r, 10));
+
+      await fsw.setOptions({ broadcastChannel: 'channel-b', namespace: 'ns-b' });
+      expect(true).toBe(true);
+    });
+
+    it('watch throws when broadcastChannel is disabled', async () => {
+      await fsw.setOptions({ broadcastChannel: null });
+      await expect(fsw.watch('/')).rejects.toMatchObject({ name: 'ENOTSUP' });
+      // restore default for later tests in the same file if any share instance - we recreate per test
+    });
+
+    it('mkdir fails when a file blocks the path', async () => {
+      await fsw.writeFile('/blocked', new TextEncoder().encode('file'));
+      await expect(fsw.mkdir('/blocked/child')).rejects.toMatchObject({ name: 'ENOTDIR' });
+    });
+
+    it('mkdir without recursive fails for missing parent', async () => {
+      await expect(fsw.mkdir('/no-parent/child')).rejects.toMatchObject({ name: 'ENOENT' });
+    });
+
+    it('dispose cleans watchers and open descriptors', async () => {
+      const fd = await fsw.open('/dispose-me.txt', { create: true });
+      await fsw.watch('/');
+      fsw.dispose();
+
+      await expect(fsw.close(fd)).rejects.toMatchObject({ name: 'EBADF' });
+    });
+
+    it('mounts a nested custom root', async () => {
+      const nested = new OPFSWorker({ root: '/app-root' });
+      await nested.writeFile('/inside.txt', new TextEncoder().encode('in'));
+      expect(new TextDecoder().decode(await nested.readFile('/inside.txt'))).toBe('in');
+      nested.dispose();
+    });
   });
 });

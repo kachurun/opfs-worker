@@ -3,11 +3,11 @@ import { defineConfig } from 'vite';
 
 export default defineConfig({
     build: {
-        emptyOutDir: false,
+        emptyOutDir: true,
         lib: {
             entry: {
                 index: resolve(__dirname, 'src/index.ts'),
-                raw: resolve(__dirname, 'src/worker.ts'),
+                'index.pure': resolve(__dirname, 'src/index.pure.ts'),
             },
             name: 'opfs-worker',
             formats: ['es', 'cjs'],

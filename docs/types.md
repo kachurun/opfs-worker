@@ -90,9 +90,9 @@ interface OPFSOptions {
     root?: string;
     /** Namespace for the events (default: 'opfs-worker:${root}') */
     namespace?: string;
-    /** Hash algorithm for file hashing, or null to disable (default: null) */
-    hashAlgorithm?: null | 'SHA-1' | 'SHA-256' | 'SHA-384' | 'SHA-512';
-    /** Maximum file size in bytes for hashing (default: 50MB) */
+    /** Hash algorithm for file hashing, or false/null to disable (default: 'etag') */
+    hashAlgorithm?: null | false | 'etag' | 'SHA-1' | 'SHA-256' | 'SHA-384' | 'SHA-512';
+    /** Maximum file size in bytes for SHA-* hashing (default: 50MB); ignored by 'etag' */
     maxFileSize?: number;
     /** Custom name for the broadcast channel (default: 'opfs-worker') */
     broadcastChannel?: string | BroadcastChannel | null;
@@ -103,8 +103,8 @@ interface OPFSOptions {
 
 - `root`: Root path for the file system
 - `namespace`: Namespace for events and isolation
-- `hashAlgorithm`: Hash algorithm to use for file hashing
-- `maxFileSize`: Maximum file size for hashing operations
+- `hashAlgorithm`: `'etag'` (default, mtime+size), `'SHA-*'`, or `null`/`false` to disable
+- `maxFileSize`: Max bytes for SHA-* content hashing (etag ignores this)
 - `broadcastChannel`: Custom broadcast channel name or instance
 
 ## Event Types
