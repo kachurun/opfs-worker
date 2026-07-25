@@ -1,18 +1,18 @@
 import { promises as fsp } from 'node:fs';
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { OPFSWorker } from '../src/OPFSWorker';
+import { OPFSSync } from '../src/core/OPFSSync';
 import type { WatchEvent } from '../src/types';
 import { WatchEventType } from '../src/types';
 
 const rootDir = (globalThis as any).__OPFS_ROOT__ as string;
 
-describe('OPFSWorker', () => {
-  let fsw: OPFSWorker;
+describe('OPFSSync', () => {
+  let fsw: OPFSSync;
 
   beforeEach(async () => {
     await fsp.rm(rootDir, { recursive: true, force: true });
     await fsp.mkdir(rootDir, { recursive: true });
-    fsw = new OPFSWorker({ root: '/' });
+    fsw = new OPFSSync({ root: '/' });
   });
 
   afterEach(async () => {
@@ -43,6 +43,21 @@ describe('OPFSWorker', () => {
     const content = await fsw.readFile('/append.txt');
     const expected = new Uint8Array([...startData, ...endData]);
     expect(content).toEqual(expected);
+  });
+
+  it('writes streams in chunks and reports progress', async () => {
+    const progress: number[] = [];
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new Uint8Array([1, 2]));
+        controller.enqueue(new Uint8Array([3, 4, 5]));
+        controller.close();
+      },
+    });
+
+    await expect(fsw.writeStream('/stream.bin', stream, bytes => progress.push(bytes))).resolves.toBe(5);
+    await expect(fsw.readFile('/stream.bin')).resolves.toEqual(new Uint8Array([1, 2, 3, 4, 5]));
+    expect(progress).toEqual([2, 5]);
   });
 
   it('creates directories recursively and lists them', async () => {
@@ -471,7 +486,7 @@ describe('OPFSWorker', () => {
     });
 
     it('mounts a nested custom root', async () => {
-      const nested = new OPFSWorker({ root: '/app-root' });
+      const nested = new OPFSSync({ root: '/app-root' });
       await nested.writeFile('/inside.txt', new TextEncoder().encode('in'));
       expect(new TextDecoder().decode(await nested.readFile('/inside.txt'))).toBe('in');
       nested.dispose();

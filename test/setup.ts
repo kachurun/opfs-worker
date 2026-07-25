@@ -68,6 +68,96 @@ class NodeSyncAccessHandle {
     }
 }
 
+function toUint8(data: unknown): Uint8Array {
+    if (typeof data === 'string') {
+        return new TextEncoder().encode(data);
+    }
+
+    if (data instanceof ArrayBuffer) {
+        return new Uint8Array(data);
+    }
+
+    if (ArrayBuffer.isView(data)) {
+        return new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
+    }
+
+    throw new TypeError('Unsupported write chunk');
+}
+
+/** Minimal FileSystemWritableFileStream mock with swap-file semantics (commit on close) */
+class NodeWritableFileStream {
+    private data: Uint8Array;
+    private position = 0;
+    private closed = false;
+
+    constructor(private filePath: string, initial: Uint8Array) {
+        this.data = initial;
+    }
+
+    private writeAt(chunk: Uint8Array, at: number): void {
+        if (at + chunk.length > this.data.length) {
+            const grown = new Uint8Array(at + chunk.length);
+
+            grown.set(this.data);
+            this.data = grown;
+        }
+
+        this.data.set(chunk, at);
+        this.position = at + chunk.length;
+    }
+
+    async write(chunk: any): Promise<void> {
+        if (this.closed) {
+            throw new TypeError('Stream is closed');
+        }
+
+        // WriteParams object: { type: 'write' | 'seek' | 'truncate', ... }
+        if (chunk && typeof chunk === 'object' && !ArrayBuffer.isView(chunk) && !(chunk instanceof ArrayBuffer) && 'type' in chunk) {
+            if (chunk.type === 'write') {
+                this.writeAt(toUint8(chunk.data), chunk.position ?? this.position);
+            }
+            else if (chunk.type === 'seek') {
+                this.position = chunk.position;
+            }
+            else if (chunk.type === 'truncate') {
+                await this.truncate(chunk.size);
+            }
+
+            return;
+        }
+
+        this.writeAt(toUint8(chunk), this.position);
+    }
+
+    async seek(position: number): Promise<void> {
+        this.position = position;
+    }
+
+    async truncate(size: number): Promise<void> {
+        const resized = new Uint8Array(size);
+
+        resized.set(this.data.subarray(0, Math.min(size, this.data.length)));
+        this.data = resized;
+
+        if (this.position > size) {
+            this.position = size;
+        }
+    }
+
+    async close(): Promise<void> {
+        if (this.closed) {
+            return;
+        }
+
+        this.closed = true;
+        await fsp.writeFile(this.filePath, this.data);
+    }
+
+    async abort(): Promise<void> {
+        this.closed = true;
+    }
+}
+
 class NodeFileHandle {
     kind = 'file' as const;
     constructor(public path: string) {}
@@ -80,6 +170,19 @@ class NodeFileHandle {
         openSyncHandles.add(this.path);
 
         return new NodeSyncAccessHandle(this.path);
+    }
+
+    async createWritable(opts: { keepExistingData?: boolean } = {}): Promise<NodeWritableFileStream> {
+        // OPFS forbids createWritable while a sync access handle is open
+        if (openSyncHandles.has(this.path)) {
+            throw noModificationAllowed();
+        }
+
+        const initial = opts.keepExistingData
+            ? new Uint8Array(await fsp.readFile(this.path))
+            : new Uint8Array(0);
+
+        return new NodeWritableFileStream(this.path, initial);
     }
 
     async getFile(): Promise<File> {

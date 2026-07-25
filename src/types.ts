@@ -1,5 +1,4 @@
-import type { OPFSWorker } from './OPFSWorker';
-import type { Remote } from 'comlink';
+import type { OPFSSync } from './core/OPFSSync';
 
 /**
  * Type for paths that can be either a string or URI
@@ -56,8 +55,13 @@ export interface WatchEvent {
     hash?: string;
 }
 
-export type { OPFSWorker };
-export type RemoteOPFSWorker = Remote<OPFSWorker>;
+export type { OPFSSync };
+
+/**
+ * Promise-based fs API surface shared by all backends: a Comlink proxy to
+ * `OPFSSync` in a worker, or an in-process `OPFSAsync` instance.
+ */
+export type OPFSApi = { [K in keyof OPFSSync]: OPFSSync[K] };
 
 export interface OPFSOptions {
     /** Root path for the file system (default: '/') */

@@ -8,18 +8,24 @@ This document contains the complete API reference for OPFS Worker.
   - [Table of Contents](#table-of-contents)
   - [Entry Points](#entry-points)
     - [Mode 1: Node-like facade](#mode-1-node-like-facade)
-      - [`createOPFS(options?: OPFSOptions)`](#createopfsoptions-opfsoptions)
+      - [`createOPFSDedicated(options?: OPFSOptions)`](#createopfsdedicatedoptions-opfsoptions)
     - [Mode 2: Raw worker API from the main thread](#mode-2-raw-worker-api-from-the-main-thread)
-      - [`createOPFSWorker(options?: OPFSOptions)`](#createopfsworkeroptions-opfsoptions)
-    - [Mode 3: `OPFSWorker` inside your own worker](#mode-3-opfsworker-inside-your-own-worker)
-      - [`OPFSWorker` from `opfs-worker/pure`](#opfsworker-from-opfs-workerpure)
+      - [`createDedicatedWorker(options?: OPFSOptions)`](#createopfssyncworkeroptions-opfsoptions)
+    - [Mode 3: raw classes inside your own worker](#mode-3-raw-classes-inside-your-own-worker)
+      - [`OPFSSync` / `OPFSAsync` from `opfs-worker/pure`](#opfssync--opfsasync-from-opfs-workerpure)
+    - [Mode 4: No worker — async backend](#mode-4-no-worker--async-backend)
+      - [`createOPFSAsync(options?: OPFSOptions)`](#createopfsasyncoptions-opfsoptions)
+    - [Mode 5: SharedWorker — one fs for all tabs](#mode-5-sharedworker--one-fs-for-all-tabs)
+      - [`createOPFSShared(options?: SharedWorkerOptions)`](#createopfssharedoptions-sharedworkeroptions)
   - [Core Methods](#core-methods)
     - [Read File](#read-file)
       - [`readFile(path: string, encoding?: Encoding | 'binary'): Promise<string | Uint8Array>`](#readfilepath-string-encoding-encoding--binary-promisestring--uint8array)
     - [Write File](#write-file)
-      - [`writeFile(path: string, data: string | Uint8Array | ArrayBuffer, encoding?: Encoding): Promise<void>`](#writefilepath-string-data-string--uint8array--arraybuffer-encoding-encoding-promisevoid)
+      - [`writeFile(path: string, data: string | Uint8Array | ArrayBuffer | Blob, encoding?: Encoding): Promise<void>`](#writefilepath-string-data-string--uint8array--arraybuffer--blob-encoding-encoding-promisevoid)
+    - [Import Stream](#import-stream)
+      - [`importStream(path: PathLike, source: ReadableStream<Uint8Array> | Blob, options?): Promise<number>`](#importstreampath-pathlike-source-readablestreamuint8array--blob-options-promisenumber)
     - [Append File](#append-file)
-      - [`appendFile(path: string, data: string | Uint8Array | ArrayBuffer, encoding?: Encoding): Promise<void>`](#appendfilepath-string-data-string--uint8array--arraybuffer-encoding-encoding-promisevoid)
+      - [`appendFile(path: string, data: string | Uint8Array | ArrayBuffer | Blob, encoding?: Encoding): Promise<void>`](#appendfilepath-string-data-string--uint8array--arraybuffer--blob-encoding-encoding-promisevoid)
     - [Create Directory](#create-directory)
       - [`mkdir(path: string, options?: { recursive?: boolean }): Promise<void>`](#mkdirpath-string-options--recursive-boolean--promisevoid)
     - [Read Directory](#read-directory)
@@ -69,16 +75,19 @@ This document contains the complete API reference for OPFS Worker.
 
 ### Mode 1: Node-like facade
 
-#### `createOPFS(options?: OPFSOptions)`
+#### `createOPFSDedicated(options?: OPFSOptions)`
 
 Starts an inlined worker and returns a facade with a Node-like API (strings, encodings, auto-detection). Comlink is used under the hood.
 
+Available from `opfs-worker` and from `opfs-worker/sync`. Prefer `/sync` when you only need the worker backend.
+
 ```typescript
-import { createOPFS } from 'opfs-worker';
+import { createOPFSDedicated } from 'opfs-worker';
+// or: import { createOPFSDedicated } from 'opfs-worker/sync';
 
-const fs = createOPFS();
+const fs = createOPFSDedicated();
 
-const fsCustom = createOPFS({
+const fsCustom = createOPFSDedicated({
     root: '/my-app',
     hashAlgorithm: 'SHA-256',
     broadcastChannel: 'my-app-events'
@@ -102,14 +111,15 @@ channel.onmessage = (event) => {
 
 ### Mode 2: Raw worker API from the main thread
 
-#### `createOPFSWorker(options?: OPFSOptions)`
+#### `createDedicatedWorker(options?: OPFSOptions)`
 
-Same entry as Mode 1, but without the facade. Returns a Comlink proxy to `OPFSWorker` (bytes in / bytes out). Useful if you want to wrap it yourself or prefer the lower-level API. The built-in `OPFSFacade` is itself built on this function, so it doubles as a reference implementation for your own wrapper.
+Same entry as Mode 1, but without the facade. Returns a Comlink proxy to `OPFSSync` (bytes in / bytes out). Useful if you want to wrap it yourself or prefer the lower-level API. The built-in `OPFSFacade` is itself built on this function, so it doubles as a reference implementation for your own wrapper.
 
 ```typescript
-import { createOPFSWorker } from 'opfs-worker';
+import { createDedicatedWorker } from 'opfs-worker';
+// or: import { createDedicatedWorker } from 'opfs-worker/sync';
 
-const { fs, worker, dispose } = createOPFSWorker({
+const { fs, worker, dispose } = createDedicatedWorker({
     root: '/my-app',
     broadcastChannel: 'my-app-events',
 });
@@ -118,20 +128,23 @@ await fs.writeFile('/config.json', new TextEncoder().encode('{}'));
 dispose();
 ```
 
-**Returns:** `{ fs, worker, dispose }` — `fs` is `RemoteOPFSWorker`, `worker` is the browser `Worker`, `dispose()` cleans up both.
+**Returns:** `{ fs, worker, dispose }` — `fs` is a Comlink proxy to `OPFSSync`, `worker` is the browser `Worker`, `dispose()` cleans up both.
 
-**Deprecated aliases (1.x compatibility):** `createWorker` → `createOPFS`, `OPFSFileSystem` → `OPFSFacade`. `opfs-worker/raw` is removed — use `opfs-worker/pure`.
+**Deprecated / short aliases (main entry):** `createOPFS` / `createWorker` → `createOPFSDedicated`, `OPFSFileSystem` → `OPFSFacade`.
 
-### Mode 3: `OPFSWorker` inside your own worker
+### Mode 3: raw classes inside your own worker
 
-#### `OPFSWorker` from `opfs-worker/pure`
+#### `OPFSSync` / `OPFSAsync` from `opfs-worker/pure`
 
 Use the class directly inside a worker you control. No nested worker, no Comlink. How you bundle that worker and talk to the main thread is up to you.
 
-```typescript
-import { OPFSWorker } from 'opfs-worker/pure';
+- `OPFSSync` — `FileSystemSyncAccessHandle` (dedicated worker only; full FD support)
+- `OPFSAsync` — `getFile()` / `createWritable()` (any worker type; no FDs)
 
-const fs = new OPFSWorker({
+```typescript
+import { OPFSSync } from 'opfs-worker/pure';
+
+const fs = new OPFSSync({
     root: '/my-app',
     broadcastChannel: 'my-app-events', // name only
 });
@@ -140,6 +153,74 @@ await fs.writeFile('/config.json', new TextEncoder().encode('{}'));
 ```
 
 `opfs-worker/pure` does not call Comlink `expose()`, so it will not take over your worker's message port.
+
+### Mode 4: No worker — async backend
+
+#### `createOPFSAsync(options?: OPFSOptions)`
+
+Returns the same `OPFSFacade`, but backed by the promise-based File System API (`getFile()` / `createWritable()`) running on the current thread. No worker, no Comlink.
+
+Available from `opfs-worker` and from `opfs-worker/async`. Prefer the `/async` entry when you want a guarantee that the inlined dedicated worker is not in the bundle.
+
+```typescript
+import { createOPFSAsync } from 'opfs-worker';
+// or: import { createOPFSAsync } from 'opfs-worker/async';
+
+const fs = createOPFSAsync({ root: '/my-app' });
+
+await fs.writeFile('/config.json', '{}');
+const config = await fs.readFile('/config.json'); // string
+
+// Raw class (also from `opfs-worker/pure`):
+// import { OPFSAsync } from 'opfs-worker/async';
+```
+
+**Returns:** `OPFSFacade`
+
+**Limitations:**
+
+- Writing requires `FileSystemFileHandle.createWritable()` — Chrome, Firefox, Safari 26+. Reading works everywhere OPFS does.
+- No file descriptors: `open`, `read`, `write`, `close`, `fstat`, `ftruncate`, `fsync` throw `OperationNotSupportedError` (`ENOTSUP`).
+- Writes commit through a swap file on close — slower than the sync backend for frequent small writes.
+
+### Mode 5: SharedWorker — one fs for all tabs
+
+#### `createOPFSShared(options?: SharedWorkerOptions)`
+
+Connects to a SharedWorker running a single `OPFSAsync` instance for every tab and returns the same `OPFSFacade`. Writes are serialized across tabs by per-path locks inside that one instance; watch events reach all tabs via `BroadcastChannel`. Same limitations as Mode 4 (async backend).
+
+Available from `opfs-worker` and from `opfs-worker/sharedworker`. The worker script itself ships self-contained as `opfs-worker/shared.worker.js` — a SharedWorker is shared by script URL, so it cannot be inlined.
+
+```typescript
+// Bundler-friendly (Vite): pass the url explicitly
+import workerUrl from 'opfs-worker/shared.worker.js?url';
+import { createOPFSShared } from 'opfs-worker/sharedworker';
+
+const fs = createOPFSShared({ root: '/my-app', url: workerUrl });
+```
+
+```typescript
+// No bundler / CDN: default url resolves ./shared.worker.js next to the package files
+const fs = createOPFSShared({ root: '/my-app' });
+
+// Or bring your own SharedWorker:
+const worker = new SharedWorker(new URL('opfs-worker/shared.worker.js', import.meta.url), { type: 'module' });
+const fsCustom = createOPFSShared({ worker });
+```
+
+**`SharedWorkerOptions`** = `OPFSOptions` plus:
+
+- `url` (optional): worker script URL (e.g. from `?url` import)
+- `worker` (optional): your own `SharedWorker` instance (overrides `url`)
+- `name` (optional): SharedWorker name; tabs with the same URL + name share one instance (default: `'opfs-worker'`)
+
+**Returns:** `OPFSFacade`
+
+**Notes:**
+
+- `dispose()` closes only the current tab's port — the worker keeps serving other tabs.
+- Options are applied to the shared instance via `setOptions()`, so use the same options in every tab.
+- Raw Comlink proxy without the facade: `createSharedWorker()` from `opfs-worker/sharedworker` returns `{ fs, worker, dispose }`.
 
 ## Core Methods
 
@@ -182,7 +263,7 @@ const url = URL.createObjectURL(blob);
 
 ### Write File
 
-#### `writeFile(path: string, data: string | Uint8Array | ArrayBuffer, encoding?: Encoding): Promise<void>`
+#### `writeFile(path: string, data: string | Uint8Array | ArrayBuffer | Blob, encoding?: Encoding): Promise<void>`
 
 Write data to a file, creating or overwriting it. Supports both text and binary data.
 
@@ -197,12 +278,11 @@ await fs.writeFile('/data/binary.dat', binaryData);
 // Write with specific encoding
 await fs.writeFile('/data/utf16.txt', 'Hello World', 'utf-16le');
 
-// Write binary data from file input
+// Write a File / Blob directly (e.g. from <input type="file">)
 const fileInput = document.getElementById('file') as HTMLInputElement;
 const file = fileInput.files?.[0];
 if (file) {
-    const arrayBuffer = await file.arrayBuffer();
-    await fs.writeFile('/uploaded-file', new Uint8Array(arrayBuffer));
+    await fs.writeFile('/uploaded-file', file);
 }
 
 // Write binary data from fetch
@@ -214,18 +294,55 @@ await fs.writeFile('/downloaded-image.png', new Uint8Array(arrayBuffer));
 **Parameters:**
 
 - `path`: The path to the file to write
-- `data`: The data to write (string, Uint8Array, or ArrayBuffer)
+- `data`: The data to write (string, Uint8Array, ArrayBuffer, or Blob/`File`)
 - `encoding` (optional): The encoding to use when writing string data ('utf-8', 'utf-16le', 'ascii', 'latin1', 'base64', 'hex')
 
 **Binary File Handling:**
 
-- Pass `Uint8Array` or `ArrayBuffer` directly for binary data
+- Pass `Uint8Array`, `ArrayBuffer`, or `Blob`/`File` directly for binary data
 - Use with file uploads, image processing, or any binary content
 - Supports various text encodings for string data
+- For large (multi‑GB) files prefer `importStream` instead of loading the whole Blob into memory
+
+### Import Stream
+
+#### `importStream(path: PathLike, source: ReadableStream<Uint8Array> | Blob, options?: { onProgress?: (bytesWritten: number) => void }): Promise<number>`
+
+Create or overwrite a file from a `ReadableStream<Uint8Array>` or `Blob`/`File`
+without buffering the complete source in memory. The returned number is the
+total number of bytes written.
+
+```typescript
+// File and Blob are accepted directly and streamed internally
+const file = fileInput.files?.[0];
+if (file) {
+    await fs.importStream(`/uploads/${file.name}`, file);
+}
+
+// Stream a fetch response and report cumulative bytes written
+const response = await fetch('/api/large-video.mp4');
+if (!response.body) throw new Error('Streaming is not supported');
+
+const total = await fs.importStream('/video.mp4', response.body, {
+    onProgress(bytesWritten) {
+        console.log(`${bytesWritten} bytes written`);
+    }
+});
+```
+
+Use the source size to calculate a percentage when it is known:
+
+```typescript
+await fs.importStream('/archive.zip', file, {
+    onProgress: bytes => console.log(`${Math.round(bytes / file.size * 100)}%`)
+});
+```
+
+`onProgress` is called after each chunk is written to the destination.
 
 ### Append File
 
-#### `appendFile(path: string, data: string | Uint8Array | ArrayBuffer, encoding?: Encoding): Promise<void>`
+#### `appendFile(path: string, data: string | Uint8Array | ArrayBuffer | Blob, encoding?: Encoding): Promise<void>`
 
 Append data to the end of a file.
 
@@ -236,6 +353,9 @@ await fs.appendFile('/logs/app.log', `[${new Date().toISOString()}] User logged 
 // Append binary data
 const additionalData = new Uint8Array([6, 7, 8]);
 await fs.appendFile('/data/binary.dat', additionalData);
+
+// Append a Blob / File
+await fs.appendFile('/log.bin', someBlob);
 ```
 
 ### Create Directory
@@ -496,7 +616,7 @@ channel.onmessage = (event) => {
   - `options.include` (optional): Glob patterns to include in watching (minimatch syntax, default: `['**']`)
   - `options.exclude` (optional): Glob patterns to exclude from watching (minimatch syntax, default: `[]`)
 
-**Note:** File change events are sent via BroadcastChannel. Set the `broadcastChannel` option to customize the channel name, or use the default 'opfs-worker' channel. The `createOPFS()` function automatically handles the BroadcastChannel setup.
+**Note:** File change events are sent via BroadcastChannel. Set the `broadcastChannel` option to customize the channel name, or use the default 'opfs-worker' channel. The `createOPFSDedicated()` function automatically handles the BroadcastChannel setup.
 
 #### Watch Behavior
 
@@ -678,12 +798,11 @@ document.body.appendChild(img);
 const binaryData = new Uint8Array([1, 2, 3, 4, 5]);
 await fs.writeFile('/data.bin', binaryData);
 
-// From file input
+// From file input — File extends Blob, pass it directly
 const fileInput = document.getElementById('file') as HTMLInputElement;
 const file = fileInput.files?.[0];
 if (file) {
-    const arrayBuffer = await file.arrayBuffer();
-    await fs.writeFile('/uploaded-file', new Uint8Array(arrayBuffer));
+    await fs.writeFile('/uploaded-file', file);
 }
 
 // From fetch response
@@ -697,8 +816,7 @@ const ctx = canvas.getContext('2d');
 // ... draw something ...
 canvas.toBlob(async (blob) => {
     if (blob) {
-        const arrayBuffer = await blob.arrayBuffer();
-        await fs.writeFile('/canvas-image.png', new Uint8Array(arrayBuffer));
+        await fs.writeFile('/canvas-image.png', blob);
     }
 });
 ```
@@ -709,11 +827,13 @@ canvas.toBlob(async (blob) => {
 // Convert between different binary formats
 const uint8Array = new Uint8Array([1, 2, 3, 4, 5]);
 const arrayBuffer = uint8Array.buffer;
+const blob = new Blob([uint8Array]);
 
 // All of these work the same way
 await fs.writeFile('/data1.bin', uint8Array);
 await fs.writeFile('/data2.bin', arrayBuffer);
 await fs.writeFile('/data3.bin', new Uint8Array(arrayBuffer));
+await fs.writeFile('/data4.bin', blob);
 
 // Read back as binary
 const data = await fs.readFile('/data1.bin', 'binary');
@@ -725,8 +845,7 @@ console.log(data); // Uint8Array
 ```typescript
 // Handle file uploads
 const handleFileUpload = async (file: File) => {
-    const arrayBuffer = await file.arrayBuffer();
-    await fs.writeFile(`/uploads/${file.name}`, new Uint8Array(arrayBuffer));
+    await fs.writeFile(`/uploads/${file.name}`, file);
 };
 
 // Create downloadable files
@@ -792,12 +911,15 @@ extname('/path/to/file.name.ext'); // '.ext'
 ```typescript
 import { convertBlobToUint8Array } from 'opfs-worker';
 
-// Convert Blob to Uint8Array
+// Prefer passing Blob / File straight to writeFile / appendFile.
+// convertBlobToUint8Array is still useful when you need the bytes yourself.
 const fileInput = document.getElementById('file') as HTMLInputElement;
 const file = fileInput.files?.[0];
 if (file) {
+    await fs.writeFile('/uploaded-file', file);
+
     const data = await convertBlobToUint8Array(file);
-    await fs.writeFile('/uploaded-file', data);
+    console.log(data.byteLength);
 }
 ```
 

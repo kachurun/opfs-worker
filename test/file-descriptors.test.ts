@@ -1,16 +1,16 @@
 import { promises as fsp } from 'node:fs';
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { OPFSWorker } from '../src/OPFSWorker';
+import { OPFSSync } from '../src/core/OPFSSync';
 
 const rootDir = (globalThis as any).__OPFS_ROOT__ as string;
 
-describe('OPFSWorker File Descriptors', () => {
-  let fsw: OPFSWorker;
+describe('OPFSSync File Descriptors', () => {
+  let fsw: OPFSSync;
 
   beforeEach(async () => {
     await fsp.rm(rootDir, { recursive: true, force: true });
     await fsp.mkdir(rootDir, { recursive: true });
-    fsw = new OPFSWorker({ root: '/' });
+    fsw = new OPFSSync({ root: '/' });
   });
 
   afterEach(async () => {

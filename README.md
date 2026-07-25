@@ -121,27 +121,40 @@ npm install opfs-worker
 
 ## Quick Start
 
-OPFS sync I/O only works inside a dedicated Web Worker. The library covers three common setups:
+OPFS sync I/O only works inside a dedicated Web Worker. Pick an entry by what you need:
 
-|            | Import                                  | Best when                                                         |
-| ---------- | --------------------------------------- | ----------------------------------------------------------------- |
-| **Mode 1** | `createOPFS()` from `opfs-worker`       | You want a Node-like `fs` API on the main thread                  |
-| **Mode 2** | `createOPFSWorker()` from `opfs-worker` | You want the low-level worker API, but still from the main thread |
-| **Mode 3** | `OPFSWorker` from `opfs-worker/pure`    | Your code already runs inside a worker                            |
+| Entry | Import | What you get |
+| ----- | ------ | ------------ |
+| `opfs-worker` | `createOPFSDedicated`, `createOPFSAsync`, `createOPFSShared`, … | Convenience barrel (all backends + 1.x aliases) |
+| `opfs-worker/sync` | `createOPFSDedicated`, `createDedicatedWorker`, `OPFSSync` | Worker backend only (Comlink + inlined dedicated worker) |
+| `opfs-worker/async` | `createOPFSAsync`, `OPFSAsync` | Async backend only (no worker in the bundle) |
+| `opfs-worker/sharedworker` | `createOPFSShared`, `createSharedWorker` | SharedWorker backend (async, one instance for all tabs) |
+| `opfs-worker/dedicated.worker.js` | — (asset) | Self-contained dedicated Worker script (`OPFSSync`) |
+| `opfs-worker/shared.worker.js` | — (asset) | Self-contained SharedWorker script (`OPFSAsync`) |
+| `opfs-worker/pure` | `OPFSSync`, `OPFSAsync`, `BaseOPFS` | Raw classes — you own the worker / thread |
 
-Modes 1 and 2 both pull Comlink. Mode 3 does not.
+|            | API | Best when |
+| ---------- | --- | --------- |
+| **Mode 1** | `createOPFSDedicated()` from `opfs-worker` or `opfs-worker/sync` | Node-like `fs` on the main thread via a dedicated worker |
+| **Mode 2** | `createDedicatedWorker()` from `opfs-worker` or `opfs-worker/sync` | Low-level Comlink proxy, still from the main thread |
+| **Mode 3** | `OPFSSync` / `OPFSAsync` from `opfs-worker/pure` | You already run inside a worker (or SharedWorker for async) |
+| **Mode 4** | `createOPFSAsync()` from `opfs-worker` or `opfs-worker/async` | No worker — async File System API (Safari 26+ for writes) |
+| **Mode 5** | `createOPFSShared()` from `opfs-worker` or `opfs-worker/sharedworker` | One fs instance shared by all tabs (SharedWorker, async backend) |
+
+Modes 1, 2 and 5 pull Comlink. Modes 3 and 4 do not. Prefer `/sync`, `/async` or `/shared` when you want a smaller graph; the main entry is fine if tree-shaking works or size does not matter.
 
 ### Mode 1: Node-like facade (recommended)
 
-The usual path. `createOPFS()` starts an inlined worker and returns a facade with a Node-like API — strings, encodings, auto-detection. Comlink stays under the hood.
+The usual path. `createOPFSDedicated()` starts an inlined worker and returns a facade with a Node-like API — strings, encodings, auto-detection. Comlink stays under the hood.
 
-> 1.x alias: `createWorker` still works and returns the same facade — prefer `createOPFS`.
+> 1.x / short aliases on the main entry: `createOPFS` / `createWorker` → `createOPFSDedicated`, `OPFSFileSystem` → `OPFSFacade`. Prefer `createOPFSDedicated`.
 
 ```typescript
-import { createOPFS } from 'opfs-worker';
+import { createOPFSDedicated } from 'opfs-worker';
+// or: import { createOPFSDedicated } from 'opfs-worker/sync';
 
 async function basicExample() {
-    const fs = createOPFS();
+    const fs = createOPFSDedicated();
 
     await fs.writeFile('/config.json', JSON.stringify({ theme: 'dark' }));
     const config = await fs.readFile('/config.json');
@@ -151,7 +164,7 @@ async function basicExample() {
 async function extendedExample() {
     const broadcastChannel = new BroadcastChannel('my-app-events');
 
-    const fs = createOPFS({
+    const fs = createOPFSDedicated({
         root: '/my-app',
         namespace: 'my-app:fs',
         hashAlgorithm: 'SHA-256',
@@ -185,12 +198,13 @@ async function extendedExample() {
 
 ### Mode 2: Raw worker API from the main thread
 
-Same package entry, same inlined worker but without the facade. You get a Comlink proxy to `OPFSWorker`: bytes in, bytes out. Useful if you want to wrap it yourself or prefer the lower-level API.
+Same package entry, same inlined worker but without the facade. You get a Comlink proxy to `OPFSSync`: bytes in, bytes out. Useful if you want to wrap it yourself or prefer the lower-level API.
 
 ```typescript
-import { createOPFSWorker } from 'opfs-worker';
+import { createDedicatedWorker } from 'opfs-worker';
+// or: import { createDedicatedWorker } from 'opfs-worker/sync';
 
-const { fs, dispose } = createOPFSWorker({
+const { fs, dispose } = createDedicatedWorker({
     root: '/my-app',
     namespace: 'my-app:fs',
     hashAlgorithm: 'SHA-256',
@@ -205,17 +219,53 @@ console.log(JSON.parse(new TextDecoder().decode(bytes)));
 dispose(); // worker.dispose() + terminate()
 ```
 
-> Want your own facade? Our `OPFSFacade` is built on `createOPFSWorker` — copy [`src/OPFSFacade.ts`](src/OPFSFacade.ts), swap the imports to `opfs-worker` and change what you need.
+> Want your own facade? Our `OPFSFacade` is built on `createDedicatedWorker` — copy [`src/facade/OPFSFacade.ts`](src/facade/OPFSFacade.ts), swap the imports to `opfs-worker` and change what you need.
 
-### Mode 3: `OPFSWorker` inside your own worker
+### DIY: prebuilt worker scripts (no `createOPFS*`)
+
+Both worker backends also ship as self-contained ES modules (comlink + backend bundled in). You can load them yourself — handy for strict CSP (no `blob:`), custom hosting, or when you want Comlink/`Worker` under your control:
+
+| Asset | Backend | Browser API |
+| ----- | ------- | ----------- |
+| `opfs-worker/dedicated.worker.js` | `OPFSSync` | `new Worker(url, { type: 'module' })` |
+| `opfs-worker/shared.worker.js` | `OPFSAsync` | `new SharedWorker(url, { type: 'module' })` |
+
+```typescript
+import { wrap } from 'comlink';
+import { OPFSFacade } from 'opfs-worker';
+import workerUrl from 'opfs-worker/dedicated.worker.js?url'; // Vite
+
+const worker = new Worker(workerUrl, { type: 'module' });
+const fs = wrap(worker);
+
+// raw bytes API:
+await fs.writeFile('/x.txt', new TextEncoder().encode('hi'));
+
+// or slap the facade on top:
+const facade = new OPFSFacade({
+    fs,
+    dispose: () => { void fs.dispose(); worker.terminate(); },
+});
+
+// Or still use our helpers, but with the file instead of the inline worker:
+// createDedicatedWorker({ url: workerUrl })
+// createOPFSDedicated({ url: workerUrl })
+```
+
+Same idea for SharedWorker — see Mode 5 (`createOPFSShared({ url })` / `createSharedWorker({ url })`).
+
+### Mode 3: raw classes inside your own worker
 
 If you already have a worker (or want full control over it), import the class and use it directly. No nested worker, no Comlink. Bundling that worker and talking to the main thread — if you need that at all — is up to you.
 
+- `OPFSSync` — sync access handles (dedicated worker only; full FD support)
+- `OPFSAsync` — promise-based API (any worker type, including SharedWorker; no FDs)
+
 ```typescript
 // my-app.worker.ts  (this file IS the worker)
-import { OPFSWorker } from 'opfs-worker/pure';
+import { OPFSSync } from 'opfs-worker/pure';
 
-const fs = new OPFSWorker({
+const fs = new OPFSSync({
     root: '/my-app',
     namespace: 'my-app:fs',
     hashAlgorithm: 'SHA-256',
@@ -229,18 +279,79 @@ console.log(JSON.parse(new TextDecoder().decode(bytes)));
 
 `opfs-worker/pure` does not call Comlink `expose()`, so it will not take over your worker's message port.
 
-### Hash Algorithm Configuration
+### Mode 4: No worker at all (`createOPFSAsync`)
 
+`createOPFSAsync()` gives you the same Node-like facade, but backed by the promise-based File System API (`getFile()` / `createWritable()`) instead of a worker. No Comlink.
+
+```typescript
+import { createOPFSAsync } from 'opfs-worker';
+// or: import { createOPFSAsync } from 'opfs-worker/async';  // guaranteed no inlined worker in the bundle
+
+const fs = createOPFSAsync({ root: '/my-app' });
+
+await fs.writeFile('/config.json', JSON.stringify({ theme: 'dark' }));
+const config = await fs.readFile('/config.json'); // string
+
+// Raw class: from `opfs-worker`, `opfs-worker/async`, or `opfs-worker/pure`
+```
+
+Prefer `opfs-worker/async` when bundle size matters — the main entry also ships the inlined dedicated worker for Modes 1–2. If your bundler tree-shakes unused exports (or you do not care about size), importing from `opfs-worker` is fine.
+
+Know the trade-offs before picking this mode:
+
+- **Writing requires `FileSystemFileHandle.createWritable()`** — Chrome, Firefox, and Safari 26+. Reading works in older Safari too. On unsupported browsers writes throw `OperationNotSupportedError`.
+- **No file descriptors / positional I/O.** `open`, `read`, `write`, `close`, `fstat`, `ftruncate` and `fsync` always throw `OperationNotSupportedError`. Tools that need random access (e.g. isomorphic-git) should use the worker modes instead.
+- **Writes are slower** than the sync backend: every write goes through a swap file that is committed on close. Fine for configs and documents, wrong for many small random writes.
+- Because it doesn't need `createSyncAccessHandle`, `OPFSAsync` also runs inside a **SharedWorker** — see Mode 5 for the ready-made setup.
+
+### Mode 5: One fs for all tabs (`createOPFSShared`)
+
+`createOPFSShared()` connects to a SharedWorker running a single `OPFSAsync` instance for every tab. Per-path locks live in that one instance, so writes are serialized **across tabs**, and watch events reach all tabs via `BroadcastChannel`. Same trade-offs as Mode 4 (async backend: Safari 26+ for writes, no file descriptors).
+
+A SharedWorker is shared by its script URL, so the worker can't be inlined — the package ships a self-contained script at `opfs-worker/shared.worker.js`. How to point at it:
+
+```typescript
+// Option A — bundler-friendly (Vite shown): pass the url explicitly
+import workerUrl from 'opfs-worker/shared.worker.js?url';
+import { createOPFSShared } from 'opfs-worker/sharedworker';
+
+const fs = createOPFSShared({ root: '/my-app', url: workerUrl });
+
+await fs.writeText('/shared-config.json', '{}'); // visible to every tab
+```
+
+```typescript
+// Option B — no bundler / CDN / unbundled deps: default url just works
+// (resolves ./shared.worker.js next to the package files)
+const fs = createOPFSShared({ root: '/my-app' });
+```
+
+```typescript
+// Option C — bring your own SharedWorker (any bundler pattern you prefer)
+const worker = new SharedWorker(
+    new URL('opfs-worker/shared.worker.js', import.meta.url),
+    { type: 'module', name: 'opfs-worker' }
+);
+const fs = createOPFSShared({ root: '/my-app', worker });
+```
+
+Notes:
+
+- `dispose()` closes only the current tab's port; the worker keeps serving other tabs.
+- Options are applied to the shared instance via `setOptions()`, so use the same options in every tab.
+- The raw Comlink proxy (no facade) is available as `createSharedWorker()` from `opfs-worker/sharedworker`.
+
+### Hash Algorithm Configuration
 Set once via options / `setOptions()` — used by `stat()`, `index()`, and watch events.
 
 Default is `'etag'`: a cheap weak tag from `File.lastModified` + size (no content read). Switch to a SHA algorithm when you need a real content hash.
 
 ```typescript
-import { createOPFS } from 'opfs-worker';
+import { createOPFSDedicated } from 'opfs-worker';
 
 async function hashExample() {
     // Default: etag (fast, no content read)
-    const fs = createOPFS();
+    const fs = createOPFSDedicated();
     await fs.writeFile('/data.txt', 'Hello World');
 
     const etagStat = await fs.stat('/data.txt');
@@ -269,7 +380,7 @@ async function hashExample() {
 
 // maxFileSize only applies to SHA-* (content) hashing — etag ignores it
 async function maxFileSizeExample() {
-    const fs = createOPFS({
+    const fs = createOPFSDedicated({
         hashAlgorithm: 'SHA-256',
         maxFileSize: 100 * 1024 * 1024 // 100MB (default 50MB)
     });
@@ -296,16 +407,16 @@ async function maxFileSizeExample() {
 The file system supports configuring the root path through options. The root path determines where in OPFS the file system's root will be created. All file paths passed to the API are relative to this root path.
 
 ```typescript
-import { createOPFS } from 'opfs-worker';
+import { createOPFSDedicated } from 'opfs-worker';
 
 async function rootPathExample() {
     // Use default root path '/'
-    const fsDefault = createOPFS();
+    const fsDefault = createOPFSDedicated();
     await fsDefault.writeFile('/config.json', '{}');
     // This creates /config.json in OPFS root
 
     // Use custom root path
-    const fsCustom = createOPFS({ root: '/my-app' });
+    const fsCustom = createOPFSDedicated({ root: '/my-app' });
     await fsCustom.writeFile('/config.json', '{}');
     // This creates /my-app/config.json in OPFS root
 
@@ -343,10 +454,15 @@ The complete API reference is available in the [docs/api-reference.md](docs/api-
 
 **Entry Points:**
 
-- `createOPFS(options?)` — Mode 1: Node-like facade on the main thread
-- `createOPFSWorker(options?)` — Mode 2: raw `OPFSWorker` proxy on the main thread
-- `OPFSWorker` from `opfs-worker/pure` — Mode 3: use the class inside your own worker
-- `OPFSFacade` — Mode 1 class returned by `createOPFS`
+- `opfs-worker` — convenience barrel (all backends + 1.x aliases)
+- `opfs-worker/sync` — `createOPFSDedicated`, `createDedicatedWorker`, `OPFSSync` (worker backend)
+- `opfs-worker/async` — `createOPFSAsync`, `OPFSAsync` (no worker in the bundle)
+- `opfs-worker/sharedworker` — `createOPFSShared`, `createSharedWorker` (one instance for all tabs)
+- `opfs-worker/dedicated.worker.js` — self-contained dedicated Worker script (`OPFSSync`)
+- `opfs-worker/shared.worker.js` — self-contained SharedWorker script (`OPFSAsync`)
+- `opfs-worker/pure` — `OPFSSync`, `OPFSAsync`, `BaseOPFS` (raw classes)
+- `OPFSFacade` — facade returned by `createOPFSDedicated` / `createOPFSAsync` / `createOPFSShared`
+- 1.x / short aliases on the main entry: `createOPFS` / `createWorker` → `createOPFSDedicated`, `OPFSFileSystem` → `OPFSFacade`
 
 **Core File Operations:**
 
@@ -374,6 +490,8 @@ The complete API reference is available in the [docs/api-reference.md](docs/api-
 - `ftruncate(fd, size?)` - Truncate file by descriptor
 - `fsync(fd)` - Sync file data to storage
 - `close(fd)` - Close file descriptor
+
+> File descriptors are only available in the worker-backed modes (1–3). The async backend (`opfs-worker/async`) throws `OperationNotSupportedError` for all FD methods.
 
 **Note**: The `read()` method uses `Comlink.transfer()` for efficient buffer handling. **From the main window**, you must transfer buffer ownership to the worker, and **from the worker**, the buffer is transferred back to you. See [File Descriptors Guide](docs/file-descriptors.md) for complete usage examples.
 

@@ -68,15 +68,13 @@ interface WatchOptions {
 - `include`: Glob patterns to include in watching (default: all files)
 - `exclude`: Glob patterns to exclude from watching (default: none)
 
-### `RemoteOPFSWorker`
+### `OPFSApi`
 
-Remote file system interface type for Comlink communication.
+Promise-based fs API surface shared by all backends — a Comlink proxy to `OPFSSync` in a worker, or an in-process `OPFSAsync` instance. This is what `OPFSFacade` talks to (see `OPFSBackend`).
 
 ```typescript
-type RemoteOPFSWorker = Remote<OPFSWorker>;
+type OPFSApi = { [K in keyof OPFSSync]: OPFSSync[K] };
 ```
-
-This type represents the remote interface when using the worker with Comlink.
 
 ## Configuration Types
 

@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
 
-import { OPFSFacade, createOPFS } from '../src';
+import { OPFSFacade, createOPFSDedicated } from '../src';
 
 interface FileSystemContextType {
     fs: OPFSFacade | null;
@@ -31,7 +31,7 @@ export const FileSystemProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     useEffect(() => {
         const initializeFileSystem = async() => {
             try {
-                const fileSystem = createOPFS({ root: '/opfs-worker-demo' });
+                const fileSystem = createOPFSDedicated({ root: '/opfs-worker-demo' });
 
                 fsRef.current = fileSystem;
                 setIsInitialized(true);

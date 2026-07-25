@@ -18,7 +18,27 @@
             "source": "./src/index.pure.ts",
             "import": "./dist/index.pure.js",
             "require": "./dist/index.pure.cjs"
-        }
+        },
+        "./sync": {
+            "types": "./dist/index.sync.d.ts",
+            "source": "./src/index.sync.ts",
+            "import": "./dist/index.sync.js",
+            "require": "./dist/index.sync.cjs"
+        },
+        "./async": {
+            "types": "./dist/index.async.d.ts",
+            "source": "./src/index.async.ts",
+            "import": "./dist/index.async.js",
+            "require": "./dist/index.async.cjs"
+        },
+        "./sharedworker": {
+            "types": "./dist/index.sharedworker.d.ts",
+            "source": "./src/index.sharedworker.ts",
+            "import": "./dist/index.sharedworker.js",
+            "require": "./dist/index.sharedworker.cjs"
+        },
+        "./dedicated.worker.js": "./dist/dedicated.worker.js",
+        "./shared.worker.js": "./dist/shared.worker.js"
     },
     "sideEffects": false,
     "files": [
@@ -29,7 +49,12 @@
         "LICENSE"
     ],
     "scripts": {
-        "build": "vite build && tsc -p tsconfig.build.json",
+        "build": "bun run build:lib && bun run build:workers && bun run build:types",
+        "build:lib": "vite build",
+        "build:workers": "bun run build:worker:dedicated && bun run build:worker:shared",
+        "build:worker:dedicated": "OPFS_WORKER=dedicated.worker vite build -c vite.worker.config.ts",
+        "build:worker:shared": "OPFS_WORKER=shared.worker vite build -c vite.worker.config.ts",
+        "build:types": "tsc -p tsconfig.build.json",
         "build:demo": "vite build demo --base=./",
         "dev": "concurrently \"vite build --watch --mode development\" \"tsc -p tsconfig.build.json --watch\"",
         "preview": "vite preview demo",

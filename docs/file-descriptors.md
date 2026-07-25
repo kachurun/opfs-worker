@@ -2,6 +2,8 @@
 
 This document covers working with file descriptors in OPFS Worker, which provides low-level file I/O operations similar to POSIX file descriptors.
 
+> File descriptors require the sync backend (worker modes 1–3). The async backend (`opfs-worker/async`) throws `OperationNotSupportedError` for all FD methods.
+
 ## Requirements
 
 **Important**: When using file descriptors from the main window (browser), you must import and use `Comlink` for proper buffer handling:
@@ -170,7 +172,7 @@ console.log('read:', text);
 #### From Worker (Direct Usage)
 
 ```typescript
-// When using OPFSWorker directly in a worker
+// When using OPFSSync directly in a worker
 const buffer = new Uint8Array(64);
 const { bytesRead, buffer: modifiedBuffer } = await fs.read(fd, buffer, 0, buffer.length, null);
 

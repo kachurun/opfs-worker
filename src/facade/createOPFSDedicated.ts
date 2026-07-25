@@ -1,0 +1,23 @@
+import { OPFSFacade } from './OPFSFacade';
+import { createDedicatedWorker } from '../worker/createDedicatedWorker';
+
+import type { DedicatedWorkerOptions } from '../worker/createDedicatedWorker';
+
+/**
+ * Dedicated mode: start a dedicated worker and get a Node-like `fs` API
+ * backed by `OPFSSync`.
+ *
+ * Prefer importing from `opfs-worker/sync` when you only need the worker backend
+ * (avoids pulling `OPFSAsync` into the graph). Importing from `opfs-worker` works too.
+ *
+ * By default uses an inlined worker. Pass `url` / `worker` to load
+ * `opfs-worker/dedicated.worker.js` instead (see {@link DedicatedWorkerOptions}).
+ *
+ * For the raw worker API without the facade, use {@link createDedicatedWorker}.
+ * For the workerless async backend, use {@link createOPFSAsync}.
+ */
+export function createOPFSDedicated(options?: DedicatedWorkerOptions): OPFSFacade {
+    const { fs, dispose } = createDedicatedWorker(options);
+
+    return new OPFSFacade({ fs, dispose });
+}
