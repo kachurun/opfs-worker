@@ -891,29 +891,18 @@ export abstract class BaseOPFS {
     }
 
     /**
-     * Synchronize the file system with external data
-     * 
-     * Syncs the file system with an array of entries containing paths and data.
-     * This is useful for importing data from external sources or syncing with remote data.
-     * 
-     * @param entries - Array of [path, data] tuples to sync
-     * @returns Promise that resolves when synchronization is complete
-     * @throws {OPFSError} If the synchronization fails
-     * 
+     * Bulk-create files from `[path, data]` entries (strings, bytes, or Blobs).
+     *
+     * @param entries - Array of `[path, data]` tuples
+     * @throws {OPFSError} If a write fails
+     *
      * @example
      * ```typescript
-     * // Sync with external data
-     * const entries: [string, string | Uint8Array | Blob][] = [
+     * await fs.createIndex([
      *   ['/config.json', JSON.stringify({ theme: 'dark' })],
      *   ['/data/binary.dat', new Uint8Array([1, 2, 3, 4])],
-     *   ['/upload.txt', new Blob(['file content'], { type: 'text/plain' })]
-     * ];
-     * 
-     * // Sync without clearing existing files
-     * await fs.sync(entries);
-     * 
-     * // Clean file system and then sync
-     * await fs.sync(entries, { cleanBefore: true });
+     *   ['/upload.txt', new Blob(['file content'], { type: 'text/plain' })],
+     * ]);
      * ```
      */
     async createIndex(entries: [string, string | Uint8Array | Blob][]): Promise<void> {

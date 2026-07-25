@@ -44,13 +44,9 @@ function applyWorkerOptions(fs: Pick<RemoteOPFSSync, 'setOptions'>, options?: OP
 }
 
 /**
- * Sync mode, raw: spawn a dedicated worker and get a Comlink proxy to `OPFSSync`
- * (bytes in / bytes out), without the Node-like facade.
- *
- * By default uses an inlined worker. Pass `url` / `worker` to load
- * `opfs-worker/dedicated.worker.js` (or your own script) instead.
- *
- * Prefer importing from `opfs-worker/sync`. For the facade, use {@link createOPFSDedicated}.
+ * Internal helper: spawn a dedicated worker and wrap `OPFSSync` with Comlink.
+ * Prefer {@link createOPFSDedicated}; access the proxy / Worker via
+ * `facade.backend` / `facade.worker`.
  */
 export function createDedicatedWorker(options: DedicatedWorkerOptions = {}): RawWorker {
     const { url, worker: providedWorker, ...fsOptions } = options;

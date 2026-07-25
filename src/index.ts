@@ -7,14 +7,12 @@ export {
     BaseOPFS,
     OPFSFacade,
     OPFSSync,
-    createDedicatedWorker,
     createOPFSDedicated,
 } from './index.sync';
 
 export type {
     DedicatedWorkerOptions,
     OPFSBackend,
-    RawWorker,
 } from './index.sync';
 
 export {
@@ -24,11 +22,9 @@ export {
 
 export {
     createOPFSShared,
-    createSharedWorker,
 } from './index.sharedworker';
 
 export type {
-    RawSharedWorker,
     SharedWorkerOptions,
 } from './index.sharedworker';
 

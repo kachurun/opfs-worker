@@ -1,6 +1,6 @@
 # Types
 
-This document contains all TypeScript types and interfaces provided by OPFS Worker.
+TypeScript types shipped with the package.
 
 ## Core Types
 
@@ -70,17 +70,33 @@ interface WatchOptions {
 
 ### `OPFSApi`
 
-Promise-based fs API surface shared by all backends — a Comlink proxy to `OPFSSync` in a worker, or an in-process `OPFSAsync` instance. This is what `OPFSFacade` talks to (see `OPFSBackend`).
+Promise-based fs API surface shared by all backends — a Comlink proxy to `OPFSSync` in a worker, or an in-process `OPFSAsync` instance. This is what `OPFSFacade` talks to (see `OPFSBackend` in [Create helpers](./api/create.md)).
 
 ```typescript
 type OPFSApi = { [K in keyof OPFSSync]: OPFSSync[K] };
+```
+
+### `PathLike`
+
+```typescript
+type PathLike = string | URL;
+```
+
+### `FileOpenOptions`
+
+```typescript
+interface FileOpenOptions {
+    create?: boolean;
+    exclusive?: boolean;
+    truncate?: boolean;
+}
 ```
 
 ## Configuration Types
 
 ### `OPFSOptions`
 
-Configuration options for creating an OPFS Worker instance.
+Configuration for all backends. Human-readable table: [Create helpers → Options](./api/create.md#options).
 
 ```typescript
 interface OPFSOptions {

@@ -13,11 +13,11 @@ import type { DedicatedWorkerOptions } from '../worker/createDedicatedWorker';
  * By default uses an inlined worker. Pass `url` / `worker` to load
  * `opfs-worker/dedicated.worker.js` instead (see {@link DedicatedWorkerOptions}).
  *
- * For the raw worker API without the facade, use {@link createDedicatedWorker}.
+ * Need the raw bytes API or the Worker instance? Use `fs.backend` / `fs.worker`.
  * For the workerless async backend, use {@link createOPFSAsync}.
  */
 export function createOPFSDedicated(options?: DedicatedWorkerOptions): OPFSFacade {
-    const { fs, dispose } = createDedicatedWorker(options);
+    const { fs, worker, dispose } = createDedicatedWorker(options);
 
-    return new OPFSFacade({ fs, dispose });
+    return new OPFSFacade({ fs, worker, dispose });
 }

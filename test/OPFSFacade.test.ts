@@ -61,6 +61,14 @@ describe('OPFSFacade', () => {
     expect(fs.promises).toBe(fs);
   });
 
+  it('exposes backend and worker', () => {
+    const { fs: local, worker, terminate: term } = createFacade({ root: '/' });
+
+    expect(local.backend).toBe(worker);
+    expect(local.worker).toEqual({ terminate: term });
+    local.dispose();
+  });
+
   it('forwards options to createDedicatedWorker', () => {
     const channel = new BroadcastChannel('facade-bc');
 

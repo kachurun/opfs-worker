@@ -9,5 +9,4 @@ export { OPFSFacade } from './facade/OPFSFacade';
 export type { OPFSBackend } from './facade/OPFSFacade';
 
 export { createOPFSShared } from './facade/createOPFSShared';
-export { createSharedWorker } from './worker/createSharedWorker';
-export type { RawSharedWorker, SharedWorkerOptions } from './worker/createSharedWorker';
+export type { SharedWorkerOptions } from './worker/createSharedWorker';

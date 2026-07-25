@@ -12,7 +12,7 @@ import type { SharedWorkerOptions } from '../worker/createSharedWorker';
  * writing requires `createWritable()` (Chrome, Firefox, Safari 26+), and file
  * descriptors throw `OperationNotSupportedError`.
  *
- * For the raw Comlink proxy without the facade, use {@link createSharedWorker}.
+ * Need the raw bytes API or the SharedWorker? Use `fs.backend` / `fs.worker`.
  *
  * @example
  * ```typescript
@@ -24,7 +24,7 @@ import type { SharedWorkerOptions } from '../worker/createSharedWorker';
  * ```
  */
 export function createOPFSShared(options?: SharedWorkerOptions): OPFSFacade {
-    const { fs, dispose } = createSharedWorker(options);
+    const { fs, worker, dispose } = createSharedWorker(options);
 
-    return new OPFSFacade({ fs, dispose });
+    return new OPFSFacade({ fs, worker, dispose });
 }

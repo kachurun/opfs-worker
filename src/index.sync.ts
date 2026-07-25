@@ -9,5 +9,4 @@ export { OPFSFacade } from './facade/OPFSFacade';
 export type { OPFSBackend } from './facade/OPFSFacade';
 
 export { createOPFSDedicated } from './facade/createOPFSDedicated';
-export { createDedicatedWorker } from './worker/createDedicatedWorker';
-export type { DedicatedWorkerOptions, RawWorker } from './worker/createDedicatedWorker';
+export type { DedicatedWorkerOptions } from './worker/createDedicatedWorker';

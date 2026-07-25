@@ -31,13 +31,12 @@ export interface RawSharedWorker {
 }
 
 /**
- * Shared mode, raw: connect to the SharedWorker (one `OPFSAsync` instance for
- * every tab) and get a Comlink proxy, without the Node-like facade.
+ * Internal helper: connect to the SharedWorker and wrap `OPFSAsync` with Comlink.
+ * Prefer {@link createOPFSShared}; access the proxy / SharedWorker via
+ * `facade.backend` / `facade.worker`.
  *
  * Note: `OPFSOptions` are applied via `setOptions()` on the shared instance, so
  * they affect every connected tab — use the same options in all tabs.
- *
- * For the facade, use {@link createOPFSShared}.
  */
 export function createSharedWorker(options: SharedWorkerOptions = {}): RawSharedWorker {
     const { url, worker: providedWorker, name = 'opfs-worker', ...fsOptions } = options;

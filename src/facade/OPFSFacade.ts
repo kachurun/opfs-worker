@@ -31,6 +31,8 @@ function normalizePath(path: PathLike): string {
 /** Backend the facade talks to: an fs implementation plus its cleanup. */
 export interface OPFSBackend {
     fs: OPFSApi;
+    /** Underlying Worker / SharedWorker when the backend lives off-thread */
+    worker?: Worker | SharedWorker;
     dispose: () => void;
 }
 
@@ -39,14 +41,23 @@ export interface OPFSBackend {
  *
  * Transport-agnostic: works over any {@link OPFSBackend} — a Comlink proxy to
  * a worker (`createOPFSDedicated`) or an in-process instance (`createOPFSAsync`).
+ *
+ * Escape hatch: {@link backend} is the raw bytes API; {@link worker} is the
+ * browser Worker / SharedWorker when one was created (undefined for async).
  */
 export class OPFSFacade {
     #fs: OPFSApi;
     #dispose: () => void;
+    /** Raw backend (`OPFSApi`) — bytes in / bytes out, no encoding helpers */
+    readonly backend: OPFSApi;
+    /** Dedicated Worker or SharedWorker, if this facade was created with one */
+    readonly worker: Worker | SharedWorker | undefined;
     promises: OPFSFacade = this;
 
     constructor(backend: OPFSBackend) {
         this.#fs = backend.fs;
+        this.backend = backend.fs;
+        this.worker = backend.worker;
         this.#dispose = backend.dispose;
     }
 

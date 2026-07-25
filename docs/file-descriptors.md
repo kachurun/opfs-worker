@@ -1,25 +1,22 @@
 # File Descriptors
 
-This document covers working with file descriptors in OPFS Worker, which provides low-level file I/O operations similar to POSIX file descriptors.
+Low-level positional I/O, POSIX-style.
 
-> File descriptors require the sync backend (worker modes 1–3). The async backend (`opfs-worker/async`) throws `OperationNotSupportedError` for all FD methods.
+> Needs the **dedicated / sync** backend (`createOPFSDedicated` / `createOPFS`, or `OPFSSync` from `/pure`). Async and SharedWorker throw `ENOTSUP`.
 
 ## Requirements
 
-**Important**: When using file descriptors from the main window (browser), you must import and use `Comlink` for proper buffer handling:
+If you talk to **`fs.backend`** from the main thread for FD `read`/`write`, transfer buffers with Comlink:
 
 ```typescript
 import { transfer } from 'comlink';
 ```
 
+The [facade](./api/facade.md) methods do this for you.
+
 ## Overview
 
-File descriptors provide efficient, low-level access to files for reading, writing, and manipulating file data. They're particularly useful for:
-
-- **Large file operations**: Reading/writing files in chunks without loading entire content into memory
-- **Streaming operations**: Processing files sequentially or in specific positions
-- **Performance-critical applications**: Direct file access without the overhead of high-level methods
-- **Binary data manipulation**: Working with raw bytes at specific file positions
+Useful when you need chunks, random access, or to avoid loading a whole file into memory.
 
 ## Table of Contents
 
