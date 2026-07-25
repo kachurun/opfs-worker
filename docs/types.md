@@ -114,41 +114,41 @@ type Encoding = 'utf-8' | 'utf-16le' | 'ascii' | 'latin1' | 'base64' | 'hex' | '
 
 Node.js SystemError-compatible. Base class: `OPFSError` (`errno`, `syscall?`, `path?`, `cause?`).
 
-| Class | |
-| ----- | --- |
-| `OPFSNotSupportedError` | OPFS missing in the browser |
-| `PathError` | Bad path / traversal |
-| `ExistenceError` | Missing entry — `new ExistenceError(msg, 'ENOENT', path)` |
-| `PermissionError` | Access denied |
-| `StorageError` | Quota / storage full |
-| `TimeoutError` | Timed out |
-| `FileBusyError` | Locked / busy |
-| `FileTypeError` | File vs directory mismatch — `new FileTypeError('directory', path)` |
-| `ValidationError` | Bad args — `new ValidationError(msg, 'EINVAL', path)` |
-| `OperationAbortedError` | Aborted |
-| `IOError` | I/O failure |
-| `OperationNotSupportedError` | Not supported (e.g. FDs on async) |
-| `DirectoryOperationError` | Dir op failed — `new DirectoryOperationError('RM_FAILED', path)` |
-| `InitializationFailedError` | Init failed |
-| `FileSystemOperationError` | Generic FS failure |
-| `PathResolutionFailedError` | Path resolve failed |
-| `AlreadyExistsError` | Already exists |
+| Class                        |                                                                     |
+| ---------------------------- | ------------------------------------------------------------------- |
+| `OPFSNotSupportedError`      | OPFS missing in the browser                                         |
+| `PathError`                  | Bad path / traversal                                                |
+| `ExistenceError`             | Missing entry — `new ExistenceError(msg, 'ENOENT', path)`           |
+| `PermissionError`            | Access denied                                                       |
+| `StorageError`               | Quota / storage full                                                |
+| `TimeoutError`               | Timed out                                                           |
+| `FileBusyError`              | Locked / busy                                                       |
+| `FileTypeError`              | File vs directory mismatch — `new FileTypeError('directory', path)` |
+| `ValidationError`            | Bad args — `new ValidationError(msg, 'EINVAL', path)`               |
+| `OperationAbortedError`      | Aborted                                                             |
+| `IOError`                    | I/O failure                                                         |
+| `OperationNotSupportedError` | Not supported (e.g. FDs on async)                                   |
+| `DirectoryOperationError`    | Dir op failed — `new DirectoryOperationError('RM_FAILED', path)`    |
+| `InitializationFailedError`  | Init failed                                                         |
+| `FileSystemOperationError`   | Generic FS failure                                                  |
+| `PathResolutionFailedError`  | Path resolve failed                                                 |
+| `AlreadyExistsError`         | Already exists                                                      |
 
 ### errno
 
-| Code | errno | |
-| ---- | ----- | --- |
-| `ENOENT` | -2 | No such file or directory |
-| `EISDIR` | -21 | Is a directory |
-| `ENOTDIR` | -20 | Not a directory |
-| `EACCES` | -13 | Permission denied |
-| `EEXIST` | -17 | File exists |
-| `ENOTEMPTY` | -39 | Directory not empty |
-| `EINVAL` | -22 | Invalid argument |
-| `EIO` | -5 | I/O error |
-| `ENOSPC` | -28 | No space left |
-| `EBUSY` | -16 | Busy |
-| `EINTR` | -4 | Interrupted |
-| `ENOTSUP` | -95 | Not supported |
-| `ERANGE` | -34 | Result too large |
-| `EBADF` | -9 | Bad file descriptor |
+| Code        | errno |                           |
+| ----------- | ----- | ------------------------- |
+| `ENOENT`    | -2    | No such file or directory |
+| `EISDIR`    | -21   | Is a directory            |
+| `ENOTDIR`   | -20   | Not a directory           |
+| `EACCES`    | -13   | Permission denied         |
+| `EEXIST`    | -17   | File exists               |
+| `ENOTEMPTY` | -39   | Directory not empty       |
+| `EINVAL`    | -22   | Invalid argument          |
+| `EIO`       | -5    | I/O error                 |
+| `ENOSPC`    | -28   | No space left             |
+| `EBUSY`     | -16   | Busy                      |
+| `EINTR`     | -4    | Interrupted               |
+| `ENOTSUP`   | -95   | Not supported             |
+| `ERANGE`    | -34   | Result too large          |
+| `EBADF`     | -9    | Bad file descriptor       |

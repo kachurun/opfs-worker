@@ -8,16 +8,16 @@
 OPFS ([Origin Private File System](https://developer.mozilla.org/en-US/docs/Web/API/File_System_API/Origin_private_file_system)) is a browser filesystem scoped to your origin. It sits under the usual site quota; clearing site data wipes it. The browser does not show a file picker or ask for access.
 
 This package puts a Node-like API on top of it.
-
-- **Facade API** — `readFile`, `writeFile`, `mkdir`, `stat`, `rename`, `copy`, `readDir`; encodings, extension-based detection, `string | URL` paths. → [facade](docs/api/facade.md)
-- **File descriptors** — `open` / `read` / `write` at an offset, plus `ftruncate` and `fsync`. → [file descriptors](docs/file-descriptors.md)
-- **Dedicated worker (default)** — `createOPFS()` uses sync access handles in a worker: fastest OPFS path, with FDs, including older Safari. → [dedicated](docs/guides/dedicated.md)
-- **Async / SharedWorker** — `createWritable()` on the main thread or in a SharedWorker. Safari 26+ for writes. → [async](docs/guides/async.md) · [sharedworker](docs/guides/sharedworker.md)
-- **Your own worker** — inlined dedicated worker, a prebuilt script, raw classes, or one SharedWorker for all tabs. → [choosing a mode](docs/choosing-a-mode.md)
-- **Streaming** — `importStream` writes a `ReadableStream`, `Blob`, or `File` in chunks, with optional progress. → [streaming](docs/guides/streaming.md)
-- **Watch** — changes over `BroadcastChannel` across contexts that share the filesystem. → [watching](docs/guides/watching.md)
-- **Hashing** — `stat()` can include an etag or a SHA hash, with a size cap for SHA. → [hashing](docs/guides/hashing.md)
-- **Types** — TypeScript types, ESM and CJS; two small deps (`comlink`, `minimatch`). The async entry does not pull in worker code. → [types](docs/types.md)
+→ **File API** — `readFile`, `writeFile`, `mkdir`, `stat`, `rename`, `copy`, `readDir`; encodings, extension-based detection, `string | URL` paths. [Docs](docs/api/facade.md)
+→ **File descriptors** — `open` / `read` / `write` at an offset, plus `ftruncate` and `fsync`. [Docs](docs/file-descriptors.md)
+→ **Concurrent access** — operations on the same path are serialized, so parallel reads and writes do not fail because another sync access handle is open.
+→ **Dedicated worker (default)** — `createOPFS()` sets up the worker for you. Fastest path, supports FDs, writes work in older Safari too. [Docs](docs/guides/dedicated.md)
+→ **Async / SharedWorker** — same API on the main thread or shared across tabs. No FDs. Writes need Safari 26+ (Safari 18 and older can only read). [Docs](docs/guides/async.md) · [Docs](docs/guides/sharedworker.md)
+→ **Bring your own worker** — use it directly in a worker you already run, or load a prebuilt worker script. [Docs](docs/choosing-a-mode.md)
+→ **Streaming** — `importStream` writes a `ReadableStream`, `Blob`, or `File` in chunks, with optional progress. [Docs](docs/guides/streaming.md)
+→ **Watch** — change events over `BroadcastChannel` across tabs / workers. [Docs](docs/guides/watching.md)
+→ **Hashing** — `stat()` can include an etag or a SHA hash (SHA skipped above a size cap). [Docs](docs/guides/hashing.md)
+→ **Types** — TypeScript types, ESM and CJS; deps are `comlink` and `minimatch`. The async entry does not pull in worker code. [Docs](docs/types.md)
 
 ## Installation
 
@@ -30,6 +30,7 @@ npm install opfs-worker
 ```typescript
 import { createOPFS } from 'opfs-worker';
 
+// Starts a dedicated worker and returns a Node-like fs API
 const fs = createOPFS({
   root: '/my-app',
   hashAlgorithm: 'SHA-256'
@@ -41,6 +42,9 @@ await fs.rename('/project/hello.txt', '/project/readme.txt');
 
 const files = await fs.readDir('/project');
 const text = await fs.readFile('/project/readme.txt'); // 'Hello, OPFS!'
+
+// Tear down watches, close the backend, and terminate the worker
+fs.dispose();
 ```
 
 ## Choose a mode
@@ -56,8 +60,13 @@ Trade-offs (FDs, Safari, size, CSP): [Choosing a mode](docs/choosing-a-mode.md).
 
 ## Docs
 
-- [Docs index](docs/README.md)
 - [Choosing a mode](docs/choosing-a-mode.md)
+- API
+  - [Create helpers & options](docs/api/create.md)
+  - [Facade](docs/api/facade.md)
+  - [Backend](docs/api/backend.md)
+  - [File descriptors](docs/file-descriptors.md)
+  - [Types](docs/types.md)
 - Guides
   - [Dedicated worker](docs/guides/dedicated.md)
   - [Async](docs/guides/async.md)
@@ -66,12 +75,6 @@ Trade-offs (FDs, Safari, size, CSP): [Choosing a mode](docs/choosing-a-mode.md).
   - [Streaming](docs/guides/streaming.md)
   - [Watching](docs/guides/watching.md)
   - [Hashing](docs/guides/hashing.md)
-- API
-  - [Create helpers & options](docs/api/create.md)
-  - [Facade](docs/api/facade.md)
-  - [Backend](docs/api/backend.md)
-  - [File descriptors](docs/file-descriptors.md)
-  - [Types](docs/types.md)
 - [Migration from 1.x](docs/migration.md)
 
 ## Development
