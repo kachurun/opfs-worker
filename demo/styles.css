@@ -48,3 +48,18 @@ body,
     line-height: 1;
     font-weight: 500;
 }
+
+/* Juicy press feedback: icon squishes down, then springs back on release */
+.btn svg {
+    transition: transform 0.25s cubic-bezier(0.34, 1.8, 0.64, 1);
+}
+
+.btn:active svg {
+    transform: scale(0.75) rotate(-8deg);
+    transition-duration: 0.08s;
+    transition-timing-function: ease-out;
+}
+
+.btn:active {
+    transform: none;
+}

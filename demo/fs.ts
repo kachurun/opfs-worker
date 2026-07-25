@@ -7,7 +7,7 @@ import {
     type OPFSOptions,
 } from '../src';
 
-import sharedWorkerUrl from '../src/worker/shared.worker.ts?url';
+import sharedWorkerUrl from '../src/worker/shared.worker.ts?sharedworker&url';
 
 export type DemoMode = 'dedicated' | 'async' | 'shared';
 

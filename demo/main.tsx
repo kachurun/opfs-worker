@@ -521,7 +521,7 @@ function App() {
             </div>
 
             <div className="grid min-h-0 flex-1 grid-rows-[minmax(0,1fr)_minmax(12rem,28%)]">
-                <div className="grid min-h-0 grid-cols-1 md:grid-cols-[minmax(16rem,28%)_minmax(0,1fr)]">
+                <div className="grid min-h-0 grid-cols-1 md:grid-cols-[250px_minmax(0,1fr)]">
                     <div className="min-h-0">
                         {fs && (
                             <FileBrowser
