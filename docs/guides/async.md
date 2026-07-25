@@ -16,7 +16,7 @@ await fs.appendText('/note.txt', '!');
 const text = await fs.readFile('/note.txt', 'utf-8');
 ```
 
-Import from `opfs-worker/async` if you care about bundle size — the main entry also carries the dedicated-worker path.
+Import from `opfs-worker/async` to keep the dedicated-worker code out of the bundle.
 
 ## Raw class
 
@@ -31,6 +31,6 @@ await fs.writeFile('/x.bin', new Uint8Array([1, 2, 3]));
 
 - **Writes** need `createWritable()` — Chrome, Firefox, Safari **26+**. Reads work anywhere OPFS does.
 - **No file descriptors** — `open` / `read` / `write` / … throw `ENOTSUP`.
-- Each write goes through a swap file and commits on close — fine for documents, awkward for tons of tiny random writes.
+- Each write goes through a swap file and commits on close — fine for documents, slow for many tiny random writes.
 
 Streaming still works: [streaming](./streaming.md). For one fs across tabs: [SharedWorker](./sharedworker.md).

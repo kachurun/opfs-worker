@@ -35,9 +35,9 @@ const MODES: {
         label: 'Dedicated',
         description: 'Each tab gets its own Web Worker, so heavy file work runs in the background and the UI stays responsive. Tabs still learn about each other’s changes through BroadcastChannel watch events.',
         guide: 'https://github.com/kachurun/opfs-worker/blob/main/docs/guides/dedicated.md',
-        code: `import { createOPFSDedicated } from 'opfs-worker';
+        code: `import { createOPFS } from 'opfs-worker';
 
-const fs = createOPFSDedicated({ root: '/opfs-worker-demo' });
+const fs = createOPFS({ root: '/opfs-worker-demo' });
 
 await fs.writeFile('/hello.txt', 'hi');
 const text = await fs.readFile('/hello.txt', 'utf-8');`,

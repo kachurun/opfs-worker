@@ -1,38 +1,22 @@
 # Types
 
-TypeScript types shipped with the package.
-
-## Core Types
-
-### `FileStat`
-
-File or directory statistics.
+## `FileStat`
 
 ```typescript
 interface FileStat {
     kind: 'file' | 'directory';
     size: number;
-    mtime: string; // ISO string
-    ctime: string; // ISO string
+    mtime: string; // ISO
+    ctime: string; // ISO
     isFile: boolean;
     isDirectory: boolean;
-    hash?: string; // Hash of file content (only for files)
+    hash?: string; // files only, when hashing is enabled
 }
 ```
 
-**Properties:**
+`size` is `0` for directories.
 
-- `kind`: Type of the file system entry
-- `size`: Size in bytes (0 for directories)
-- `mtime`: Last modification time as ISO string
-- `ctime`: Creation time as ISO string
-- `isFile`: True if this is a file
-- `isDirectory`: True if this is a directory
-- `hash`: Optional hash of file content (only present for files when hashing is enabled)
-
-### `DirentData`
-
-Directory entry information.
+## `DirentData`
 
 ```typescript
 interface DirentData {
@@ -43,46 +27,31 @@ interface DirentData {
 }
 ```
 
-**Properties:**
-
-- `name`: Name of the file or directory
-- `kind`: Type of the entry
-- `isFile`: True if this is a file
-- `isDirectory`: True if this is a directory
-
-### `WatchOptions`
-
-Options for file watching operations.
+## `WatchOptions`
 
 ```typescript
 interface WatchOptions {
-    recursive?: boolean; // Whether to watch recursively (default: true)
-    include?: string | string[]; // Glob patterns to include in watching (minimatch syntax, default: ['**'])
-    exclude?: string | string[]; // Glob patterns to exclude from watching (minimatch syntax, default: [])
+    recursive?: boolean; // default: true
+    include?: string | string[]; // minimatch, default: ['**']
+    exclude?: string | string[]; // minimatch, default: []
 }
 ```
 
-**Properties:**
+## `OPFSApi`
 
-- `recursive`: Whether to watch the entire directory tree (default: true)
-- `include`: Glob patterns to include in watching (default: all files)
-- `exclude`: Glob patterns to exclude from watching (default: none)
-
-### `OPFSApi`
-
-Promise-based fs API surface shared by all backends — a Comlink proxy to `OPFSSync` in a worker, or an in-process `OPFSAsync` instance. This is what `OPFSFacade` talks to (see `OPFSBackend` in [Create helpers](./api/create.md)).
+Promise-based surface shared by all backends — a Comlink proxy to `OPFSSync`, or an in-process `OPFSAsync`. What `OPFSFacade` talks to (see `OPFSBackend` in [Create helpers](./api/create.md)).
 
 ```typescript
 type OPFSApi = { [K in keyof OPFSSync]: OPFSSync[K] };
 ```
 
-### `PathLike`
+## `PathLike`
 
 ```typescript
 type PathLike = string | URL;
 ```
 
-### `FileOpenOptions`
+## `FileOpenOptions`
 
 ```typescript
 interface FileOpenOptions {
@@ -92,40 +61,26 @@ interface FileOpenOptions {
 }
 ```
 
-## Configuration Types
+## `OPFSOptions`
 
-### `OPFSOptions`
-
-Configuration for all backends. Human-readable table: [Create helpers → Options](./api/create.md#options).
+Table: [Create helpers → Options](./api/create.md#options).
 
 ```typescript
 interface OPFSOptions {
-    /** Root path for the file system (default: '/') */
+    /** Root path (default: '/') */
     root?: string;
-    /** Namespace for the events (default: 'opfs-worker:${root}') */
+    /** Event namespace (default: 'opfs-worker:${root}') */
     namespace?: string;
-    /** Hash algorithm for file hashing, or false/null to disable (default: 'etag') */
+    /** Hash algorithm, or false/null to disable (default: 'etag') */
     hashAlgorithm?: null | false | 'etag' | 'SHA-1' | 'SHA-256' | 'SHA-384' | 'SHA-512';
-    /** Maximum file size in bytes for SHA-* hashing (default: 50MB); ignored by 'etag' */
+    /** Max bytes for SHA-* hashing (default: 50MB); ignored by 'etag' */
     maxFileSize?: number;
-    /** Custom name for the broadcast channel (default: 'opfs-worker') */
+    /** Broadcast channel name or instance (default: 'opfs-worker') */
     broadcastChannel?: string | BroadcastChannel | null;
 }
 ```
 
-**Properties:**
-
-- `root`: Root path for the file system
-- `namespace`: Namespace for events and isolation
-- `hashAlgorithm`: `'etag'` (default, mtime+size), `'SHA-*'`, or `null`/`false` to disable
-- `maxFileSize`: Max bytes for SHA-* content hashing (etag ignores this)
-- `broadcastChannel`: Custom broadcast channel name or instance
-
-## Event Types
-
-### `WatchEventType`
-
-Enumeration of file system change event types.
+## `WatchEventType`
 
 ```typescript
 enum WatchEventType {
@@ -135,15 +90,7 @@ enum WatchEventType {
 }
 ```
 
-**Values:**
-
-- `Added`: File or directory was created
-- `Changed`: File or directory was modified
-- `Removed`: File or directory was deleted
-
-### `WatchEvent`
-
-File system change event sent via BroadcastChannel.
+## `WatchEvent`
 
 ```typescript
 interface WatchEvent {
@@ -156,91 +103,52 @@ interface WatchEvent {
 }
 ```
 
-**Properties:**
-
-- `namespace`: Event namespace for isolation
-- `path`: Path of the changed file/directory
-- `type`: Type of change (added, changed, removed)
-- `isDirectory`: Whether the changed item is a directory
-- `timestamp`: ISO timestamp of the change
-- `hash`: Optional hash of the file content (if hashing is enabled)
-
-## Utility Types
-
-### `Kind`
-
-File system entry type.
+## Utility types
 
 ```typescript
 type Kind = 'file' | 'directory';
-```
-
-### `Encoding`
-
-Supported text encodings.
-
-```typescript
 type Encoding = 'utf-8' | 'utf-16le' | 'ascii' | 'latin1' | 'base64' | 'hex' | 'binary';
 ```
 
-## Error Types
+## Errors
 
-The library provides comprehensive error handling with specific error types that are Node.js SystemError compatible:
+Node.js SystemError-compatible. Base class: `OPFSError` (`errno`, `syscall?`, `path?`, `cause?`).
 
-### Base Error Class
+| Class | |
+| ----- | --- |
+| `OPFSNotSupportedError` | OPFS missing in the browser |
+| `PathError` | Bad path / traversal |
+| `ExistenceError` | Missing entry — `new ExistenceError(msg, 'ENOENT', path)` |
+| `PermissionError` | Access denied |
+| `StorageError` | Quota / storage full |
+| `TimeoutError` | Timed out |
+| `FileBusyError` | Locked / busy |
+| `FileTypeError` | File vs directory mismatch — `new FileTypeError('directory', path)` |
+| `ValidationError` | Bad args — `new ValidationError(msg, 'EINVAL', path)` |
+| `OperationAbortedError` | Aborted |
+| `IOError` | I/O failure |
+| `OperationNotSupportedError` | Not supported (e.g. FDs on async) |
+| `DirectoryOperationError` | Dir op failed — `new DirectoryOperationError('RM_FAILED', path)` |
+| `InitializationFailedError` | Init failed |
+| `FileSystemOperationError` | Generic FS failure |
+| `PathResolutionFailedError` | Path resolve failed |
+| `AlreadyExistsError` | Already exists |
 
-- `OPFSError` - Base error class for all OPFS-related errors (Node.js SystemError compatible)
+### errno
 
-**Properties:**
-
-- `errno: number` - Numeric error code (e.g., -2 for ENOENT)
-- `syscall?: string` - System call name (e.g., 'open', 'read', 'write')
-- `path?: string` - File path when applicable
-- `name: string` - Error class name ('OPFSError')
-- `message: string` - Human-readable error message
-- `cause?: any` - Underlying error (Node.js 16+ feature)
-
-### Specialized Error Classes
-
-- `OPFSNotSupportedError` - Thrown when OPFS is not supported in the browser
-- `PathError` - Thrown for invalid paths or path traversal attempts
-- `ExistenceError` - Thrown when files or directories don't exist
-  - Usage: `new ExistenceError('File not found: /path/to/file', 'ENOENT', '/path/to/file')`
-- `PermissionError` - Thrown when permission is denied for an operation
-- `StorageError` - Thrown when an operation fails due to insufficient storage
-- `TimeoutError` - Thrown when an operation times out
-- `FileBusyError` - Thrown when a file is busy (locked by another operation)
-- `FileTypeError` - Thrown when file/directory type expectations don't match
-  - Usage: `new FileTypeError('directory', '/path/to/dir')`
-- `ValidationError` - Thrown for validation failures (invalid arguments, formats, etc.)
-  - Usage: `new ValidationError('Invalid size', 'EINVAL', '/path/to/file')`
-- `OperationAbortedError` - Thrown when an operation is aborted
-- `IOError` - Thrown for I/O operation failures
-- `OperationNotSupportedError` - Thrown when an operation is not supported
-- `DirectoryOperationError` - Thrown when directory operations fail
-  - Usage: `new DirectoryOperationError('RM_FAILED', '/path/to/dir')`
-- `InitializationFailedError` - Thrown when OPFS initialization fails
-- `FileSystemOperationError` - Thrown when file system operations fail
-- `PathResolutionFailedError` - Thrown when path resolution fails
-- `AlreadyExistsError` - Thrown when a file or directory already exists
-
-### Error Code Mapping
-
-The library uses standard POSIX error codes with numeric errno mapping:
-
-- `ENOENT` (-2) - No such file or directory
-- `EISDIR` (-21) - Is a directory
-- `ENOTDIR` (-20) - Not a directory
-- `EACCES` (-13) - Permission denied
-- `EEXIST` (-17) - File exists
-- `ENOTEMPTY` (-39) - Directory not empty
-- `EINVAL` (-22) - Invalid argument
-- `EIO` (-5) - I/O error
-- `ENOSPC` (-28) - No space left on device
-- `EBUSY` (-16) - Device or resource busy
-- `EINTR` (-4) - Interrupted system call
-- `ENOTSUP` (-95) - Operation not supported
-- `ERANGE` (-34) - Result too large
-- `EBADF` (-9) - Bad file descriptor
-
-Each error type extends the base `OPFSError` class and provides specific error codes and context information for better debugging.
+| Code | errno | |
+| ---- | ----- | --- |
+| `ENOENT` | -2 | No such file or directory |
+| `EISDIR` | -21 | Is a directory |
+| `ENOTDIR` | -20 | Not a directory |
+| `EACCES` | -13 | Permission denied |
+| `EEXIST` | -17 | File exists |
+| `ENOTEMPTY` | -39 | Directory not empty |
+| `EINVAL` | -22 | Invalid argument |
+| `EIO` | -5 | I/O error |
+| `ENOSPC` | -28 | No space left |
+| `EBUSY` | -16 | Busy |
+| `EINTR` | -4 | Interrupted |
+| `ENOTSUP` | -95 | Not supported |
+| `ERANGE` | -34 | Result too large |
+| `EBADF` | -9 | Bad file descriptor |

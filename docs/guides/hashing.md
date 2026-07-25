@@ -4,7 +4,7 @@ Set once via `hashAlgorithm` / `maxFileSize` in options or `setOptions()`. Shows
 
 | Value | What you get |
 | ----- | ------------ |
-| `'etag'` (default) | Cheap tag from mtime + size — no content read |
+| `'etag'` (default) | Tag from mtime + size — no content read |
 | `'SHA-1'` … `'SHA-512'` | Real content hash (Web Crypto) |
 | `null` / `false` | No `hash` field |
 
@@ -16,7 +16,7 @@ import { createOPFS } from 'opfs-worker';
 const fs = createOPFS();
 
 await fs.writeFile('/data.txt', 'Hello');
-console.log((await fs.stat('/data.txt')).hash); // etag-ish, e.g. "m1abc-c"
+console.log((await fs.stat('/data.txt')).hash); // e.g. "m1abc-c"
 
 await fs.setOptions({ hashAlgorithm: 'SHA-256' });
 console.log((await fs.stat('/data.txt')).hash); // hex digest

@@ -29,8 +29,8 @@
 - SharedWorker: `createOPFSShared` / `opfs-worker/sharedworker`
 - Prebuilt scripts: `dedicated.worker.js`, `shared.worker.js`
 - Streaming: `importStream` / `writeStream`
-- Escape hatch on every facade: `fs.backend` / `fs.worker`
-- Clearer names: `createOPFSDedicated`, `createOPFSAsync`, `createOPFSShared`
+- `fs.backend` / `fs.worker` on every facade
+- `createOPFSDedicated`, `createOPFSAsync`, `createOPFSShared`
 
 ## Behaviour
 

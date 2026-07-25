@@ -1,10 +1,10 @@
 # OPFSFacade
 
-Node-ish API: encodings, auto-detect by extension, path as `string` or `URL`. You normally get one from [`createOPFS*`](./create.md); you can also `new OPFSFacade({ fs, worker?, dispose })`.
+Node-like API: encodings, auto-detect by extension, path as `string` or `URL`. Usually from [`createOPFS*`](./create.md); or `new OPFSFacade({ fs, worker?, dispose })`.
 
 `fs.promises === fs`.
 
-## Escape hatch
+## Backend access
 
 | Field | Notes |
 | ----- | ----- |
@@ -38,8 +38,8 @@ Node-ish API: encodings, auto-detect by extension, path as `string` or `URL`. Yo
 | ------ | ----- |
 | `watch` | Returns `() => void` |
 | `unwatch` | |
-| `setOptions` | [Hashing](../guides/hashing.md) and friends |
-| `dispose` | Tear down the backend |
+| `setOptions` | See [hashing](../guides/hashing.md) |
+| `dispose` | Dispose the backend |
 
 ## Node aliases
 
@@ -49,4 +49,4 @@ Node-ish API: encodings, auto-detect by extension, path as `string` or `URL`. Yo
 
 `open`, `read`, `write`, `close`, `fstat`, `ftruncate`, `fsync` — dedicated / `OPFSSync` only. Async throws `ENOTSUP`.
 
-Full story: [file descriptors](../file-descriptors.md).
+Details: [file descriptors](../file-descriptors.md).

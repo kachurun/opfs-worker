@@ -22,7 +22,7 @@ On the main entry only:
 - `createWorker` → same (deprecated)
 - `OPFSFileSystem` → `OPFSFacade` (deprecated)
 
-## Escape hatch
+## Backend access
 
 Every facade exposes:
 

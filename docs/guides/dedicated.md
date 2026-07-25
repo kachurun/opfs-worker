@@ -22,7 +22,7 @@ The worker is inlined by default, so you don’t need a special bundler worker s
 
 ## Raw backend
 
-Bytes in, bytes out — no encoding helpers. Same facade, just talk to `backend`:
+Bytes in, bytes out — no encoding helpers. Same facade, via `backend`:
 
 ```typescript
 const fs = createOPFSDedicated({ root: '/my-app' });
@@ -30,7 +30,7 @@ const fs = createOPFSDedicated({ root: '/my-app' });
 await fs.backend.writeFile('/config.json', new TextEncoder().encode('{}'));
 const bytes = await fs.backend.readFile('/config.json');
 
-// Browser Worker, if you ever need it:
+// Browser Worker:
 fs.worker; // Worker
 
 fs.dispose(); // dispose + terminate
@@ -68,9 +68,9 @@ const fs = new OPFSFacade({
 });
 ```
 
-## Heads-up
+## Notes
 
 - Each call gets its own worker. Tabs don’t share state — use [SharedWorker](./sharedworker.md) for that.
-- Sync access handles are a dedicated-worker-only browser API.
+- Sync access handles only work in a dedicated worker.
 
-More: [file descriptors](../file-descriptors.md), [streaming](./streaming.md), [create helpers](../api/create.md).
+Also: [file descriptors](../file-descriptors.md), [streaming](./streaming.md), [create helpers](../api/create.md).

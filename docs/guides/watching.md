@@ -28,8 +28,8 @@ stop(); // or fs.unwatch('/')
 
 `watch` returns an unsubscribe function. Options: [`WatchOptions`](../types.md#watchoptions). Payload: [`WatchEvent`](../types.md#watchevent).
 
-## Gotchas
+## Notes
 
-- Into a worker, pass a **channel name** (string). You can’t post a `BroadcastChannel` instance across the wire. On the main thread the facade accepts either.
+- Pass a **channel name** (string) into a worker — a `BroadcastChannel` instance can’t cross the wire. On the main thread the facade accepts either.
 - SharedWorker: one backend + one channel → every listening tab sees the same events.
-- Whether events include `hash` depends on [hashing](./hashing.md) settings.
+- Whether events include `hash` depends on [hashing](./hashing.md).

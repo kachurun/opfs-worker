@@ -1,6 +1,6 @@
 # Streaming
 
-Write big files without holding the whole thing in memory.
+Write large files without buffering the whole payload.
 
 | | Method |
 | --- | --- |
@@ -27,7 +27,7 @@ const res = await fetch('/large.bin');
 await fs.importStream('/cache/large.bin', res.body!);
 ```
 
-With a worker backend the facade transfers the stream and proxies `onProgress` — you don’t need Comlink `transfer` yourself.
+With a worker backend the facade transfers the stream and proxies `onProgress`.
 
 ## `writeStream` (raw)
 
@@ -42,9 +42,9 @@ await fs.backend.writeStream('/data.bin', someBlob.stream(), (n) => console.log(
 
 | API | Good for |
 | --- | -------- |
-| `writeFile` | Stuff already in memory |
+| `writeFile` | Data already in memory |
 | `importStream` / `writeStream` | Large `File` / `Blob` / network bodies |
-| `createIndex` | Many small entries (Blobs here are still fully buffered) |
+| `createIndex` | Many small entries (Blobs are still fully buffered) |
 
 Dedicated path chunks through FDs; async path uses `createWritable()` (Safari 26+ for writes).
 

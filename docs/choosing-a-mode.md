@@ -16,14 +16,14 @@ Sync access handles only work in a **dedicated** worker. Async writes (`createWr
 
 ## Modes
 
-|       | API                                                       | Reach for it when…              | FD        | Comlink |
+|       | API                                                       | When                            | FD        | Comlink |
 | ----- | --------------------------------------------------------- | ------------------------------- | --------- | ------- |
-| **1** | [`createOPFSDedicated()`](./guides/dedicated.md)          | You want a normal `fs`-like API | yes       | yes     |
-| **2** | [`OPFSSync` / `OPFSAsync` from `/pure`](./guides/pure.md) | You’re already in a worker      | sync only | no      |
-| **3** | [`createOPFSAsync()`](./guides/async.md)                  | You don’t want a worker at all  | no        | no      |
-| **4** | [`createOPFSShared()`](./guides/sharedworker.md)          | All tabs should share one fs    | no        | yes     |
+| **1** | [`createOPFSDedicated()`](./guides/dedicated.md)          | Normal `fs`-like API            | yes       | yes     |
+| **2** | [`OPFSSync` / `OPFSAsync` from `/pure`](./guides/pure.md) | Already in a worker             | sync only | no      |
+| **3** | [`createOPFSAsync()`](./guides/async.md)                  | No worker                       | no        | no      |
+| **4** | [`createOPFSShared()`](./guides/sharedworker.md)          | One fs shared by all tabs       | no        | yes     |
 
-Need the raw bytes API or the browser Worker? Use `fs.backend` / `fs.worker` on any facade — no separate factory.
+For the raw bytes API or the browser Worker, use `fs.backend` / `fs.worker` on any facade.
 
 If size matters, import from `/sync`, `/async`, or `/sharedworker` instead of the main barrel.
 

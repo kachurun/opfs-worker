@@ -1,6 +1,6 @@
 # SharedWorker
 
-One `OPFSAsync` for every tab. Locks live in that single instance, so writes don’t stomp each other across tabs. Watch events go out on `BroadcastChannel` like everywhere else.
+One `OPFSAsync` for every tab. Locks live in that instance, so writes across tabs don’t collide. Watch events use `BroadcastChannel` as usual.
 
 Same limits as [async](./async.md): Safari 26+ for writes, no FDs.
 

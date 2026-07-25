@@ -5,19 +5,19 @@
 
 ## What is OPFS?
 
-OPFS ([Origin Private File System](https://developer.mozilla.org/en-US/docs/Web/API/File_System_API/Origin_private_file_system)) is a private file store for your origin. No file picker, no permission prompts. It lives under the usual site quota, and clearing site data wipes it.
+OPFS ([Origin Private File System](https://developer.mozilla.org/en-US/docs/Web/API/File_System_API/Origin_private_file_system)) is a browser filesystem scoped to your origin. It sits under the usual site quota; clearing site data wipes it. The browser does not show a file picker or ask for access.
 
-This library gives you a real filesystem on top of it — read, write, and watch files with a familiar Node-like API.
+This package puts a Node-like API on top of it.
 
-- **High-level Node-like API.** `readFile`, `writeFile`, `mkdir`, `stat`, `rename`, `copy`, `readDir` — with encodings, auto-detection by extension, and `string | URL` paths. You write `fs` code, not handle plumbing. → [facade API](docs/api/facade.md)
-- **Low-level positional I/O.** `open` / `read` / `write` at an offset, plus `ftruncate` and `fsync` — enough for random-access formats and databases. → [file descriptors](docs/file-descriptors.md)
-- **Sync API by default.** `createOPFS()` runs sync access handles in a dedicated worker: the fastest path OPFS offers, with file descriptors, and it works in every browser that has OPFS — including older Safari. You don't manage `Worker`, Comlink, or handles yourself. → [dedicated](docs/guides/dedicated.md)
-- **Async API for modern browsers / SharedWorkers.** Uses `createWritable()` — runs on the main thread or inside a SharedWorker, no dedicated worker needed. Safari 26+ for writes. → [async](docs/guides/async.md) · [sharedworker](docs/guides/sharedworker.md)
-- **Any way you want to run it.** Inlined dedicated worker, your own worker file, raw classes inside a worker you control, or one SharedWorker for every tab. Same methods in all of them. → [choosing a mode](docs/choosing-a-mode.md)
-- **Memory-friendly for big files.** Streaming support means you can pull in gigabyte-sized files without blowing RAM — `importStream` writes a `ReadableStream`, `Blob`, or `File` chunk by chunk, with optional progress callbacks. → [streaming](docs/guides/streaming.md)
-- **Cross-tab `watch()`.** Changes broadcast over `BroadcastChannel`, so listeners fire in every context that shares the filesystem. → [watching](docs/guides/watching.md)
-- **Built-in file hashing.** `stat()` can carry a cheap etag or a real SHA hash, with a size cap so big files don't get hashed by accident — handy for caching and diffing. → [hashing](docs/guides/hashing.md)
-- **Small and typed.** Full TypeScript types, ESM and CJS, two small runtime deps (`comlink`, `minimatch`) — and the async entry pulls in no worker code at all. → [types](docs/types.md)
+- **Facade API** — `readFile`, `writeFile`, `mkdir`, `stat`, `rename`, `copy`, `readDir`; encodings, extension-based detection, `string | URL` paths. → [facade](docs/api/facade.md)
+- **File descriptors** — `open` / `read` / `write` at an offset, plus `ftruncate` and `fsync`. → [file descriptors](docs/file-descriptors.md)
+- **Dedicated worker (default)** — `createOPFS()` uses sync access handles in a worker: fastest OPFS path, with FDs, including older Safari. → [dedicated](docs/guides/dedicated.md)
+- **Async / SharedWorker** — `createWritable()` on the main thread or in a SharedWorker. Safari 26+ for writes. → [async](docs/guides/async.md) · [sharedworker](docs/guides/sharedworker.md)
+- **Your own worker** — inlined dedicated worker, a prebuilt script, raw classes, or one SharedWorker for all tabs. → [choosing a mode](docs/choosing-a-mode.md)
+- **Streaming** — `importStream` writes a `ReadableStream`, `Blob`, or `File` in chunks, with optional progress. → [streaming](docs/guides/streaming.md)
+- **Watch** — changes over `BroadcastChannel` across contexts that share the filesystem. → [watching](docs/guides/watching.md)
+- **Hashing** — `stat()` can include an etag or a SHA hash, with a size cap for SHA. → [hashing](docs/guides/hashing.md)
+- **Types** — TypeScript types, ESM and CJS; two small deps (`comlink`, `minimatch`). The async entry does not pull in worker code. → [types](docs/types.md)
 
 ## Installation
 
@@ -77,20 +77,20 @@ Trade-offs (FDs, Safari, size, CSP): [Choosing a mode](docs/choosing-a-mode.md).
 ## Development
 
 ```bash
-bun install
-bun run build
-bun run test
-bun run lint
-bun run type-check
+npm install
+npm run build
+npm run test
+npm run lint
+npm run type-check
 ```
 
-Demo app: `bun run dev:demo` / `bun run build:demo` / `bun run preview`.
+Demo: `npm run dev:demo` / `npm run build:demo` / `npm run preview`.
 
 ## License
 
 MIT
 
-## 👤 Maintainer
+## Maintainer
 
 <img src="https://github.com/kachurun.png" width="100" height="100" alt="@kachurun's avatar">
 

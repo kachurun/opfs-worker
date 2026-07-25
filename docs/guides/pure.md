@@ -1,6 +1,6 @@
 # Pure classes
 
-Use the classes directly inside a worker (or thread) you already own. No nested worker, no Comlink `expose()` from this package — wiring to the main thread is on you.
+Use the classes inside a worker (or thread) you already own. This package does not spawn a nested worker or call Comlink `expose()` — main-thread wiring is yours.
 
 ```typescript
 import { OPFSSync, OPFSAsync } from 'opfs-worker/pure';
@@ -26,7 +26,7 @@ const fs = new OPFSSync({
 await fs.writeFile('/config.json', new TextEncoder().encode('{}'));
 ```
 
-`/pure` won’t hijack your worker’s message port.
+`/pure` does not take over your worker’s message port.
 
 ## OPFSAsync in a SharedWorker you write
 
@@ -41,6 +41,6 @@ onconnect = (e) => {
 };
 ```
 
-Or skip the boilerplate and use the [SharedWorker guide](./sharedworker.md).
+Or use the [SharedWorker guide](./sharedworker.md).
 
 Also: [backend API](../api/backend.md), [dedicated](./dedicated.md), [async](./async.md).

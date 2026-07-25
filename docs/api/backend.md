@@ -1,6 +1,6 @@
 # Backend API
 
-Classes from `opfs-worker/pure` (also re-exported from `/sync`, `/async`, `/sharedworker` where it makes sense). Bytes only — no encoding helpers.
+Classes from `opfs-worker/pure` (also re-exported from `/sync`, `/async`, `/sharedworker`). Bytes only — no encoding helpers.
 
 ```
 BaseOPFS     mkdir, stat, readDir, watch, index, createIndex, …
