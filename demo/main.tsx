@@ -1,15 +1,16 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { createRoot } from 'react-dom/client';
 import { javascript } from '@codemirror/lang-javascript';
-import { oneDark } from '@codemirror/theme-one-dark';
 import { EditorState } from '@codemirror/state';
+import { oneDark } from '@codemirror/theme-one-dark';
 import { EditorView } from '@codemirror/view';
 import CodeMirror from '@uiw/react-codemirror';
 import { ChevronsUpDown } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createRoot } from 'react-dom/client';
 import { FaGithub } from 'react-icons/fa';
 
 import { EventLog, formatWatchDetail, type LogEntry } from './EventLog';
 import { FileBrowser } from './FileBrowser';
+import { Inspector } from './Inspector';
 import {
     createDemoFs,
     formatBytes,
@@ -18,7 +19,6 @@ import {
     type DemoMode,
     type TreeNode,
 } from './fs';
-import { Inspector } from './Inspector';
 import './styles.css';
 
 import type { OPFSFacade, WatchEvent } from '../src';
@@ -90,7 +90,7 @@ const snippetChrome = EditorView.theme({
     },
 }, { dark: true });
 
-const MODE_IDS = new Set<string>(MODES.map((m) => m.id));
+const MODE_IDS = new Set<string>(MODES.map(m => m.id));
 const MODE_LS_KEY = 'opfs-worker-demo-mode';
 const FILE_LS_KEY = 'opfs-worker-demo-file';
 
@@ -268,10 +268,10 @@ function App() {
         const id = ++logId.current;
         const time = new Date().toLocaleTimeString();
 
-        setEntries((prev) => [...prev.slice(-499), { id, kind, time, message, detail }]);
+        setEntries(prev => [...prev.slice(-499), { id, kind, time, message, detail }]);
     }, []);
 
-    const refreshQuota = useCallback(async () => {
+    const refreshQuota = useCallback(async() => {
         if (!navigator.storage?.estimate) {
             return;
         }
@@ -284,7 +284,7 @@ function App() {
         });
     }, []);
 
-    const refreshTree = useCallback(async (instance?: OPFSFacade | null) => {
+    const refreshTree = useCallback(async(instance?: OPFSFacade | null) => {
         const current = instance ?? fsRef.current;
 
         if (!current) {
@@ -309,7 +309,7 @@ function App() {
                 }
             }
 
-            setRefreshToken((n) => n + 1);
+            setRefreshToken(n => n + 1);
             await refreshQuota();
         }
         catch (err) {
@@ -321,7 +321,7 @@ function App() {
     useEffect(() => {
         let cancelled = false;
 
-        const boot = async () => {
+        const boot = async() => {
             setReady(false);
             setError(null);
             unwatchRef.current?.();
@@ -392,7 +392,7 @@ function App() {
         return () => channel.close();
     }, [pushLog, refreshTree]);
 
-    const clearAll = async () => {
+    const clearAll = async() => {
         if (!fs) {
             return;
         }
@@ -415,7 +415,7 @@ function App() {
         ? Math.min(100, Math.round((quota.usage / quota.quota) * 100))
         : 0;
 
-    const modeInfo = MODES.find((m) => m.id === mode) ?? MODES[0];
+    const modeInfo = MODES.find(m => m.id === mode) ?? MODES[0]!;
     const snippetExtensions = useMemo(() => [
         oneDark,
         snippetChrome,
@@ -438,7 +438,7 @@ function App() {
                         title="GitHub"
                         aria-label="GitHub repository"
                     >
-                        <FaGithub size={14} />
+                        <FaGithub size={ 14 } />
                     </a>
                 </div>
 
@@ -446,27 +446,33 @@ function App() {
                     <label className="relative inline-flex items-center">
                         <select
                             className="select select-xs w-auto appearance-none pr-6"
-                            value={mode}
-                            onChange={(e) => setMode(e.target.value as DemoMode)}
+                            value={ mode }
+                            onChange={ e => setMode(e.target.value as DemoMode) }
                         >
-                            {MODES.map((m) => (
-                                <option key={m.id} value={m.id}>{m.label}</option>
+                            {MODES.map(m => (
+                                <option key={ m.id } value={ m.id }>{m.label}</option>
                             ))}
                         </select>
-                        <ChevronsUpDown size={12} className="pointer-events-none absolute right-1.5 opacity-50" />
+                        <ChevronsUpDown size={ 12 } className="pointer-events-none absolute right-1.5 opacity-50" />
                     </label>
                 </div>
 
                 <div className="ml-auto flex shrink-0 items-center gap-2">
                     {!ready && !error && <span className="loading loading-spinner loading-xs" />}
-                    {error && <span className="text-[11px] text-error" title={error}>init failed</span>}
+                    {error && <span className="text-[11px] text-error" title={ error }>init failed</span>}
                     {quota && (
                         <div className="flex min-w-[10rem] max-w-xs flex-col justify-center gap-0.5">
                             <div className="flex justify-between text-[10px] leading-none opacity-50">
                                 <span>OPFS quota</span>
-                                <span>{formatBytes(quota.usage)} / {formatBytes(quota.quota)}</span>
+                                <span>
+                                    {formatBytes(quota.usage)}
+                                    {' '}
+                                    /
+                                    {' '}
+                                    {formatBytes(quota.quota)}
+                                </span>
                             </div>
-                            <progress className="progress progress-primary h-1" value={quotaPct} max={100} />
+                            <progress className="progress progress-primary h-1" value={ quotaPct } max={ 100 } />
                         </div>
                     )}
                 </div>
@@ -481,13 +487,13 @@ function App() {
                         <button
                             type="button"
                             className="text-[11px] font-medium text-primary hover:underline"
-                            onClick={() => setShowCode((open) => !open)}
+                            onClick={ () => setShowCode(open => !open) }
                         >
                             {showCode ? 'Hide code' : 'Show code'}
                         </button>
                         <a
                             className="text-[11px] opacity-60 hover:opacity-100 hover:underline"
-                            href={modeInfo.guide}
+                            href={ modeInfo.guide }
                             target="_blank"
                             rel="noreferrer"
                         >
@@ -498,16 +504,16 @@ function App() {
                 {showCode && (
                     <div className="max-h-56 overflow-auto border-t border-base-300 bg-base-300/30 px-1">
                         <CodeMirror
-                            value={modeInfo.code}
+                            value={ modeInfo.code }
                             theme="none"
-                            basicSetup={{
+                            basicSetup={ {
                                 lineNumbers: false,
                                 foldGutter: false,
                                 highlightActiveLine: false,
                                 highlightSelectionMatches: false,
-                            }}
-                            extensions={snippetExtensions}
-                            editable={false}
+                            } }
+                            extensions={ snippetExtensions }
+                            editable={ false }
                             readOnly
                         />
                     </div>
@@ -519,37 +525,37 @@ function App() {
                     <div className="min-h-0">
                         {fs && (
                             <FileBrowser
-                                fs={fs}
-                                tree={tree}
-                                selectedPath={selectedPath}
-                                selectedKind={selectedKind}
-                                uploadProgress={uploadProgress}
-                                onUploadProgress={setUploadProgress}
-                                onSelect={(path, kind) => {
+                                fs={ fs }
+                                tree={ tree }
+                                selectedPath={ selectedPath }
+                                selectedKind={ selectedKind }
+                                uploadProgress={ uploadProgress }
+                                onUploadProgress={ setUploadProgress }
+                                onSelect={ (path, kind) => {
                                     selectPath(path, kind);
-                                }}
-                                onRefresh={() => void refreshTree()}
-                                onReset={() => void clearAll()}
-                                onLog={pushLog}
+                                } }
+                                onRefresh={ () => void refreshTree() }
+                                onReset={ () => void clearAll() }
+                                onLog={ pushLog }
                             />
                         )}
                     </div>
                     <div className="min-h-0">
                         {fs && (
                             <Inspector
-                                fs={fs}
-                                path={selectedPath}
-                                kind={selectedKind}
-                                refreshToken={refreshToken}
-                                onLog={pushLog}
-                                onRefresh={() => void refreshTree()}
+                                fs={ fs }
+                                path={ selectedPath }
+                                kind={ selectedKind }
+                                refreshToken={ refreshToken }
+                                onLog={ pushLog }
+                                onRefresh={ () => void refreshTree() }
                             />
                         )}
                     </div>
                 </div>
                 <EventLog
-                    entries={entries}
-                    onClear={() => setEntries([])}
+                    entries={ entries }
+                    onClear={ () => setEntries([]) }
                 />
             </div>
         </div>
