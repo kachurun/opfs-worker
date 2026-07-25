@@ -1,6 +1,4 @@
-import { transfer } from 'comlink';
-
-import { WatchEventType } from './types';
+import { WatchEventType } from '../types';
 import {
     AlreadyExistsError,
     DirectoryOperationError,
@@ -11,18 +9,14 @@ import {
     OPFSError,
     OperationNotSupportedError,
     PathError,
-    ValidationError,
-    createFDError,
     mapDomError
-} from './utils/errors';
+} from '../utils/errors';
 
 import {
     basename,
     calculateFileHash,
-    calculateReadLength,
     checkOPFSSupport,
     convertBlobToUint8Array,
-    createSyncHandleSafe,
     dirname,
     joinPath,
     matchMinimatch,
@@ -30,83 +24,38 @@ import {
     normalizePath,
     removeEntry,
     resolvePath,
-    safeCloseSyncHandle,
-    splitPath,
-    validateReadWriteArgs,
-    withLock
-} from './utils/helpers';
+    splitPath
+} from '../utils/helpers';
 
-import type { DirentData, FileOpenOptions, FileStat, OPFSOptions, RenameOptions, WatchEvent, WatchOptions, WatchSnapshot } from './types';
+import type { DirentData, FileStat, OPFSOptions, RenameOptions, WatchEvent, WatchOptions, WatchSnapshot } from '../types';
 
 
 /**
- * OPFS (Origin Private File System) File System implementation
- * 
- * This class provides a high-level interface for working with the browser's
- * Origin Private File System API, offering file and directory operations
- * similar to Node.js fs module.
- * 
- * @example
- * ```typescript
- * const fs = new OPFSWorker();
- * await fs.writeFile('/data/config.json', new TextEncoder().encode(JSON.stringify({ theme: 'dark' })));
- * const config = await fs.readFile('/data/config.json');
- * ```
+ * Shared OPFS logic (directories, meta, watch, high-level helpers).
+ * File I/O backends implement {@link readFile}, {@link writeFile}, {@link appendFile},
+ * and {@link writeStream}.
  */
-export class OPFSWorker {
+export abstract class BaseOPFS {
     /** Root directory handle for the file system */
-    private root!: FileSystemDirectoryHandle;
+    protected root!: FileSystemDirectoryHandle;
 
     /** Map of watched paths and options */
-    private watchers = new Map<string, WatchSnapshot>();
+    protected watchers = new Map<string, WatchSnapshot>();
 
     /** Promise to prevent concurrent mount operations */
-    private mountingPromise: Promise<boolean> | null = null;
+    protected mountingPromise: Promise<boolean> | null = null;
 
     /** BroadcastChannel instance for sending events */
-    private broadcastChannel: BroadcastChannel | null = null;
+    protected broadcastChannel: BroadcastChannel | null = null;
 
     /** Configuration options */
-    private options: Required<OPFSOptions> = {
+    protected options: Required<OPFSOptions> = {
         root: '/',
         namespace: '',
         maxFileSize: 50 * 1024 * 1024,
         hashAlgorithm: 'etag',
         broadcastChannel: 'opfs-worker',
     };
-
-    /** Shared sync handles per path (OPFS allows only one handle per file) */
-    private openHandles = new Map<string, {
-        fileHandle: FileSystemFileHandle;
-        syncHandle: FileSystemSyncAccessHandle;
-        refCount: number;
-    }>();
-
-    /** Map of open file descriptors to their metadata */
-    private openFiles = new Map<number, {
-        path: string;
-        fileHandle: FileSystemFileHandle;
-        syncHandle: FileSystemSyncAccessHandle;
-        position: number;
-    }>();
-
-    /** Next available file descriptor number */
-    private nextFd = 1;
-
-    /**
-     * Get file info by descriptor with validation
-     * @private
-     */
-    private _getFileDescriptor(fd: number): { path: string; fileHandle: FileSystemFileHandle; syncHandle: FileSystemSyncAccessHandle; position: number } {
-        const fileInfo = this.openFiles.get(fd);
-
-        if (!fileInfo) {
-            throw new ValidationError('descriptor', `Invalid file descriptor: ${ fd }`);
-        }
-
-        return fileInfo;
-    }
-
 
     /**
      * Notify about internal changes to the file system
@@ -116,7 +65,7 @@ export class OPFSWorker {
      * 
      * @param event - The event describing the change
      */
-    private async notifyChange(event: Omit<WatchEvent, 'timestamp' | 'hash' | 'namespace'>): Promise<void> {
+    protected async notifyChange(event: Omit<WatchEvent, 'timestamp' | 'hash' | 'namespace'>): Promise<void> {
         // This instance not configured to send events
         if (!this.options.broadcastChannel) {
             return;
@@ -167,16 +116,6 @@ export class OPFSWorker {
         }
     }
 
-    /**
-     * Creates a new OPFSWorker instance
-     * 
-     * @param options - Optional configuration options
-     * @param options.root - Root path for the file system (default: '/')
-     * @param options.watchInterval - Polling interval in milliseconds for file watching
-     * @param options.hashAlgorithm - Hash algorithm for file hashing
-     * @param options.maxFileSize - Maximum file size for hashing in bytes (default: 50MB)
-     * @throws {OPFSError} If OPFS is not supported in the current browser
-     */
     constructor(options?: OPFSOptions) {
         checkOPFSSupport();
 
@@ -185,27 +124,27 @@ export class OPFSWorker {
         }
     }
 
+    /** Read file contents as bytes */
+    abstract readFile(path: string): Promise<Uint8Array>;
+
+    /** Create or overwrite a file with binary data */
+    abstract writeFile(path: string, data: Uint8Array | ArrayBuffer): Promise<void>;
+
+    /** Append binary data to a file */
+    abstract appendFile(path: string, data: Uint8Array | ArrayBuffer): Promise<void>;
+
+    /** Create or overwrite a file from a byte stream */
+    abstract writeStream(
+        path: string,
+        stream: ReadableStream<Uint8Array>,
+        onProgress?: (bytesWritten: number) => unknown
+    ): Promise<number>;
+
     /**
-     * Initialize the file system within a given directory
-     * 
-     * This method sets up the root directory for all subsequent operations.
-     * If no root is specified, it will use the OPFS root directory.
-     * 
-     * @returns Promise that resolves to true if initialization was successful
-     * @throws {OPFSError} If initialization fails
-     * 
-     * @example
-     * ```typescript
-     * const fs = new OPFSWorker();
-     * 
-     * // Use OPFS root (default)
-     * await fs.mount();
-     * 
-     * // Use custom directory
-     * await fs.mount('/my-app');
-     * ```
+     * Initialize the file system within a given directory.
+     * If no root is specified, uses the OPFS root directory.
      */
-    private async mount(): Promise<boolean> {
+    protected async mount(): Promise<boolean> {
         const root = this.options.root;
 
         // If already mounting, wait for previous operation to complete first
@@ -296,7 +235,7 @@ export class OPFSWorker {
      * const docsDir2 = await fs.getDirectoryHandle(['users', 'john', 'documents'], true);
      * ```
      */
-    private async getDirectoryHandle(path: string | string[], create: boolean = false, from: FileSystemDirectoryHandle | null = this.root): Promise<FileSystemDirectoryHandle> {
+    protected async getDirectoryHandle(path: string | string[], create: boolean = false, from: FileSystemDirectoryHandle | null = this.root): Promise<FileSystemDirectoryHandle> {
         const segments = Array.isArray(path) ? path : splitPath(path);
         let current = from;
 
@@ -326,7 +265,7 @@ export class OPFSWorker {
      * const fileHandle2 = await fs.getFileHandle(['config', 'settings.json'], true);
      * ```
      */
-    private async getFileHandle(path: string | string[], create = false, _from: FileSystemDirectoryHandle | null = this.root): Promise<FileSystemFileHandle> {
+    protected async getFileHandle(path: string | string[], create = false, _from: FileSystemDirectoryHandle | null = this.root): Promise<FileSystemFileHandle> {
         const segments = splitPath(path);
 
         if (segments.length === 0) {
@@ -394,149 +333,6 @@ export class OPFSWorker {
         await walk('/');
 
         return result;
-    }
-
-    /**
-     * Read a file from the file system
-     * 
-     * Reads the contents of a file and returns it as binary data.
-     * 
-     * @param path - The path to the file to read
-     * @returns Promise that resolves to the file contents as Uint8Array
-     * @throws {FileNotFoundError} If the file does not exist
-     * @throws {OPFSError} If reading the file fails
-     * 
-     * @example
-     * ```typescript
-     * // Read as binary data
-     * const content = await fs.readFile('/config/settings.json');
-     * 
-     * // Read binary file
-     * const binaryData = await fs.readFile('/images/logo.png');
-     * ```
-     */
-    async readFile(path: string): Promise<Uint8Array> {
-        await this.mount();
-
-        try {
-            return await withLock(path, async() => {
-                const fd = await this.open(path);
-
-                try {
-                    const { size } = await this.fstat(fd);
-                    const buffer = new Uint8Array(size);
-
-                    if (size > 0) {
-                        await this.read(fd, buffer, 0, size, 0);
-                    }
-
-                    return transfer(buffer, [buffer.buffer]);
-                }
-                finally {
-                    await this.close(fd);
-                }
-            });
-        }
-        catch (err) {
-            if (err instanceof OPFSError) {
-                throw err;
-            }
-
-            throw mapDomError(err, { path, isDirectory: false });
-        }
-    }
-
-    /**
-     * Write data to a file
-     * 
-     * Creates or overwrites a file with the specified binary data. If the file already
-     * exists, it will be truncated before writing.
-     * 
-     * @param path - The path to the file to write
-     * @param data - The binary data to write to the file (Uint8Array or ArrayBuffer)
-     * @returns Promise that resolves when the write operation is complete
-     * @throws {OPFSError} If writing the file fails
-     * 
-     * @example
-     * ```typescript
-     * // Write binary data
-     * const binaryData = new Uint8Array([1, 2, 3, 4, 5]);
-     * await fs.writeFile('/data/binary.dat', binaryData);
-     * 
-     * // Write from ArrayBuffer
-     * const arrayBuffer = new ArrayBuffer(10);
-     * await fs.writeFile('/data/buffer.dat', arrayBuffer);
-     * ```
-     */
-    async writeFile(
-        path: string,
-        data: Uint8Array | ArrayBuffer
-    ): Promise<void> {
-        await this.mount();
-
-        const buffer = data instanceof Uint8Array ? data : new Uint8Array(data);
-
-        await withLock(path, async() => {
-            const existed = await this.exists(path);
-            const fd = await this.open(path, { create: true, truncate: true });
-
-            try {
-                await this.write(fd, buffer, 0, buffer.length, null, false);
-                await this.fsync(fd);
-            }
-            finally {
-                await this.close(fd);
-            }
-
-            await this.notifyChange({ path, type: existed ? WatchEventType.Changed : WatchEventType.Added, isDirectory: false });
-        });
-    }
-
-    /**
-     * Append data to a file
-     * 
-     * Adds binary data to the end of an existing file. If the file doesn't exist,
-     * it will be created.
-     * 
-     * @param path - The path to the file to append to
-     * @param data - The binary data to append to the file (Uint8Array or ArrayBuffer)
-     * @returns Promise that resolves when the append operation is complete
-     * @throws {OPFSError} If appending to the file fails
-     * 
-     * @example
-     * ```typescript
-     * // Append binary data
-     * const additionalData = new Uint8Array([6, 7, 8]);
-     * await fs.appendFile('/data/binary.dat', additionalData);
-     * 
-     * // Append from ArrayBuffer
-     * const arrayBuffer = new ArrayBuffer(5);
-     * await fs.appendFile('/data/buffer.dat', arrayBuffer);
-     * ```
-     */
-    async appendFile(
-        path: string,
-        data: Uint8Array | ArrayBuffer
-    ): Promise<void> {
-        await this.mount();
-
-        const buffer = data instanceof Uint8Array ? data : new Uint8Array(data);
-
-        await withLock(path, async() => {
-            const fd = await this.open(path, { create: true });
-
-            try {
-                const { size } = await this.fstat(fd);
-
-                await this.write(fd, buffer, 0, buffer.length, size, false);
-                await this.fsync(fd);
-            }
-            finally {
-                await this.close(fd);
-            }
-
-            await this.notifyChange({ path, type: WatchEventType.Changed, isDirectory: false });
-        });
     }
 
     /**
@@ -1095,419 +891,18 @@ export class OPFSWorker {
     }
 
     /**
-     * Open a file and return a file descriptor
-     * 
-     * @param path - The path to the file to open
-     * @param options - Options for opening the file
-     * @param options.create - Whether to create the file if it doesn't exist (default: false)
-     * @param options.exclusive - If true and create is true, fails if file already exists (default: false)
-     *                            Note: This is best-effort in OPFS, not fully atomic due to browser limitations
-     * @param options.truncate - Whether to truncate the file to zero length (default: false)
-     * @returns Promise that resolves to a file descriptor number
-     * @throws {OPFSError} If opening the file fails
-     * 
-     * @example
-     * ```typescript
-     * // Open existing file for reading
-     * const fd = await fs.open('/data/config.json');
-     * 
-     * // Create new file for writing
-     * const fd = await fs.open('/data/new.txt', { create: true });
-     * 
-     * // Create file exclusively (fails if exists)
-     * const fd = await fs.open('/data/unique.txt', { create: true, exclusive: true });
-     * 
-     * // Open and truncate file
-     * const fd = await fs.open('/data/log.txt', { create: true, truncate: true });
-     * ```
-     */
-    async open(path: string, options?: FileOpenOptions): Promise<number> {
-        await this.mount();
-
-        const { create = false, exclusive = false, truncate = false } = options || {};
-
-        // Normalize path to prevent path-related issues
-        const normalizedPath = normalizePath(resolvePath(path));
-
-        try {
-            // Use lock for atomic operations when creating files
-            if (create && exclusive) {
-                return await withLock(normalizedPath, async() => {
-                    const exists = await this.exists(normalizedPath);
-
-                    if (exists) {
-                        throw new AlreadyExistsError(normalizedPath);
-                    }
-
-                    return this._openFile(normalizedPath, create, truncate);
-                });
-            }
-
-            return await this._openFile(normalizedPath, create, truncate);
-        }
-        catch (error: any) {
-            if (error instanceof OPFSError) {
-                throw error;
-            }
-
-            // TypeMismatchError here means the path actually refers to a directory
-            // so we map it as a directory-type error (EISDIR) for better Node.js parity.
-            const isTypeMismatchDirectory = error && error.name === 'TypeMismatchError';
-
-            throw mapDomError(error, {
-                path: normalizedPath,
-                isDirectory: !!isTypeMismatchDirectory,
-            });
-        }
-    }
-
-    /**
-     * Internal method to open a file (without locking)
+     * Bulk-create files from `[path, data]` entries (strings, bytes, or Blobs).
      *
-     * Multiple FDs for the same path share one sync access handle (OPFS limit),
-     * with independent per-FD positions — similar to Node.js.
-     * @private
-     */
-    private async _openFile(path: string, create: boolean, truncate: boolean): Promise<number> {
-        let shared = this.openHandles.get(path);
-
-        if (!shared) {
-            const fileHandle = await this.getFileHandle(path, create);
-
-            // Verify that we got a file handle, not a directory
-            try {
-                await fileHandle.getFile();
-            }
-            catch (error: any) {
-                throw mapDomError(error, { path, isDirectory: true });
-            }
-
-            const syncHandle = await createSyncHandleSafe(fileHandle, path);
-
-            shared = { fileHandle, syncHandle, refCount: 0 };
-            this.openHandles.set(path, shared);
-        }
-
-        shared.refCount++;
-
-        if (truncate) {
-            shared.syncHandle.truncate(0);
-            shared.syncHandle.flush();
-        }
-
-        const fd = this.nextFd++;
-
-        this.openFiles.set(fd, {
-            path,
-            fileHandle: shared.fileHandle,
-            syncHandle: shared.syncHandle,
-            position: 0,
-        });
-
-        return fd;
-    }
-
-    /**
-     * Close a file descriptor
-     * 
-     * @param fd - The file descriptor to close
-     * @returns Promise that resolves when the file descriptor is closed
-     * @throws {OPFSError} If the file descriptor is invalid or closing fails
-     * 
-     * @example
-     * ```typescript
-     * const fd = await fs.open('/data/file.txt');
-     * // ... use the file descriptor ...
-     * await fs.close(fd);
-     * ```
-     */
-    async close(fd: number): Promise<void> {
-        const fileInfo = this._getFileDescriptor(fd);
-
-        this.openFiles.delete(fd);
-
-        const shared = this.openHandles.get(fileInfo.path);
-
-        if (!shared) {
-            return;
-        }
-
-        shared.refCount--;
-
-        // Only close the underlying sync handle when the last FD for this path is gone
-        if (shared.refCount <= 0) {
-            safeCloseSyncHandle(fd, shared.syncHandle, fileInfo.path);
-            this.openHandles.delete(fileInfo.path);
-        }
-    }
-
-    /**
-     * Read data from a file descriptor
-     * 
-     * @param fd - The file descriptor to read from
-     * @param buffer - The buffer to read data into
-     * @param offset - The offset in the buffer to start writing at
-     * @param length - The number of bytes to read
-     * @param position - The position in the file to read from (null for current position)
-     * @returns Promise that resolves to the number of bytes read and the modified buffer
-     * @throws {OPFSError} If the file descriptor is invalid or reading fails
-     * 
-     * @note This method uses Comlink.transfer() to efficiently pass the buffer as a Transferable Object,
-     *       ensuring zero-copy performance across Web Worker boundaries.
-     * 
-     * @example
-     * ```typescript
-     * const fd = await fs.open('/data/file.txt');
-     * const buffer = new Uint8Array(1024);
-     * const { bytesRead, buffer: modifiedBuffer } = await fs.read(fd, buffer, 0, 1024, null);
-     * console.log(`Read ${bytesRead} bytes`);
-     * // Use modifiedBuffer which contains the actual data
-     * await fs.close(fd);
-     * ```
-     */
-    async read(
-        fd: number,
-        buffer: Uint8Array,
-        offset: number,
-        length: number,
-        position: number | null | undefined
-    ): Promise<{ bytesRead: number; buffer: Uint8Array }> {
-        const fileInfo = this._getFileDescriptor(fd);
-
-        // Validate arguments
-        validateReadWriteArgs(buffer.length, offset, length, position);
-
-        try {
-            const readPosition = position ?? fileInfo.position;
-
-            // Get file size and calculate read length
-            const fileSize = fileInfo.syncHandle.getSize();
-            const { isEOF, actualLength } = calculateReadLength(readPosition, length, fileSize);
-
-            if (isEOF) {
-                return transfer({ bytesRead: 0, buffer }, [buffer.buffer]); // End of file
-            }
-
-            // Create a subarray view for the read operation
-            const targetBuffer = buffer.subarray(offset, offset + actualLength);
-
-            // Perform efficient positioned read
-            const bytesRead = fileInfo.syncHandle.read(targetBuffer, { at: readPosition });
-
-            // Update position if position was not explicitly specified (null means use current position)
-            if (position == null) {
-                fileInfo.position = readPosition + bytesRead;
-            }
-
-            return transfer({ bytesRead, buffer }, [buffer.buffer]);
-        }
-        catch (error) {
-            throw createFDError('read', fd, fileInfo.path, error);
-        }
-    }
-
-    /**
-     * Write data to a file descriptor
-     * 
-     * @param fd - The file descriptor to write to
-     * @param buffer - The buffer containing data to write
-     * @param offset - The offset in the buffer to start reading from (default: 0)
-     * @param length - The number of bytes to write (default: entire buffer)
-     * @param position - The position in the file to write to (null/undefined for current position)
-     * @param emitEvent - Whether to emit a change event (default: true)
-     * @returns Promise that resolves to the number of bytes written
-     * @throws {OPFSError} If the file descriptor is invalid or writing fails
+     * @param entries - Array of `[path, data]` tuples
+     * @throws {OPFSError} If a write fails
      *
      * @example
      * ```typescript
-     * const fd = await fs.open('/data/file.txt', { create: true });
-     * const data = new TextEncoder().encode('Hello, World!');
-     * const bytesWritten = await fs.write(fd, data, 0, data.length, null);
-     * console.log(`Wrote ${bytesWritten} bytes`);
-     * await fs.close(fd);
-     * ```
-     */
-    async write(
-        fd: number,
-        buffer: Uint8Array,
-        offset: number = 0,
-        length?: number,
-        position?: number | null | undefined,
-        emitEvent: boolean = true
-    ): Promise<number> {
-        const fileInfo = this._getFileDescriptor(fd);
-
-        // Calculate actual length to write
-        const actualLength = length ?? (buffer.length - offset);
-
-        // Validate arguments using helper
-        validateReadWriteArgs(buffer.length, offset, actualLength, position);
-
-        try {
-            // Determine write position: use specified position, or current position if null/undefined
-            const writePosition = position ?? fileInfo.position;
-
-            // Create a subarray view for the write operation
-            const sourceBuffer = buffer.subarray(offset, offset + actualLength);
-
-            // Perform efficient positioned write
-            const bytesWritten = fileInfo.syncHandle.write(sourceBuffer, { at: writePosition });
-
-            // Update position if position was null or undefined (i.e., use current position)
-            // Also update position when writing at current position (position === fileInfo.position)
-            if (position == null || position === fileInfo.position) {
-                fileInfo.position = writePosition + bytesWritten;
-            }
-
-            if (emitEvent) {
-                await this.notifyChange({ path: fileInfo.path, type: WatchEventType.Changed, isDirectory: false });
-            }
-
-            return bytesWritten;
-        }
-        catch (error) {
-            throw createFDError('write', fd, fileInfo.path, error);
-        }
-    }
-
-    /**
-     * Get file status information by file descriptor
-     * 
-     * @param fd - The file descriptor
-     * @returns Promise that resolves to FileStat object
-     * @throws {OPFSError} If the file descriptor is invalid
-     * 
-     * @example
-     * ```typescript
-     * const fd = await fs.open('/data/file.txt');
-     * const stats = await fs.fstat(fd);
-     * console.log(`File size: ${stats.size} bytes`);
-     * console.log(`Last modified: ${stats.mtime}`);
-     * 
-     * // If hashing is enabled, hash will be included
-     * if (stats.hash) {
-     *   console.log(`Hash: ${stats.hash}`);
-     * }
-     * ```
-     */
-    async fstat(fd: number): Promise<FileStat> {
-        const fileInfo = this._getFileDescriptor(fd);
-
-        // Simply reuse existing stat() method with the file path
-        return this.stat(fileInfo.path);
-    }
-
-    /**
-     * Truncate file to specified size
-     * 
-     * @param fd - The file descriptor
-     * @param size - The new size of the file (default: 0)
-     * @returns Promise that resolves when truncation is complete
-     * @throws {OPFSError} If the file descriptor is invalid or truncation fails
-     * 
-     * @example
-     * ```typescript
-     * const fd = await fs.open('/data/file.txt', { create: true });
-     * await fs.truncate(fd, 100); // Truncate to 100 bytes
-     * ```
-     */
-    async ftruncate(fd: number, size: number = 0): Promise<void> {
-        const fileInfo = this._getFileDescriptor(fd);
-
-        // Validate size parameter
-        if (size < 0 || !Number.isInteger(size)) {
-            throw new ValidationError('argument', 'Invalid size');
-        }
-
-        try {
-            fileInfo.syncHandle.truncate(size);
-            fileInfo.syncHandle.flush();
-
-            // Adjust position if it's beyond the new file size
-            if (fileInfo.position > size) {
-                fileInfo.position = size;
-            }
-
-            await this.notifyChange({ path: fileInfo.path, type: WatchEventType.Changed, isDirectory: false });
-        }
-        catch (error) {
-            throw createFDError('truncate', fd, fileInfo.path, error);
-        }
-    }
-
-    /**
-     * Synchronize file data to storage (fsync equivalent)
-     * 
-     * @param fd - The file descriptor
-     * @returns Promise that resolves when synchronization is complete
-     * @throws {OPFSError} If the file descriptor is invalid or sync fails
-     * 
-     * @example
-     * ```typescript
-     * const fd = await fs.open('/data/file.txt', { create: true });
-     * await fs.write(fd, data);
-     * await fs.fsync(fd); // Ensure data is written to storage
-     * ```
-     */
-    async fsync(fd: number): Promise<void> {
-        const fileInfo = this._getFileDescriptor(fd);
-
-        try {
-            fileInfo.syncHandle.flush();
-        }
-        catch (error) {
-            throw createFDError('sync', fd, fileInfo.path, error);
-        }
-    }
-
-    /**
-     * Dispose of resources and clean up the file system instance
-     * 
-     * This method should be called when the file system instance is no longer needed
-     * to properly clean up resources like the broadcast channel and watch timers.
-     */
-    dispose(): void {
-        if (this.broadcastChannel) {
-            this.broadcastChannel.close();
-            this.broadcastChannel = null;
-        }
-
-        this.watchers.clear();
-
-        // Close each shared sync handle once (not per FD)
-        for (const [path, shared] of this.openHandles) {
-            safeCloseSyncHandle(-1, shared.syncHandle, path);
-        }
-
-        this.openHandles.clear();
-        this.openFiles.clear();
-        this.nextFd = 1;
-    }
-
-    /**
-     * Synchronize the file system with external data
-     * 
-     * Syncs the file system with an array of entries containing paths and data.
-     * This is useful for importing data from external sources or syncing with remote data.
-     * 
-     * @param entries - Array of [path, data] tuples to sync
-     * @returns Promise that resolves when synchronization is complete
-     * @throws {OPFSError} If the synchronization fails
-     * 
-     * @example
-     * ```typescript
-     * // Sync with external data
-     * const entries: [string, string | Uint8Array | Blob][] = [
+     * await fs.createIndex([
      *   ['/config.json', JSON.stringify({ theme: 'dark' })],
      *   ['/data/binary.dat', new Uint8Array([1, 2, 3, 4])],
-     *   ['/upload.txt', new Blob(['file content'], { type: 'text/plain' })]
-     * ];
-     * 
-     * // Sync without clearing existing files
-     * await fs.sync(entries);
-     * 
-     * // Clean file system and then sync
-     * await fs.sync(entries, { cleanBefore: true });
+     *   ['/upload.txt', new Blob(['file content'], { type: 'text/plain' })],
+     * ]);
      * ```
      */
     async createIndex(entries: [string, string | Uint8Array | Blob][]): Promise<void> {
@@ -1540,5 +935,17 @@ export class OPFSWorker {
 
             throw mapDomError(error);
         }
+    }
+
+    /**
+     * Dispose of resources and clean up the file system instance
+     */
+    dispose(): void {
+        if (this.broadcastChannel) {
+            this.broadcastChannel.close();
+            this.broadcastChannel = null;
+        }
+
+        this.watchers.clear();
     }
 }

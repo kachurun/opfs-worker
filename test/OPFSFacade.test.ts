@@ -1,22 +1,24 @@
 import { promises as fsp } from 'node:fs';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
-import { createOPFSWorker } from '../src/createOPFSWorker';
-import { OPFSFacade } from '../src/OPFSFacade';
-import { OPFSWorker } from '../src/OPFSWorker';
+import { createDedicatedWorker } from '../src/worker/createDedicatedWorker';
+import { createOPFSDedicated } from '../src/index';
+import { OPFSSync } from '../src/core/OPFSSync';
 
-import type { RawWorker } from '../src/createOPFSWorker';
-import type { RemoteOPFSWorker } from '../src/types';
+import type { OPFSFacade } from '../src/facade/OPFSFacade';
 
-vi.mock('../src/createOPFSWorker', () => ({
-  createOPFSWorker: vi.fn(),
+import type { RawWorker } from '../src/worker/createDedicatedWorker';
+import type { OPFSOptions } from '../src/types';
+
+vi.mock('../src/worker/createDedicatedWorker', () => ({
+  createDedicatedWorker: vi.fn(),
 }));
 
 const rootDir = (globalThis as any).__OPFS_ROOT__ as string;
 
-function rawWorkerFor(worker: OPFSWorker, terminate: () => void): RawWorker {
+function rawWorkerFor(worker: OPFSSync, terminate: () => void): RawWorker {
   return {
-    fs: worker as unknown as RemoteOPFSWorker,
+    fs: worker as unknown as RawWorker['fs'],
     worker: { terminate } as unknown as Worker,
     dispose() {
       void worker.dispose();
@@ -25,14 +27,14 @@ function rawWorkerFor(worker: OPFSWorker, terminate: () => void): RawWorker {
   };
 }
 
-function createFacade(options?: ConstructorParameters<typeof OPFSFacade>[0]) {
-  const worker = new OPFSWorker(options ?? { root: '/' });
+function createFacade(options?: OPFSOptions) {
+  const worker = new OPFSSync(options ?? { root: '/' });
   const terminate = vi.fn();
   const raw = rawWorkerFor(worker, terminate);
 
-  vi.mocked(createOPFSWorker).mockReturnValue(raw);
+  vi.mocked(createDedicatedWorker).mockReturnValue(raw);
 
-  const fs = new OPFSFacade(options);
+  const fs = createOPFSDedicated(options);
 
   return { fs, worker, terminate };
 }
@@ -52,19 +54,27 @@ describe('OPFSFacade', () => {
   afterEach(async () => {
     await fs.clear('/');
     fs.dispose();
-    vi.mocked(createOPFSWorker).mockReset();
+    vi.mocked(createDedicatedWorker).mockReset();
   });
 
   it('exposes promises alias to itself', () => {
     expect(fs.promises).toBe(fs);
   });
 
-  it('forwards options to createOPFSWorker', () => {
+  it('exposes backend and worker', () => {
+    const { fs: local, worker, terminate: term } = createFacade({ root: '/' });
+
+    expect(local.backend).toBe(worker);
+    expect(local.worker).toEqual({ terminate: term });
+    local.dispose();
+  });
+
+  it('forwards options to createDedicatedWorker', () => {
     const channel = new BroadcastChannel('facade-bc');
 
     createFacade({ root: '/', broadcastChannel: channel });
 
-    expect(createOPFSWorker).toHaveBeenCalledWith(
+    expect(createDedicatedWorker).toHaveBeenCalledWith(
       expect.objectContaining({ root: '/', broadcastChannel: channel })
     );
 

@@ -1,6 +1,6 @@
 # Types
 
-This document contains all TypeScript types and interfaces provided by OPFS Worker.
+TypeScript types shipped with the package.
 
 ## Core Types
 
@@ -68,21 +68,35 @@ interface WatchOptions {
 - `include`: Glob patterns to include in watching (default: all files)
 - `exclude`: Glob patterns to exclude from watching (default: none)
 
-### `RemoteOPFSWorker`
+### `OPFSApi`
 
-Remote file system interface type for Comlink communication.
+Promise-based fs API surface shared by all backends — a Comlink proxy to `OPFSSync` in a worker, or an in-process `OPFSAsync` instance. This is what `OPFSFacade` talks to (see `OPFSBackend` in [Create helpers](./api/create.md)).
 
 ```typescript
-type RemoteOPFSWorker = Remote<OPFSWorker>;
+type OPFSApi = { [K in keyof OPFSSync]: OPFSSync[K] };
 ```
 
-This type represents the remote interface when using the worker with Comlink.
+### `PathLike`
+
+```typescript
+type PathLike = string | URL;
+```
+
+### `FileOpenOptions`
+
+```typescript
+interface FileOpenOptions {
+    create?: boolean;
+    exclusive?: boolean;
+    truncate?: boolean;
+}
+```
 
 ## Configuration Types
 
 ### `OPFSOptions`
 
-Configuration options for creating an OPFS Worker instance.
+Configuration for all backends. Human-readable table: [Create helpers → Options](./api/create.md#options).
 
 ```typescript
 interface OPFSOptions {

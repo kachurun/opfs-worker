@@ -8,6 +8,9 @@ export default defineConfig({
             entry: {
                 index: resolve(__dirname, 'src/index.ts'),
                 'index.pure': resolve(__dirname, 'src/index.pure.ts'),
+                'index.sync': resolve(__dirname, 'src/index.sync.ts'),
+                'index.async': resolve(__dirname, 'src/index.async.ts'),
+                'index.sharedworker': resolve(__dirname, 'src/index.sharedworker.ts'),
             },
             name: 'opfs-worker',
             formats: ['es', 'cjs'],

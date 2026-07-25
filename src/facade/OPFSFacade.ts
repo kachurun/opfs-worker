@@ -1,5 +1,6 @@
-import { createOPFSWorker } from './createOPFSWorker';
-import { decodeBuffer, encodeString, isBinaryFileExtension } from './utils/encoder';
+import { proxy, transfer } from 'comlink';
+
+import { decodeBuffer, encodeString, isBinaryFileExtension } from '../utils/encoder';
 
 import type {
     BinaryEncoding,
@@ -7,13 +8,13 @@ import type {
     Encoding,
     FileOpenOptions,
     FileStat,
+    OPFSApi,
     OPFSOptions,
     PathLike,
-    RemoteOPFSWorker,
     RenameOptions,
     StringEncoding,
     WatchOptions
-} from './types';
+} from '../types';
 
 /**
  * Utility function to convert a PathLike to a string path
@@ -27,22 +28,37 @@ function normalizePath(path: PathLike): string {
     return path;
 }
 
+/** Backend the facade talks to: an fs implementation plus its cleanup. */
+export interface OPFSBackend {
+    fs: OPFSApi;
+    /** Underlying Worker / SharedWorker when the backend lives off-thread */
+    worker?: Worker | SharedWorker;
+    dispose: () => void;
+}
+
 /**
- * Mode 1: Node-like facade with encoding helpers and string/binary auto-detection,
- * built on top of the raw worker API from {@link createOPFSWorker}.
+ * Node-like facade with encoding helpers and string/binary auto-detection.
  *
- * Use {@link createOPFS} to create one.
+ * Transport-agnostic: works over any {@link OPFSBackend} — a Comlink proxy to
+ * a worker (`createOPFSDedicated`) or an in-process instance (`createOPFSAsync`).
+ *
+ * Escape hatch: {@link backend} is the raw bytes API; {@link worker} is the
+ * browser Worker / SharedWorker when one was created (undefined for async).
  */
 export class OPFSFacade {
-    #fs: RemoteOPFSWorker;
+    #fs: OPFSApi;
     #dispose: () => void;
+    /** Raw backend (`OPFSApi`) — bytes in / bytes out, no encoding helpers */
+    readonly backend: OPFSApi;
+    /** Dedicated Worker or SharedWorker, if this facade was created with one */
+    readonly worker: Worker | SharedWorker | undefined;
     promises: OPFSFacade = this;
 
-    constructor(options?: OPFSOptions) {
-        const raw = createOPFSWorker(options);
-
-        this.#fs = raw.fs;
-        this.#dispose = raw.dispose;
+    constructor(backend: OPFSBackend) {
+        this.#fs = backend.fs;
+        this.backend = backend.fs;
+        this.worker = backend.worker;
+        this.#dispose = backend.dispose;
     }
 
     /**
@@ -121,11 +137,39 @@ export class OPFSFacade {
     }
 
     /**
+     * Normalize writable data into a Uint8Array.
+     *
+     * Accepts strings (encoded via `encoding`, auto-detected from the file
+     * extension when omitted), raw binary (`Uint8Array` / `ArrayBuffer`), and
+     * `Blob`/`File` sources (read via `arrayBuffer()`).
+     */
+    async #toBuffer(
+        path: string,
+        data: string | Uint8Array | ArrayBuffer | Blob,
+        encoding?: Encoding
+    ): Promise<Uint8Array> {
+        if (data instanceof Blob) {
+            return new Uint8Array(await data.arrayBuffer());
+        }
+
+        // If no encoding specified, auto-detect based on file extension
+        if (!encoding) {
+            encoding = (typeof data !== 'string' || isBinaryFileExtension(path)) ? 'binary' : 'utf-8';
+        }
+
+        if (typeof data === 'string') {
+            return encodeString(data, encoding);
+        }
+
+        return data instanceof Uint8Array ? data : new Uint8Array(data);
+    }
+
+    /**
      * Write data to a file
      */
     async writeFile(
         path: PathLike,
-        data: string | Uint8Array | ArrayBuffer,
+        data: string | Uint8Array | ArrayBuffer | Blob,
         options?: { encoding?: Encoding } | Encoding
     ): Promise<void> {
         const normalizedPath = normalizePath(path);
@@ -139,15 +183,7 @@ export class OPFSFacade {
             encoding = options.encoding;
         }
 
-        // If no encoding specified, auto-detect based on file extension
-        if (!encoding) {
-            encoding = (typeof data !== 'string' || isBinaryFileExtension(normalizedPath)) ? 'binary' : 'utf-8';
-        }
-
-        // Convert data to Uint8Array
-        const buffer = typeof data === 'string'
-            ? encodeString(data, encoding)
-            : (data instanceof Uint8Array ? data : new Uint8Array(data));
+        const buffer = await this.#toBuffer(normalizedPath, data, encoding);
 
         return this.#fs.writeFile(normalizedPath, buffer);
     }
@@ -157,22 +193,35 @@ export class OPFSFacade {
      */
     async appendFile(
         path: PathLike,
-        data: string | Uint8Array | ArrayBuffer,
+        data: string | Uint8Array | ArrayBuffer | Blob,
         encoding?: Encoding
     ): Promise<void> {
         const normalizedPath = normalizePath(path);
 
-        // If no encoding specified, auto-detect based on file extension
-        if (!encoding) {
-            encoding = (typeof data !== 'string' || isBinaryFileExtension(normalizedPath)) ? 'binary' : 'utf-8';
-        }
-
-        // Convert data to Uint8Array
-        const buffer = typeof data === 'string'
-            ? encodeString(data, encoding)
-            : (data instanceof Uint8Array ? data : new Uint8Array(data));
+        const buffer = await this.#toBuffer(normalizedPath, data, encoding);
 
         return this.#fs.appendFile(normalizedPath, buffer);
+    }
+
+    /**
+     * Create or overwrite a file from a byte stream without buffering the
+     * complete source in memory.
+     *
+     * Returns the total number of bytes written.
+     */
+    async importStream(
+        path: PathLike,
+        source: ReadableStream<Uint8Array> | Blob,
+        options?: { onProgress?: (bytesWritten: number) => void }
+    ): Promise<number> {
+        const normalizedPath = normalizePath(path);
+        const stream = source instanceof Blob ? source.stream() : source;
+        const transferredStream = transfer(stream, [stream]) as unknown as ReadableStream<Uint8Array>;
+        const onProgress = options?.onProgress
+            ? proxy((bytesWritten: number) => options.onProgress!(bytesWritten))
+            : undefined;
+
+        return this.#fs.writeStream(normalizedPath, transferredStream, onProgress);
     }
 
     /**
@@ -432,29 +481,9 @@ export class OPFSFacade {
     }
 
     /**
-     * Dispose of resources, detach the worker and clean up the file system instance
+     * Dispose of resources, detach the backend and clean up the file system instance
      */
     dispose() {
         this.#dispose();
     }
 }
-
-/**
- * Mode 1: start an inlined worker and get a Node-like `fs` API on top of it.
- *
- * For the raw worker API without the facade, use {@link createOPFSWorker}.
- * To use the worker class inside your own worker, see `opfs-worker/pure`.
- */
-export function createOPFS(options?: OPFSOptions): OPFSFacade {
-    return new OPFSFacade(options);
-}
-
-/**
- * @deprecated Use {@link createOPFS}. Kept for 1.x compatibility — still returns the facade.
- */
-export const createWorker = createOPFS;
-
-/**
- * @deprecated Use {@link OPFSFacade}.
- */
-export { OPFSFacade as OPFSFileSystem };
