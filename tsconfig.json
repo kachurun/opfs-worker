@@ -9,7 +9,8 @@
         "declaration": true,
         "declarationMap": true,
         "outDir": "dist",
-        "jsx": "react-jsx",
+        "jsx": "preserve",
+        "jsxImportSource": "solid-js",
 
         "strict": true,
         "noUncheckedIndexedAccess": true,

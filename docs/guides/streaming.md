@@ -140,7 +140,7 @@ dropZone.addEventListener('drop', async (e) => {
 });
 ```
 
-The [demo](https://kachurun.github.io/opfs-worker/) implements exactly this flow — see `demo/FileBrowser.tsx`.
+The [demo](https://kachurun.github.io/opfs-worker/) implements exactly this flow — see `demo/components/FileBrowser/`.
 
 ## `writeStream` (raw)
 
