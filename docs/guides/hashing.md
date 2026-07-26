@@ -31,4 +31,4 @@ const fs = createOPFS({
 });
 ```
 
-Full options table: [`create` helpers](../api/create.md#options).
+Full options table: [API → Options](../api/README.md#options).

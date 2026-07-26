@@ -69,10 +69,10 @@ Entries accept `Iterable<[path, string | Uint8Array | Blob]>` or `Map<string, �
 
 ## `OPFSApi`
 
-Promise-based surface shared by all backends — a Comlink proxy to `OPFSSync`, or an in-process `OPFSAsync`. What `OPFSFacade` talks to (see `OPFSBackend` in [Create helpers](./api/create.md)).
+Public bytes API shared by all backends — the public methods of `BaseOPFS` (subclasses `OPFSSync` / `OPFSAsync`, or a Comlink proxy). What `OPFSFacade` talks to via `fs.backend`.
 
 ```typescript
-type OPFSApi = { [K in keyof OPFSSync]: OPFSSync[K] };
+type OPFSApi = Pick<BaseOPFS, keyof BaseOPFS>;
 ```
 
 ## `PathLike`
@@ -93,8 +93,6 @@ interface FileOpenOptions {
 
 ## `OPFSOptions`
 
-Table: [Create helpers → Options](./api/create.md#options).
-
 ```typescript
 interface OPFSOptions {
     /** Root path (default: '/') */
@@ -109,6 +107,8 @@ interface OPFSOptions {
     broadcastChannel?: string | BroadcastChannel | null;
 }
 ```
+
+Defaults and behavior: [API → Options](./api/README.md#options).
 
 ## `WatchEventType`
 

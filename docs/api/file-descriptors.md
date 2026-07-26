@@ -2,7 +2,7 @@
 
 Positional I/O on the **dedicated / sync** backend (`createOPFSDedicated` / `createOPFS`, or `OPFSSync` from `/pure`). Async and SharedWorker throw `ENOTSUP`.
 
-If you call FD `read`/`write` on **`fs.backend`** from the main thread, transfer buffers with Comlink. The [facade](./api/facade.md) does that for you.
+If you call FD `read`/`write` on **`fs.backend`** from the main thread, transfer buffers with Comlink. The [facade](./README.md#facade) does that for you.
 
 ```typescript
 import { transfer } from 'comlink';
@@ -17,11 +17,11 @@ const fd = await fs.open('/data/unique.txt', { create: true, exclusive: true });
 const fd = await fs.open('/data/log.txt', { create: true, truncate: true });
 ```
 
-| Option | Default | |
-| ------ | ------- | --- |
-| `create` | `false` | Create the file if missing |
+| Option      | Default |                                                |
+| ----------- | ------- | ---------------------------------------------- |
+| `create`    | `false` | Create the file if missing                     |
 | `exclusive` | `false` | With `create`, fail if the file already exists |
-| `truncate` | `false` | Truncate to zero length |
+| `truncate`  | `false` | Truncate to zero length                        |
 
 Throws `AlreadyExistsError` (`exclusive`), `FileTypeError` (path is a directory), or `FileSystemOperationError`.
 
@@ -127,11 +127,11 @@ try {
 
 ## Errors
 
-| Error | When |
-| ----- | ---- |
-| `AlreadyExistsError` | `exclusive: true` and file exists |
-| `ExistenceError` | Missing path |
-| `FileTypeError` | File vs directory mismatch |
-| `ValidationError` | Bad offset / length / args |
-| `FileSystemOperationError` / `IOError` | Underlying FS / I/O failure |
-| `PermissionError` | Access denied |
+| Error                                  | When                              |
+| -------------------------------------- | --------------------------------- |
+| `AlreadyExistsError`                   | `exclusive: true` and file exists |
+| `ExistenceError`                       | Missing path                      |
+| `FileTypeError`                        | File vs directory mismatch        |
+| `ValidationError`                      | Bad offset / length / args        |
+| `FileSystemOperationError` / `IOError` | Underlying FS / I/O failure       |
+| `PermissionError`                      | Access denied                     |

@@ -28,6 +28,7 @@ import {
 
 import type {
     DirentData,
+    FileOpenOptions,
     FileStat,
     ImportFileData,
     ImportFilesEntries,
@@ -43,8 +44,9 @@ import type {
 
 /**
  * Shared OPFS logic (directories, meta, watch, high-level helpers).
- * File I/O backends implement {@link readFile}, {@link writeFile}, {@link appendFile},
- * and {@link writeStream}.
+ *
+ * Subclasses implement byte I/O and file descriptors. Together those methods
+ * are the {@link OPFSApi} contract used by the facade and Comlink proxies.
  */
 export abstract class BaseOPFS {
     /** Root directory handle for the file system */
@@ -150,6 +152,40 @@ export abstract class BaseOPFS {
         stream: ReadableStream<Uint8Array>,
         onProgress?: (bytesWritten: number) => unknown
     ): Promise<number>;
+
+    /** Open a file and return a file descriptor */
+    abstract open(path: string, options?: FileOpenOptions): Promise<number>;
+
+    /** Close a file descriptor */
+    abstract close(fd: number): Promise<void>;
+
+    /** Read from a file descriptor into a buffer */
+    abstract read(
+        fd: number,
+        buffer: Uint8Array,
+        offset: number,
+        length: number,
+        position: number | null | undefined
+    ): Promise<{ bytesRead: number; buffer: Uint8Array }>;
+
+    /** Write from a buffer to a file descriptor */
+    abstract write(
+        fd: number,
+        buffer: Uint8Array,
+        offset?: number,
+        length?: number,
+        position?: number | null | undefined,
+        emitEvent?: boolean
+    ): Promise<number>;
+
+    /** File stats by descriptor */
+    abstract fstat(fd: number): Promise<FileStat>;
+
+    /** Truncate a file by descriptor */
+    abstract ftruncate(fd: number, size?: number): Promise<void>;
+
+    /** Flush a file descriptor to storage */
+    abstract fsync(fd: number): Promise<void>;
 
     /**
      * Initialize the file system within a given directory.

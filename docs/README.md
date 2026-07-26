@@ -1,10 +1,8 @@
 # Docs
 
 - API
-  - [Create helpers & options](./api/create.md)
-  - [Facade](./api/facade.md)
-  - [Backend](./api/backend.md)
-  - [File descriptors](./file-descriptors.md)
+  - [Overview](./api/README.md)
+  - [File descriptors](./api/file-descriptors.md)
   - [Types](./types.md)
 - Guides
   - [Dedicated worker](./guides/dedicated.md)

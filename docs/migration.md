@@ -2,14 +2,13 @@
 
 ## Renames
 
-| Was                      | Now                                                                                  |
-| ------------------------ | ------------------------------------------------------------------------------------ |
-| `createWorker`           | `createOPFSDedicated` (`createOPFS` alias; deprecated `createWorker` still exported) |
-| `OPFSFileSystem`         | `OPFSFacade` (deprecated alias kept)                                                 |
-| `OPFSWorker`             | `OPFSSync`                                                                           |
-| `opfs-worker/raw`        | `opfs-worker/pure`                                                                   |
-| `opfs-worker/raw?worker` | `createOPFSDedicated()` + `fs.backend` / `fs.worker`, or `dedicated.worker.js`       |
-| `fs.sync(entries)`       | `fs.importFiles(entries)` (`createIndex` alias kept, deprecated)                     |
+| Was                       | Now                                                  |
+| ------------------------- | ---------------------------------------------------- |
+| `createWorker`            | `createOPFS` (deprecated alias kept)                 |
+| `OPFSFileSystem`          | `OPFSFacade` (deprecated alias kept)                 |
+| `OPFSWorker`              | `OPFSSync`                                           |
+| `opfs-worker/raw`         | `opfs-worker/pure`                                   |
+| `fs.createIndex(entries)` | `fs.importFiles(entries)` (`createIndex` alias kept) |
 
 ```diff
 - import { createWorker, OPFSFileSystem } from 'opfs-worker';
@@ -38,4 +37,4 @@
 - Multiple FDs on one path share one sync handle, each with its own cursor
 - Dedicated `dispose()` terminates the browser `Worker`
 
-Full entry map: [Create helpers](./api/create.md).
+Full entry map: [API](./api/README.md).

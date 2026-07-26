@@ -2,7 +2,7 @@
 
 The default path: `OPFSSync` inside a dedicated Web Worker. You get file descriptors and the fastest write path the browser allows for OPFS.
 
-See also [Create helpers](../api/create.md).
+See also [API](../api/README.md).
 
 ## Facade
 
@@ -73,4 +73,4 @@ const fs = new OPFSFacade({
 - Each call gets its own worker. Tabs don’t share state — use [SharedWorker](./sharedworker.md) for that.
 - Sync access handles only work in a dedicated worker.
 
-Also: [file descriptors](../file-descriptors.md), [streaming](./streaming.md), [create helpers](../api/create.md).
+Also: [file descriptors](../api/file-descriptors.md), [streaming](./streaming.md), [API](../api/README.md).

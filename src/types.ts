@@ -1,3 +1,4 @@
+import type { BaseOPFS } from './core/BaseOPFS';
 import type { OPFSSync } from './core/OPFSSync';
 
 /**
@@ -58,10 +59,11 @@ export interface WatchEvent {
 export type { OPFSSync };
 
 /**
- * Promise-based fs API surface shared by all backends: a Comlink proxy to
- * `OPFSSync` in a worker, or an in-process `OPFSAsync` instance.
+ * Public bytes API shared by all backends (`OPFSSync`, `OPFSAsync`, or a
+ * Comlink proxy to one of them). Declared on {@link BaseOPFS}; subclasses
+ * implement the abstract I/O and FD methods.
  */
-export type OPFSApi = { [K in keyof OPFSSync]: OPFSSync[K] };
+export type OPFSApi = Pick<BaseOPFS, keyof BaseOPFS>;
 
 export interface OPFSOptions {
     /** Root path for the file system (default: '/') */

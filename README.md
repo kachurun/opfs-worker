@@ -9,9 +9,9 @@ OPFS ([Origin Private File System](https://developer.mozilla.org/en-US/docs/Web/
 
 This package puts a Node-like API on top of it.
 
-→ **File API** — `readFile`, `writeFile`, `mkdir`, `stat`, `rename`, `copy`, `readDir`; encodings, extension-based detection, `string | URL` paths. [Docs](docs/api/facade.md)
+→ **File API** — `readFile`, `writeFile`, `mkdir`, `stat`, `rename`, `copy`, `readDir`; encodings, extension-based detection, `string | URL` paths. [Docs](docs/api/README.md#facade)
 
-→ **File descriptors** — `open` / `read` / `write` at an offset, plus `ftruncate` and `fsync`. [Docs](docs/file-descriptors.md)
+→ **File descriptors** — `open` / `read` / `write` at an offset, plus `ftruncate` and `fsync`. [Docs](docs/api/file-descriptors.md)
 
 → **Concurrent access** — operations on the same path are serialized, so parallel reads and writes do not fail because another sync access handle is open.
 
@@ -66,15 +66,13 @@ fs.dispose();
 | Node-like `fs` via SharedWorker (modern browsers / Safari 26+)   | `createOPFSShared()` from `opfs-worker/sharedworker` |
 | OPFS inside a worker you already run (classes only)              | `OPFSSync` / `OPFSAsync` from `opfs-worker/pure`     |
 
-Trade-offs (FDs, Safari, size, CSP): [Create helpers](docs/api/create.md#trade-offs).
+Trade-offs (FDs, Safari, size, CSP): [API](docs/api/README.md#trade-offs).
 
 ## Docs
 
 - API
-  - [Create helpers & options](docs/api/create.md)
-  - [Facade](docs/api/facade.md)
-  - [Backend](docs/api/backend.md)
-  - [File descriptors](docs/file-descriptors.md)
+  - [Overview](docs/api/README.md)
+  - [File descriptors](docs/api/file-descriptors.md)
   - [Types](docs/types.md)
 - Guides
   - [Dedicated worker](docs/guides/dedicated.md)

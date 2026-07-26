@@ -54,4 +54,4 @@ fs.dispose(); // closes this tab’s port only
 - `setOptions` hits the shared instance, so keep options consistent across tabs.
 - Same script URL + `name` (default `'opfs-worker'`) → same instance.
 
-Also: [async](./async.md), [watching](./watching.md), [create helpers](../api/create.md).
+Also: [async](./async.md), [watching](./watching.md), [API](../api/README.md).

@@ -182,4 +182,4 @@ When the file system runs in a worker, the `Blob` crosses the boundary by refere
 
 Dedicated path chunks through FDs; async path uses `createWritable()` (Safari 26+ for writes).
 
-Also: [facade](../api/facade.md), [backend](../api/backend.md).
+Also: [facade](../api/README.md#facade).

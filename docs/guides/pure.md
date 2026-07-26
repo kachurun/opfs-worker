@@ -43,4 +43,4 @@ onconnect = (e) => {
 
 Or use the [SharedWorker guide](./sharedworker.md).
 
-Also: [backend API](../api/backend.md), [dedicated](./dedicated.md), [async](./async.md).
+Also: [dedicated](./dedicated.md), [async](./async.md), [API](../api/README.md).
