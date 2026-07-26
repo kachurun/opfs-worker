@@ -187,7 +187,9 @@ export class OPFSSync extends BaseOPFS {
                     }
 
                     totalBytes += chunk.byteLength;
-                    await onProgress?.(totalBytes);
+                    // Don't await — progress often crosses a worker boundary (Comlink),
+                    // and awaiting each chunk serializes I/O behind UI round-trips.
+                    void onProgress?.(totalBytes);
                 }
 
                 await this.fsync(fd);

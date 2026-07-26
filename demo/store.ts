@@ -55,6 +55,7 @@ export function createDemoStore() {
     let logId = 0;
     let unwatch: (() => void) | null = null;
     let bootGen = 0;
+    let refreshTimer: ReturnType<typeof setTimeout> | null = null;
 
     const pushLog = (kind: LogEntry['kind'], message: string, detail?: string) => {
         const id = ++logId;
@@ -130,7 +131,24 @@ export function createDemoStore() {
         }
     };
 
+    const scheduleRefresh = () => {
+        if (refreshTimer !== null) {
+            clearTimeout(refreshTimer);
+        }
+
+        // Coalesce watch storms (e.g. multi-file upload) into one index pass.
+        refreshTimer = setTimeout(() => {
+            refreshTimer = null;
+            void refreshTree();
+        }, 120);
+    };
+
     const disposeFs = () => {
+        if (refreshTimer !== null) {
+            clearTimeout(refreshTimer);
+            refreshTimer = null;
+        }
+
         unwatch?.();
         unwatch = null;
         fs()?.dispose();
@@ -163,7 +181,7 @@ export function createDemoStore() {
 
             unwatch = next.watch('/', { recursive: true }, (event) => {
                 pushLog('watch', formatWatchDetail(event));
-                void refreshTree();
+                scheduleRefresh();
             });
             pushLog('op', 'watch(/, recursive)');
             await refreshTree(next);

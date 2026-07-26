@@ -138,7 +138,9 @@ export class OPFSAsync extends BaseOPFS {
 
                             await writable.write(chunk as Uint8Array<ArrayBuffer>);
                             totalBytes += chunk.byteLength;
-                            await onProgress?.(totalBytes);
+                            // Don't await — progress often crosses a worker boundary (Comlink),
+                            // and awaiting each chunk serializes I/O behind UI round-trips.
+                            void onProgress?.(totalBytes);
                         }
                     });
                 }
