@@ -1,6 +1,6 @@
-# Async (no worker)
+# Async
 
-`OPFSAsync` on the current thread — `getFile()` / `createWritable()`, no Comlink, no worker in the bundle.
+`OPFSAsync` on the **current** thread (main or a worker you already run). Does not create a worker. Uses `getFile()` / `createWritable()`, no Comlink.
 
 Same limits apply as SharedWorker (it’s the same backend).
 

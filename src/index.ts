@@ -7,6 +7,7 @@ export {
     BaseOPFS,
     OPFSFacade,
     OPFSSync,
+    createOPFS,
     createOPFSDedicated,
 } from './index.sync';
 
@@ -27,11 +28,6 @@ export {
 export type {
     SharedWorkerOptions,
 } from './index.sharedworker';
-
-/**
- * Kept as a short alias for a default Sync backend
- */
-export { createOPFSDedicated as createOPFS } from './index.sync';
 
 /**
  * @deprecated Use {@link createOPFSDedicated}. Kept for 1.x → 2.x migration.

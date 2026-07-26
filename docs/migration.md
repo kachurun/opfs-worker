@@ -38,4 +38,4 @@
 - Multiple FDs on one path share one sync handle, each with its own cursor
 - Dedicated `dispose()` terminates the browser `Worker`
 
-Full entry map: [Choosing a mode](./choosing-a-mode.md).
+Full entry map: [Create helpers](./api/create.md).

@@ -21,7 +21,7 @@ This package puts a Node-like API on top of it.
 
 → **SharedWorker** — one instance shared across tabs. Same limits as async (no FDs, Safari 26+ for writes). [Docs](docs/guides/sharedworker.md)
 
-→ **Bring your own worker** — use it directly in a worker you already run, or load a prebuilt worker script. [Docs](docs/choosing-a-mode.md)
+→ **Bring your own worker** — use it directly in a worker you already run, or load a prebuilt worker script. [Docs](docs/guides/pure.md)
 
 → **Large files & uploads** — stream a `ReadableStream`, `Blob`, or `File` in chunks with progress, or bulk-import whole folders from a file picker / drag-and-drop via `importFiles`. [Docs](docs/guides/streaming.md)
 
@@ -66,11 +66,10 @@ fs.dispose();
 | Node-like `fs` via SharedWorker (modern browsers / Safari 26+)   | `createOPFSShared()` from `opfs-worker/sharedworker` |
 | OPFS inside a worker you already run (classes only)              | `OPFSSync` / `OPFSAsync` from `opfs-worker/pure`     |
 
-Trade-offs (FDs, Safari, size, CSP): [Choosing a mode](docs/choosing-a-mode.md).
+Trade-offs (FDs, Safari, size, CSP): [Create helpers](docs/api/create.md#trade-offs).
 
 ## Docs
 
-- [Choosing a mode](docs/choosing-a-mode.md)
 - API
   - [Create helpers & options](docs/api/create.md)
   - [Facade](docs/api/facade.md)

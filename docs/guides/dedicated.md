@@ -2,7 +2,7 @@
 
 The default path: `OPFSSync` inside a dedicated Web Worker. You get file descriptors and the fastest write path the browser allows for OPFS.
 
-See also [Choosing a mode](../choosing-a-mode.md).
+See also [Create helpers](../api/create.md).
 
 ## Facade
 
@@ -16,7 +16,7 @@ await fs.writeFile('/config.json', JSON.stringify({ theme: 'dark' }));
 const config = await fs.readFile('/config.json'); // string — auto-detected
 ```
 
-`createOPFS` is the same thing with a shorter name.
+`createOPFS` is the same thing with a shorter name (also from `opfs-worker/sync`).
 
 The worker is inlined by default, so you don’t need a special bundler worker setup.
 

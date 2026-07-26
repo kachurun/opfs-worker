@@ -1,6 +1,16 @@
 # Create helpers
 
-Factories from the package entries. For when to pick which: [Choosing a mode](../choosing-a-mode.md).
+Sync access handles only work in a **dedicated** worker. Async writes work on the main thread and in SharedWorkers too, but Safari needs **26+** for writing.
+
+## Package entries
+
+| Import from                | Worker                                     | Use it when                                                           |
+| -------------------------- | ------------------------------------------ | --------------------------------------------------------------------- |
+| `opfs-worker`              | Starts a dedicated worker                  | Default; fine if bundle size doesn’t matter or tree-shaking is set up |
+| `opfs-worker/sync`         | Starts a dedicated worker                  | Same as the default, without async / shared code in the bundle        |
+| `opfs-worker/async`        | Runs directly in the current thread        | Main thread or your own worker; Safari prior to 26 can’t write        |
+| `opfs-worker/sharedworker` | Starts one SharedWorker shared by all tabs | One shared fs process for every tab; Safari prior to 26 can’t write   |
+| `opfs-worker/pure`         | None                                       | Low-level classes to build your own custom worker                     |
 
 ## Facade
 
@@ -16,9 +26,12 @@ All return [`OPFSFacade`](./facade.md).
 import { createOPFSDedicated, createOPFSAsync, createOPFSShared } from 'opfs-worker';
 ```
 
-On the main entry only:
+On `.` and `/sync`:
 
 - `createOPFS` → `createOPFSDedicated`
+
+On the main entry only:
+
 - `createWorker` → same (deprecated)
 - `OPFSFileSystem` → `OPFSFacade` (deprecated)
 
@@ -74,9 +87,22 @@ const fs = createOPFS({
 
 ## Prebuilt scripts
 
+Not imports for app code — URLs for `new Worker` / `new SharedWorker` (or `{ url }` on the helpers):
+
 | Export                            | Hook up with                                             |
 | --------------------------------- | -------------------------------------------------------- |
 | `opfs-worker/dedicated.worker.js` | `new Worker(url, { type: 'module' })` or `{ url }`       |
 | `opfs-worker/shared.worker.js`    | `new SharedWorker(url, { type: 'module' })` or `{ url }` |
 
 Walkthroughs: [dedicated](../guides/dedicated.md), [sharedworker](../guides/sharedworker.md).
+
+## Trade-offs
+
+|                           | Dedicated (`OPFSSync`)                                                                 | Async (`OPFSAsync`)            |
+| ------------------------- | -------------------------------------------------------------------------------------- | ------------------------------ |
+| File descriptors          | yes                                                                                    | `ENOTSUP`                      |
+| Safari writes             | yes (via the worker)                                                                   | 26+                            |
+| SharedWorker              | no                                                                                     | yes                            |
+| One instance for all tabs | no (unless you build SharedWorker yourself)                                            | `createOPFSShared`             |
+| Bundle                    | ~80 KB inlined worker, or [prebuilt script](../guides/dedicated.md#diy-prebuilt-script) | small via `/async`             |
+| CSP without `blob:`       | pass `url` / prebuilt script                                                           | no worker, or SharedWorker URL |

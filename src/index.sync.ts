@@ -9,4 +9,6 @@ export { OPFSFacade } from './facade/OPFSFacade';
 export type { OPFSBackend } from './facade/OPFSFacade';
 
 export { createOPFSDedicated } from './facade/createOPFSDedicated';
+/** Short alias for {@link createOPFSDedicated} */
+export { createOPFSDedicated as createOPFS } from './facade/createOPFSDedicated';
 export type { DedicatedWorkerOptions } from './worker/createDedicatedWorker';
