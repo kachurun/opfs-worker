@@ -70,19 +70,22 @@ Trade-offs (FDs, Safari, size, CSP): [API](docs/api/README.md#trade-offs).
 
 ## Docs
 
-- API
-  - [Overview](docs/api/README.md)
-  - [File descriptors](docs/api/file-descriptors.md)
-  - [Types](docs/types.md)
-- Guides
-  - [Dedicated worker](docs/guides/dedicated.md)
-  - [Async](docs/guides/async.md)
-  - [SharedWorker](docs/guides/sharedworker.md)
-  - [Pure classes](docs/guides/pure.md)
-  - [Streaming](docs/guides/streaming.md)
-  - [Watching](docs/guides/watching.md)
-  - [Hashing](docs/guides/hashing.md)
+- [API overview](docs/api/README.md) — entries, facade methods, options, trade-offs
+- [File descriptors](docs/api/file-descriptors.md) — positional `open` / `read` / `write`
+- [Types](docs/types.md)
 - [Migration from 1.x](docs/migration.md)
+
+## Guides
+
+| Guide                                        | About                                                     |
+| -------------------------------------------- | --------------------------------------------------------- |
+| [Dedicated worker](docs/guides/dedicated.md) | How to use OPFS via a dedicated worker (the default path) |
+| [Async](docs/guides/async.md)                | How to use OPFS on the main thread, without a worker      |
+| [SharedWorker](docs/guides/sharedworker.md)  | How to share one filesystem across all tabs               |
+| [Pure classes](docs/guides/pure.md)          | How to drop OPFS into a worker you already run            |
+| [Streaming](docs/guides/streaming.md)        | How to handle large files and bulk uploads                |
+| [Watching](docs/guides/watching.md)          | How to listen for file changes across tabs                |
+| [Hashing](docs/guides/hashing.md)            | How file hashes / etags work on `stat` and watch events   |
 
 ## Development
 

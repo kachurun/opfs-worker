@@ -4,6 +4,7 @@ The sync backend works in every browser that has OPFS, but the browser only allo
 
 ## Package entries
 
+
 | Import from                | Worker                                     | Use it when                                                           |
 | -------------------------- | ------------------------------------------ | --------------------------------------------------------------------- |
 | `opfs-worker`              | Starts a dedicated worker                  | Default; fine if bundle size doesn’t matter or tree-shaking is set up |
@@ -12,17 +13,20 @@ The sync backend works in every browser that has OPFS, but the browser only allo
 | `opfs-worker/sharedworker` | Starts one SharedWorker shared by all tabs | One shared fs process for every tab; Safari prior to 26 can’t write   |
 | `opfs-worker/pure`         | None                                       | Low-level classes to build your own custom worker                     |
 
+
 ## Facade
 
 Every helper returns an `OPFSFacade` — the same Node-like API in all modes. The facade hides the actual work: depending on which helper you call, it either creates a dedicated worker and talks to it, works with OPFS directly in the current thread, or connects to a SharedWorker.
 
 Each takes optional `[options](#options)`.
 
+
 | Function           | From                                        | Under the hood                                   |
 | ------------------ | ------------------------------------------- | ------------------------------------------------ |
 | `createOPFS`       | `opfs-worker` or `opfs-worker/sync`         | Dedicated worker + `OPFSSync`                    |
 | `createOPFSAsync`  | `opfs-worker` or `opfs-worker/async`        | OPFS directly, `OPFSAsync` in the current thread |
 | `createOPFSShared` | `opfs-worker` or `opfs-worker/sharedworker` | SharedWorker + `OPFSAsync`                       |
+
 
 ```typescript
 import { createOPFS, createOPFSAsync, createOPFSShared } from 'opfs-worker';
@@ -32,72 +36,96 @@ const fs = createOPFS(); // or createOPFSAsync(), createOPFSShared({ url: '...' 
 
 ### File I/O
 
-| Method                                  | Notes                                                                                         |
-| --------------------------------------- | --------------------------------------------------------------------------------------------- |
-| `readFile` / `writeFile` / `appendFile` | Encoding as string, `{ encoding }`, or auto                                                   |
-| `readBlob`                              | Disk-backed `Blob`, without copying into memory — [streaming](../guides/streaming.md)         |
-| `importStream`                          | Stream / Blob / File — [streaming](../guides/streaming.md)                                    |
-| `importFiles`                           | Bulk array / `Map` of `[path, data]` with rich progress — [streaming](../guides/streaming.md) |
-| `readText` / `writeText` / `appendText` | UTF-8 by default                                                                              |
+Paths are `string | URL` everywhere below.
 
-Paths can be a `string` or a `URL`. `readFile` / `writeFile` pick the encoding from the file extension (e.g. `.txt` → string, `.bin` → bytes) unless you pass one explicitly. For Node compatibility `fs.promises` returns the same instance, so code written against `fs.promises.readFile(...)` works as is.
+
+| Method         | Parameters                                                                     | Returns                                                                                         |
+| -------------- | ------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------- |
+| `readFile`     | `path`, optional `encoding` or `{ encoding }`                                  | `Promise<string | Uint8Array>` — auto by extension if omitted (`.txt` → string, `.bin` → bytes) |
+| `writeFile`    | `path`, `data` (`string | Uint8Array | ArrayBuffer | Blob`), optional encoding | `Promise<void>`                                                                                 |
+| `appendFile`   | `path`, `data` (`string | Uint8Array | ArrayBuffer | Blob`), optional encoding | `Promise<void>`                                                                                 |
+| `readText`     | `path`, `encoding?` (default `'utf-8'`)                                        | `Promise<string>`                                                                               |
+| `writeText`    | `path`, `text`, `encoding?` (default `'utf-8'`)                                | `Promise<void>`                                                                                 |
+| `appendText`   | `path`, `text`, `encoding?` (default `'utf-8'`)                                | `Promise<void>`                                                                                 |
+| `readBlob`     | `path`                                                                         | `Promise<Blob>` — disk-backed, not copied into memory. See [streaming](../guides/streaming.md)  |
+| `importStream` | `path`, `ReadableStream | Blob | File`, optional `{ onProgress }`              | `Promise<number>` — bytes written. See [streaming](../guides/streaming.md)                      |
+| `importFiles`  | `[path, data][]` / `Map` / iterable, optional `{ onProgress }`                 | `Promise<ImportFilesResult>` — paths, count, bytes. See [streaming](../guides/streaming.md)     |
+
+
+For Node compatibility, `fs.promises` is the same instance (`fs.promises === fs`).
 
 ### Directories & metadata
 
-| Method                         | Notes                                                 |
-| ------------------------------ | ----------------------------------------------------- |
-| `mkdir`                        | `{ recursive }`; numeric mode is accepted and ignored |
-| `readDir`                      | `DirentData[]`                                        |
-| `stat` / `exists` / `realpath` |                                                       |
-| `remove`                       | `{ recursive, force }`                                |
-| `rename` / `copy`              | `copy` takes `{ recursive, overwrite }`               |
-| `clear`                        | Empty a dir (default `/`)                             |
-| `index`                        | `Map<path, FileStat>`                                 |
+
+| Method     | Parameters                                                           | Returns                                                             |
+| ---------- | -------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| `mkdir`    | `path`, optional `{ recursive }` (numeric mode accepted and ignored) | `Promise<void>`                                                     |
+| `readDir`  | `path`                                                               | `Promise<DirentData[]>`                                             |
+| `stat`     | `path`                                                               | `Promise<FileStat>`                                                 |
+| `exists`   | `path`                                                               | `Promise<boolean>`                                                  |
+| `realpath` | `path`                                                               | `Promise<string>`                                                   |
+| `remove`   | `path`, optional `{ recursive, force }`                              | `Promise<void>`                                                     |
+| `rename`   | `oldPath`, `newPath`, optional `{ overwrite }`                       | `Promise<void>`                                                     |
+| `copy`     | `source`, `destination`, optional `{ recursive, overwrite }`         | `Promise<void>`                                                     |
+| `clear`    | `path?` (default `/`)                                                | `Promise<void>` — empties the directory, keeps the directory itself |
+| `index`    | —                                                                    | `Promise<Map<string, FileStat>>`                                    |
+
 
 ### Watch & lifecycle
 
-| Method       | Notes                               |
-| ------------ | ----------------------------------- |
-| `watch`      | Returns `() => void`                |
-| `unwatch`    |                                     |
-| `setOptions` | See [hashing](../guides/hashing.md) |
-| `dispose`    | Dispose the backend                 |
+
+| Method       | Parameters                                                            | Returns                                          |
+| ------------ | --------------------------------------------------------------------- | ------------------------------------------------ |
+| `watch`      | `path`, optional `{ recursive, include, exclude }`                    | `() => void` unsubscribe                         |
+| `unwatch`    | `path`                                                                | `void`                                           |
+| `setOptions` | `options` — see [Options](#options) / [hashing](../guides/hashing.md) | `Promise<void>`                                  |
+| `dispose`    | —                                                                     | `void` — tears down watches, backend, and worker |
+
 
 ### File descriptors
 
-| Method           | Notes                                            |
-| ---------------- | ------------------------------------------------ |
-| `open`           | Returns an fd; `{ create, exclusive, truncate }` |
-| `read` / `write` | Positional I/O into / from a buffer              |
-| `close`          | Release the fd                                   |
-| `fstat`          | Stats by fd                                      |
-| `ftruncate`      | Resize by fd                                     |
-| `fsync`          | Flush to storage (best-effort in OPFS)           |
+Dedicated / `OPFSSync` only — async throws `ENOTSUP`. Details: [file descriptors](./file-descriptors.md).
 
-Works only in dedicated / `OPFSSync` mode; async throws `ENOTSUP`.
-More details: [file descriptors](./file-descriptors.md).
+
+| Method      | Parameters                                         | Returns                                     |
+| ----------- | -------------------------------------------------- | ------------------------------------------- |
+| `open`      | `path`, optional `{ create, exclusive, truncate }` | `Promise<number>` — file descriptor         |
+| `read`      | `fd`, `buffer`, `offset`, `length`, `position?`    | `Promise<{ bytesRead, buffer }>`            |
+| `write`     | `fd`, `buffer`, `offset?`, `length?`, `position?`  | `Promise<number>` — bytes written           |
+| `close`     | `fd`                                               | `Promise<void>`                             |
+| `fstat`     | `fd`                                               | `Promise<FileStat>`                         |
+| `ftruncate` | `fd`, `size?` (default `0`)                        | `Promise<void>`                             |
+| `fsync`     | `fd`                                               | `Promise<void>` — best-effort flush in OPFS |
+
 
 ### Node aliases
 
-| Alias                     | Maps to                       |
-| ------------------------- | ----------------------------- |
-| `unlink` / `rm` / `rmdir` | `remove`                      |
-| `readdir`                 | `readDir`                     |
-| `lstat`                   | `stat`                        |
-| `chmod`                   | no-op (no Unix modes in OPFS) |
+
+| Alias     | Parameters                              | Returns                                         |
+| --------- | --------------------------------------- | ----------------------------------------------- |
+| `unlink`  | `path`                                  | same as `remove(path)`                          |
+| `rm`      | `path`, optional `{ recursive, force }` | same as `remove`                                |
+| `rmdir`   | `path`                                  | same as `remove(path)`                          |
+| `readdir` | `path`                                  | same as `readDir`                               |
+| `lstat`   | `path`                                  | same as `stat`                                  |
+| `chmod`   | `path`, `mode`                          | `Promise<void>` — no-op (no Unix modes in OPFS) |
+
 
 ### Backend access
 
 `fs.backend` is the raw bytes API the facade wraps — a Comlink proxy to the worker for dedicated / SharedWorker, or the in-process `OPFSAsync` instance for async. Same methods as the facade, but without encoding helpers (you pass / get `Uint8Array`).
 
-| Field        | Notes                                                               |
-| ------------ | ------------------------------------------------------------------- |
-| `fs.backend` | `[OPFSApi](../types.md#opfsapi)` — bytes in / bytes out             |
-| `fs.worker`  | `Worker` / `SharedWorker` if one was created; `undefined` for async |
+
+| Field        | Type                                | Notes                                                |
+| ------------ | ----------------------------------- | ---------------------------------------------------- |
+| `fs.backend` | `[OPFSApi](../types.md#opfsapi)`    | bytes in / bytes out                                 |
+| `fs.worker`  | `Worker | SharedWorker | undefined` | set when a worker was created; `undefined` for async |
+
 
 ## Options
 
 Passed to any `createOPFS*` (and to `setOptions()` later).
+
 
 | Option             | Default                 | What it does                                                                                                                   |
 | ------------------ | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
@@ -106,6 +134,7 @@ Passed to any `createOPFS*` (and to `setOptions()` later).
 | `hashAlgorithm`    | `'etag'`                | File hash on `stat` / `index` / watch — `'etag'`, `'SHA-*'`, or `null`/`false` to disable. See [hashing](../guides/hashing.md) |
 | `maxFileSize`      | `50MB`                  | Skip SHA- hashing above this size (`etag` ignores it)                                                                          |
 | `broadcastChannel` | `'opfs-worker'`         | Channel name, a `BroadcastChannel` instance, or `null` to disable                                                              |
+
 
 ```typescript
 const fs = createOPFS({
@@ -134,11 +163,13 @@ const fs = createOPFS({ root: '/my-app' });
 
 ### SharedWorker only
 
-| Option   | Type           | Default         | What it does                                            |
-| -------- | -------------- | --------------- | ------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
-| `url`    | `string        | URL`            | next to the package                                     | Script URL for `opfs-worker/shared.worker.js` — with Vite: `import url from '…/shared.worker.js?url'` |
-| `worker` | `SharedWorker` | —               | Pass an existing `SharedWorker` (overrides `url`)       |
-| `name`   | `string`       | `'opfs-worker'` | Tabs with the same script URL + name share one instance |
+
+| Option   | Type           | Default             | What it does                                                                                          |
+| -------- | -------------- | ------------------- | ----------------------------------------------------------------------------------------------------- |
+| `url`    | `string | URL` | next to the package | Script URL for `opfs-worker/shared.worker.js` — with Vite: `import url from '…/shared.worker.js?url'` |
+| `worker` | `SharedWorker` | —                   | Pass an existing `SharedWorker` (overrides `url`)                                                     |
+| `name`   | `string`       | `'opfs-worker'`     | Tabs with the same script URL + name share one instance                                               |
+
 
 ```typescript
 import workerUrl from 'opfs-worker/shared.worker.js?url'; // Vite
@@ -155,10 +186,12 @@ const fs = createOPFSShared({
 
 These files already contain a backend (`OPFSSync` or `OPFSAsync`) wrapped in Comlink expose.
 
+
 | Export                            | Inside                | Start with                                               |
 | --------------------------------- | --------------------- | -------------------------------------------------------- |
 | `opfs-worker/dedicated.worker.js` | Comlink + `OPFSSync`  | `new Worker(url, { type: 'module' })` or `{ url }`       |
 | `opfs-worker/shared.worker.js`    | Comlink + `OPFSAsync` | `new SharedWorker(url, { type: 'module' })` or `{ url }` |
+
 
 ### Use the facade with a worker URL
 
@@ -200,6 +233,7 @@ Guides: [Dedicated worker](../guides/dedicated.md), [SharedWorker](../guides/sha
 
 ## Trade-offs
 
+
 |                                     | Dedicated (`OPFSSync`)                           | Async (`OPFSAsync`)          |
 | ----------------------------------- | ------------------------------------------------ | ---------------------------- |
 | File descriptors                    | yes                                              | throw `ENOTSUP`              |
@@ -208,3 +242,5 @@ Guides: [Dedicated worker](../guides/dedicated.md), [SharedWorker](../guides/sha
 | One instance for all tabs           | no                                               | yes, with `createOPFSShared` |
 | Bundle                              | ~80 KB inlined worker, or ready-made worker file | small via `/async`           |
 | Works under strict CSP (no `blob:`) | pass a worker `url` instead of the inlined blob  | n/a                          |
+
+
