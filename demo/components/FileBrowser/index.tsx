@@ -503,8 +503,8 @@ export const FileBrowser: Component<FileBrowserProps> = (props) => {
                 <Show
                     when={ filteredTree().length > 0 }
                     fallback={ (
-                        <div class="p-3 text-sm opacity-50">
-                            {filtering() ? 'No matches.' : 'Empty — drop files or folders here.'}
+                        <div class="flex h-full items-center justify-center p-3 text-center text-sm opacity-50">
+                            {filtering() ? 'No matches.' : 'Drop files here'}
                         </div>
                     ) }
                 >

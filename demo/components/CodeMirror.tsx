@@ -1,6 +1,15 @@
+import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
+import { defaultHighlightStyle, syntaxHighlighting } from '@codemirror/language';
 import { EditorState, type Extension } from '@codemirror/state';
-import { EditorView } from '@codemirror/view';
+import { EditorView, keymap } from '@codemirror/view';
 import { createEffect, onCleanup, untrack, type Component } from 'solid-js';
+
+// Baseline every editor needs; `fallback: true` lets theme styles (oneDark) win.
+const baseExtensions: Extension[] = [
+    syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
+    history(),
+    keymap.of([...defaultKeymap, ...historyKeymap]),
+];
 
 export interface CodeMirrorProps {
     value: string;
@@ -26,6 +35,7 @@ export const CodeMirror: Component<CodeMirrorProps> = (props) => {
             state: EditorState.create({
                 doc: initialDoc,
                 extensions: [
+                    ...baseExtensions,
                     ...extensions,
                     EditorView.updateListener.of((update) => {
                         if (!update.docChanged || applyingExternal || !onChange) {
