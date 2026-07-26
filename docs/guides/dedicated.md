@@ -70,7 +70,9 @@ const fs = new OPFSFacade({
 
 ## Notes
 
-- Each call gets its own worker. Tabs don’t share state — use [SharedWorker](./sharedworker.md) for that.
+- Same `root` (and same `url`) on one page reuses one Worker; different roots get different Workers. `dispose()` drops your port and terminates the Worker only when the last facade for that pool entry is gone.
+- Tabs don’t share a dedicated Worker — use [SharedWorker](./sharedworker.md) for that.
 - Sync access handles only work in a dedicated worker.
+- `setOptions` hits the shared instance for a pooled root — keep options consistent.
 
 Also: [file descriptors](../api/file-descriptors.md), [streaming](./streaming.md), [API](../api/README.md).

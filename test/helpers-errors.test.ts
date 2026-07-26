@@ -20,6 +20,7 @@ import {
   joinPath,
   normalizePath,
   resolvePath,
+  absoluteOpfsPath,
   buffersEqual,
   isPathExcluded,
   normalizeMinimatch,
@@ -36,6 +37,15 @@ describe('path helpers', () => {
     expect(dirname('/a/b.txt')).toBe('/a');
     expect(extname('/a/b.txt')).toBe('.txt');
     expect(extname('/a/.hidden')).toBe('');
+  });
+
+  it('absoluteOpfsPath joins root and API path', () => {
+    expect(absoluteOpfsPath('/', '/x.txt')).toBe('/x.txt');
+    expect(absoluteOpfsPath('/app', '/x.txt')).toBe('/app/x.txt');
+    expect(absoluteOpfsPath('/app', '/')).toBe('/app');
+    expect(absoluteOpfsPath('/app/', 'x.txt')).toBe('/app/x.txt');
+    expect(absoluteOpfsPath('/app', './a/../b.txt')).toBe('/app/b.txt');
+    expect(absoluteOpfsPath('/', '/app/x.txt')).toBe(absoluteOpfsPath('/app', '/x.txt'));
   });
 
   it('resolvePath handles ., .. and home', () => {

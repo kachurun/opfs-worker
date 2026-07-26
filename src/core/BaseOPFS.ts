@@ -23,7 +23,8 @@ import {
     normalizePath,
     removeEntry,
     resolvePath,
-    splitPath
+    splitPath,
+    withLock
 } from '../utils/helpers';
 
 import type {
@@ -135,6 +136,11 @@ export abstract class BaseOPFS {
         if (options) {
             void this.setOptions(options);
         }
+    }
+
+    /** Exclusive path lock keyed by absolute OPFS path (`root` + API path). */
+    protected async withPathLock<T>(path: string, fn: () => Promise<T>): Promise<T> {
+        return withLock(path, fn, this.options.root);
     }
 
     /** Read file contents as bytes */
@@ -718,7 +724,7 @@ export abstract class BaseOPFS {
         const parent = await this.getDirectoryHandle(dirname(path), false);
         const stat = await this.stat(path);
 
-        await removeEntry(parent, path, { recursive, force });
+        await removeEntry(parent, path, { recursive, force, root: this.options.root });
 
         await this.notifyChange({ path, type: WatchEventType.Removed, isDirectory: stat.isDirectory });
     }

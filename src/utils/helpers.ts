@@ -22,21 +22,47 @@ export function checkOPFSSupport(): void {
 }
 
 /**
+ * Join a mount `root` with an API path into an absolute OPFS path.
+ *
+ * Lock keys and cross-instance coordination use this so `/x.txt` under
+ * `root: '/app'` and `/app/x.txt` under `root: '/'` resolve to the same file.
+ */
+export function absoluteOpfsPath(root: string, path: string): string {
+    const r = normalizePath(root || '/');
+    const p = normalizePath(resolvePath(path));
+
+    if (r === '/') {
+        return p;
+    }
+
+    if (p === '/') {
+        return r;
+    }
+
+    return `${ r.replace(/\/$/, '') }${ p }`;
+}
+
+/**
  * Run a callback while holding an exclusive lock on a path
  *
  * Locks are always exclusive: OPFS permits a single sync access handle per file,
- * so readers can't share access either.
+ * so readers can't share access either. The lock key is the absolute OPFS path
+ * (`root` + API `path`) so different mounts of the same file serialize correctly.
  *
- * @param path - The path to lock
+ * @param path - The API path to lock (relative to `root`)
  * @param fn - The callback to run while holding the lock
+ * @param root - Mount root (default: `/`)
  * @returns The value returned by the callback
  */
 export async function withLock<T>(
     path: string,
-    fn: () => Promise<T>
+    fn: () => Promise<T>,
+    root: string = '/'
 ): Promise<T> {
     if (typeof navigator !== 'undefined' && navigator.locks?.request) {
-        return navigator.locks.request(`opfs:${ path.replace(/\/+/g, '/') }`, { mode: 'exclusive' }, fn);
+        const key = absoluteOpfsPath(root, path).replace(/\/+/g, '/');
+
+        return navigator.locks.request(`opfs:${ key }`, { mode: 'exclusive' }, fn);
     }
 
     return fn();
@@ -343,7 +369,7 @@ export async function convertBlobToUint8Array(blob: Blob): Promise<Uint8Array> {
 export async function removeEntry(
     parentHandle: FileSystemDirectoryHandle,
     path: string,
-    options: { recursive?: boolean; force?: boolean; useTrash?: boolean } = {}
+    options: { recursive?: boolean; force?: boolean; useTrash?: boolean; root?: string } = {}
 ): Promise<void> {
     const name = basename(path);
 
@@ -367,7 +393,7 @@ export async function removeEntry(
                 isDirectory,
             });
         }
-    });
+    }, options.root ?? '/');
 }
 
 /**

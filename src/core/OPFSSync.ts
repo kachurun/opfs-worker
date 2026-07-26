@@ -16,8 +16,7 @@ import {
     normalizePath,
     resolvePath,
     safeCloseSyncHandle,
-    validateReadWriteArgs,
-    withLock
+    validateReadWriteArgs
 } from '../utils/helpers';
 
 import type { FileOpenOptions, FileStat, OPFSOptions } from '../types';
@@ -77,7 +76,7 @@ export class OPFSSync extends BaseOPFS {
         await this.mount();
 
         try {
-            return await withLock(path, async() => {
+            return await this.withPathLock(path, async() => {
                 const fd = await this.open(path);
 
                 try {
@@ -112,7 +111,7 @@ export class OPFSSync extends BaseOPFS {
 
         const buffer = data instanceof Uint8Array ? data : new Uint8Array(data);
 
-        await withLock(path, async() => {
+        await this.withPathLock(path, async() => {
             const existed = await this.exists(path);
             const fd = await this.open(path, { create: true, truncate: true });
 
@@ -136,7 +135,7 @@ export class OPFSSync extends BaseOPFS {
 
         const buffer = data instanceof Uint8Array ? data : new Uint8Array(data);
 
-        await withLock(path, async() => {
+        await this.withPathLock(path, async() => {
             const fd = await this.open(path, { create: true });
 
             try {
@@ -160,7 +159,7 @@ export class OPFSSync extends BaseOPFS {
     ): Promise<number> {
         await this.mount();
 
-        return withLock(path, async() => {
+        return this.withPathLock(path, async() => {
             const existed = await this.exists(path);
             const fd = await this.open(path, { create: true, truncate: true });
             const reader = stream.getReader();
@@ -224,7 +223,7 @@ export class OPFSSync extends BaseOPFS {
         try {
             // Use lock for atomic operations when creating files
             if (create && exclusive) {
-                return await withLock(normalizedPath, async() => {
+                return await this.withPathLock(normalizedPath, async() => {
                     const exists = await this.exists(normalizedPath);
 
                     if (exists) {

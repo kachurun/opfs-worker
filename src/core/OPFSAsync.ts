@@ -3,7 +3,6 @@ import { transfer } from 'comlink';
 import { BaseOPFS } from './BaseOPFS';
 import { WatchEventType } from '../types';
 import { OPFSError, OperationNotSupportedError, mapDomError } from '../utils/errors';
-import { withLock } from '../utils/helpers';
 
 import type { FileOpenOptions, FileStat } from '../types';
 
@@ -37,7 +36,7 @@ export class OPFSAsync extends BaseOPFS {
         await this.mount();
 
         try {
-            return await withLock(path, async() => {
+            return await this.withPathLock(path, async() => {
                 const fileHandle = await this.getFileHandle(path, false);
                 const file = await fileHandle.getFile();
                 const buffer = new Uint8Array(await file.arrayBuffer());
@@ -63,7 +62,7 @@ export class OPFSAsync extends BaseOPFS {
         const buffer = data instanceof Uint8Array ? data : new Uint8Array(data);
 
         try {
-            await withLock(path, async() => {
+            await this.withPathLock(path, async() => {
                 const existed = await this.exists(path);
                 const fileHandle = await this.getFileHandle(path, true);
 
@@ -92,7 +91,7 @@ export class OPFSAsync extends BaseOPFS {
         const buffer = data instanceof Uint8Array ? data : new Uint8Array(data);
 
         try {
-            await withLock(path, async() => {
+            await this.withPathLock(path, async() => {
                 const fileHandle = await this.getFileHandle(path, true);
                 const { size } = await fileHandle.getFile();
 
@@ -122,7 +121,7 @@ export class OPFSAsync extends BaseOPFS {
         await this.mount();
 
         try {
-            return await withLock(path, async() => {
+            return await this.withPathLock(path, async() => {
                 const existed = await this.exists(path);
                 const fileHandle = await this.getFileHandle(path, true);
                 const reader = stream.getReader();
