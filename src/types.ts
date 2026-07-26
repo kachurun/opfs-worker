@@ -79,13 +79,30 @@ export interface OPFSOptions {
 }
 
 /** Payload accepted by {@link importFiles} for a single entry. */
-export type ImportFileData = string | Uint8Array | Blob;
+export type ImportFileData = string | Uint8Array | Blob | FileSystemFileHandle;
 
 /**
- * Entries for {@link importFiles}: an array of `[path, data]` tuples, a `Map`,
- * or any iterable that yields the same pairs.
+ * What {@link importFiles} accepts:
+ * - `[path, data][]` / `Map` / iterable of pairs (data may be a `FileSystemFileHandle`)
+ * - a `FileSystemDirectoryHandle` (walked recursively)
+ * - a `FileSystemFileHandle` or list of them (paths from `handle.name`)
  */
-export type ImportFilesEntries = Iterable<[string, ImportFileData]> | Map<string, ImportFileData>;
+export type ImportFilesSource =
+  | Iterable<[PathLike, ImportFileData]>
+  | Map<string, ImportFileData>
+  | FileSystemDirectoryHandle
+  | FileSystemFileHandle
+  | Iterable<FileSystemFileHandle>;
+
+/** Progress event fired while {@link importStream} writes. */
+export interface ImportStreamProgress {
+    /** Destination path */
+    path: string;
+    /** Bytes written so far */
+    bytesWritten: number;
+    /** Total size when known (`Blob` / `File`); omitted for raw streams */
+    bytesTotal?: number;
+}
 
 /** Progress event fired while {@link importFiles} writes entries. */
 export interface ImportFilesProgress {
@@ -128,6 +145,9 @@ export interface WatchOptions {
     /** Glob patterns to exclude from watching (minimatch syntax, default: []) */
     exclude?: string | string[];
 }
+
+/** Listener for {@link OPFSFacade.watch} — Node-style `fs.watch(path[, options], listener)`. */
+export type WatchListener = (event: WatchEvent) => void;
 
 export interface FileOpenOptions {
     create?: boolean;

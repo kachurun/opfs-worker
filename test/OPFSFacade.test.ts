@@ -4,8 +4,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { createDedicatedWorker } from '../src/worker/createDedicatedWorker';
 import { createOPFSDedicated } from '../src/index';
 import { OPFSSync } from '../src/core/OPFSSync';
-
-import type { OPFSFacade } from '../src/facade/OPFSFacade';
+import { OPFSFacade } from '../src/facade/OPFSFacade';
 
 import type { RawWorker } from '../src/worker/createDedicatedWorker';
 import type { OPFSOptions } from '../src/types';
@@ -248,6 +247,95 @@ describe('OPFSFacade', () => {
 
       stop();
       channel.close();
+    });
+
+    it('watch(path, listener) delivers events without a manual BroadcastChannel', async () => {
+      await fs.setOptions({ root: '/', broadcastChannel: 'opfs-worker', namespace: 'test-ns' });
+
+      const events: Array<{ type: string; path: string; hash?: string }> = [];
+      const stop = fs.watch('/', (event) => {
+        events.push({ type: event.type, path: event.path, hash: event.hash });
+      });
+
+      await fs.writeFile('/listened.txt', 'hello', 'utf-8');
+      await vi.waitFor(() => expect(events.length).toBeGreaterThan(0));
+
+      expect(events[0]).toEqual(
+        expect.objectContaining({ type: 'added', path: '/listened.txt' })
+      );
+      expect(events[0]?.hash).toBeTruthy();
+
+      stop();
+      const count = events.length;
+
+      await fs.writeFile('/listened.txt', 'again', 'utf-8');
+      await new Promise(r => setTimeout(r, 20));
+      expect(events.length).toBe(count);
+    });
+
+    it('watch(path, options, listener) respects include filters', async () => {
+      await fs.setOptions({ root: '/', broadcastChannel: 'opfs-worker', namespace: 'filter-ns' });
+
+      const events: string[] = [];
+      const stop = fs.watch('/', { include: ['**/*.json'] }, (event) => {
+        events.push(event.path);
+      });
+
+      await fs.writeFile('/skip.txt', 'no', 'utf-8');
+      await fs.writeFile('/keep.json', '{}', 'utf-8');
+      await vi.waitFor(() => expect(events).toContain('/keep.json'));
+
+      expect(events).not.toContain('/skip.txt');
+      stop();
+    });
+
+    it('watch listener filters shallow globs', async () => {
+      await fs.setOptions({ root: '/', broadcastChannel: 'opfs-worker', namespace: 'shallow-ns' });
+      await fs.mkdir('/shallow-test/nested', { recursive: true });
+
+      const events: string[] = [];
+      const stop = fs.watch('/shallow-test/*', { recursive: false }, (event) => {
+        events.push(event.path);
+      });
+
+      await fs.writeFile('/shallow-test/immediate.txt', 'a', 'utf-8');
+      await fs.writeFile('/shallow-test/nested/deep.txt', 'b', 'utf-8');
+      await vi.waitFor(() => expect(events).toContain('/shallow-test/immediate.txt'));
+
+      expect(events).not.toContain('/shallow-test/nested/deep.txt');
+      stop();
+    });
+
+    it('receives mutations from another instance that never called watch', async () => {
+      const channel = 'cross-instance-watch';
+      const namespace = 'cross-ns';
+      const options = { root: '/', broadcastChannel: channel, namespace };
+
+      const readerBackend = new OPFSSync(options);
+      const writerBackend = new OPFSSync(options);
+      const reader = new OPFSFacade(
+        { fs: readerBackend as never, dispose: () => void readerBackend.dispose() },
+        options
+      );
+      const writer = new OPFSFacade(
+        { fs: writerBackend as never, dispose: () => void writerBackend.dispose() },
+        options
+      );
+
+      const events: string[] = [];
+      const stop = reader.watch('/**/*.json', (event) => {
+        events.push(event.path);
+      });
+
+      await writer.writeFile('/seen.json', '{}', 'utf-8');
+      await writer.writeFile('/ignored.txt', 'x', 'utf-8');
+      await vi.waitFor(() => expect(events).toContain('/seen.json'));
+
+      expect(events).not.toContain('/ignored.txt');
+
+      stop();
+      reader.dispose();
+      writer.dispose();
     });
   });
 

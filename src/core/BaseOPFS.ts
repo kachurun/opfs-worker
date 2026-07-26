@@ -7,7 +7,6 @@ import {
     FileTypeError,
     InitializationFailedError,
     OPFSError,
-    OperationNotSupportedError,
     PathError,
     mapDomError
 } from '../utils/errors';
@@ -18,29 +17,26 @@ import {
     checkOPFSSupport,
     dirname,
     joinPath,
-    matchMinimatch,
-    normalizeMinimatch,
     normalizePath,
     removeEntry,
     resolvePath,
     splitPath,
     withLock
 } from '../utils/helpers';
+import { expandImportFilesSource } from '../utils/importSources';
 
 import type {
     DirentData,
     FileOpenOptions,
     FileStat,
-    ImportFileData,
-    ImportFilesEntries,
     ImportFilesProgress,
     ImportFilesResult,
+    ImportFilesSource,
     OPFSOptions,
     RenameOptions,
     WatchEvent,
-    WatchOptions,
-    WatchSnapshot,
 } from '../types';
+import type { ResolvedImportFileData } from '../utils/importSources';
 
 
 /**
@@ -52,9 +48,6 @@ import type {
 export abstract class BaseOPFS {
     /** Root directory handle for the file system */
     protected root!: FileSystemDirectoryHandle;
-
-    /** Map of watched paths and options */
-    protected watchers = new Map<string, WatchSnapshot>();
 
     /** Promise to prevent concurrent mount operations */
     protected mountingPromise: Promise<boolean> | null = null;
@@ -72,33 +65,18 @@ export abstract class BaseOPFS {
     };
 
     /**
-     * Notify about internal changes to the file system
-     * 
-     * This method is called by internal operations to notify clients about
-     * changes, even when no specific paths are being watched.
-     * 
-     * @param event - The event describing the change
+     * Notify about internal changes to the file system.
+     *
+     * Always posts on the BroadcastChannel when one is configured. Path / include /
+     * exclude filtering happens on the subscriber side (`OPFSFacade.watch` listener),
+     * so a tab that never called `watch` still publishes mutations for other tabs.
      */
     protected async notifyChange(event: Omit<WatchEvent, 'timestamp' | 'hash' | 'namespace'>): Promise<void> {
-        // This instance not configured to send events
         if (!this.options.broadcastChannel) {
             return;
         }
 
         const path = event.path;
-
-        const match = [...this.watchers.values()].some((snapshot) => {
-            return (
-                matchMinimatch(path, snapshot.pattern)
-                && snapshot.include.some(include => include && matchMinimatch(path, include))
-                && !snapshot.exclude.some(exclude => exclude && matchMinimatch(path, exclude))
-            );
-        });
-
-        if (!match) {
-            return;
-        }
-
         let hash: string | undefined;
 
         if (this.options.hashAlgorithm) {
@@ -110,7 +88,6 @@ export abstract class BaseOPFS {
             catch {}
         }
 
-        // Send event via BroadcastChannel
         try {
             if (!this.broadcastChannel) {
                 this.broadcastChannel = new BroadcastChannel(this.options.broadcastChannel as string);
@@ -898,52 +875,6 @@ export abstract class BaseOPFS {
     }
 
     /**
-     * Start watching a file or directory for changes
-     * 
-     * @param path - The path to watch (minimatch syntax allowed)
-     * @param options - Watch options
-     * @param options.recursive - Whether to watch recursively (default: true)
-     * @param options.exclude - Glob pattern(s) to exclude (minimatch).
-     * @returns Promise that resolves when watching starts
-     * 
-     * @example
-     * ```typescript
-     * // Watch entire directory tree recursively (default)
-     * await fs.watch('/data');
-     * 
-     * // Watch only immediate children (shallow)
-     * await fs.watch('/data', { recursive: false });
-     * 
-     * // Watch a single file
-     * await fs.watch('/config.json', { recursive: false });
-     * 
-     * // Watch all json files but not in dist directory
-     * await fs.watch('/**\/*.json', { recursive: false, exclude: ['dist/**'] });
-     *
-     * ```
-     */
-    async watch(path: string, options?: WatchOptions): Promise<void> {
-        if (!this.options.broadcastChannel) {
-            throw new OperationNotSupportedError('This instance is not configured to send events. Please specify options.broadcastChannel to enable watching.');
-        }
-
-        const snapshot: WatchSnapshot = {
-            pattern: normalizeMinimatch(path, options?.recursive ?? true),
-            include: Array.isArray(options?.include) ? options.include : [options?.include ?? '**'],
-            exclude: Array.isArray(options?.exclude) ? options.exclude : [options?.exclude ?? ''],
-        };
-
-        this.watchers.set(path, snapshot);
-    }
-
-    /**
-     * Stop watching a previously watched path
-     */
-    unwatch(path: string): void {
-        this.watchers.delete(path);
-    }
-
-    /**
      * Read a file as a `Blob` without copying its bytes into memory.
      *
      * OPFS hands back a disk-backed `File`, so the browser can stream it on
@@ -1002,12 +933,12 @@ export abstract class BaseOPFS {
      * ```
      */
     async importFiles(
-        entries: ImportFilesEntries,
+        entries: ImportFilesSource,
         onProgress?: (progress: ImportFilesProgress) => unknown
     ): Promise<ImportFilesResult> {
         await this.mount();
 
-        const list = [...entries].map(([path, data]) => [normalizePath(path), data] as [string, ImportFileData]);
+        const list = await expandImportFilesSource(entries);
         const count = list.length;
         const paths = list.map(([path]) => path);
         const totalBytes = list.reduce((sum, [, data]) => sum + importEntryByteLength(data), 0);
@@ -1056,7 +987,7 @@ export abstract class BaseOPFS {
     /**
      * @deprecated Use {@link importFiles} instead.
      */
-    async createIndex(entries: ImportFilesEntries): Promise<void> {
+    async createIndex(entries: ImportFilesSource): Promise<void> {
         warnCreateIndexDeprecated();
         await this.importFiles(entries);
     }
@@ -1069,12 +1000,10 @@ export abstract class BaseOPFS {
             this.broadcastChannel.close();
             this.broadcastChannel = null;
         }
-
-        this.watchers.clear();
     }
 }
 
-function importEntryByteLength(data: ImportFileData): number {
+function importEntryByteLength(data: ResolvedImportFileData): number {
     if (typeof data === 'string') {
         return new TextEncoder().encode(data).byteLength;
     }
@@ -1086,7 +1015,7 @@ function importEntryByteLength(data: ImportFileData): number {
     return data.byteLength;
 }
 
-function toImportStream(data: ImportFileData): { stream: ReadableStream<Uint8Array>; size: number } {
+function toImportStream(data: ResolvedImportFileData): { stream: ReadableStream<Uint8Array>; size: number } {
     if (data instanceof Blob) {
         return { stream: data.stream(), size: data.size };
     }

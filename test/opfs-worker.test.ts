@@ -144,7 +144,6 @@ describe('OPFSSync', () => {
     channel.onmessage = (event) => events.push(event.data);
     
     await fsw.mkdir('/watched', { recursive: true });
-    await fsw.watch('/watched');
 
     await fsw.writeFile('/watched/a.txt', new TextEncoder().encode('1'));
     // Give BroadcastChannel a moment to deliver the event
@@ -159,7 +158,6 @@ describe('OPFSSync', () => {
     await new Promise(r => setTimeout(r, 10));
             expect(events.some(e => e.type === WatchEventType.Removed && e.path === '/watched/a.txt')).toBe(true);
 
-    fsw.unwatch('/watched');
     channel.close();
   });
 
@@ -167,8 +165,6 @@ describe('OPFSSync', () => {
     const events: WatchEvent[] = [];
     const channel = new BroadcastChannel('opfs-worker');
     channel.onmessage = (event) => events.push(event.data);
-    await fsw.watch('/');
-
     await fsw.writeFile('/root-file.txt', new TextEncoder().encode('test'));
     // Give BroadcastChannel a moment to deliver the event
     await new Promise(r => setTimeout(r, 10));
@@ -178,59 +174,47 @@ describe('OPFSSync', () => {
     await new Promise(r => setTimeout(r, 10));
             expect(events.some(e => e.type === WatchEventType.Removed && e.path === '/root-file.txt')).toBe(true);
 
-    fsw.unwatch('/');
     channel.close();
   });
 
   it('supports shallow watching with recursive: false', async () => {
+    // BroadcastChannel receives every mutation; path filters apply on the facade listener.
+    // Here we only assert that both writes are published.
     const events: WatchEvent[] = [];
-    
     const channel = new BroadcastChannel('opfs-worker');
     channel.onmessage = (event) => events.push(event.data);
-    
-    // Create nested structure
+
     await fsw.mkdir('/shallow-test', { recursive: true });
     await fsw.mkdir('/shallow-test/nested', { recursive: true });
-    await fsw.writeFile('/shallow-test/nested/deep-file.txt', new TextEncoder().encode('deep content'));
-    
-    // Watch with shallow option - watch immediate children, not the directory itself
-    await fsw.watch('/shallow-test/*', { recursive: false });
-    
-    // Create file in immediate directory (should be detected)
+
     await fsw.writeFile('/shallow-test/immediate.txt', new TextEncoder().encode('immediate content'));
-    await new Promise(r => setTimeout(r, 10));
-            expect(events.some(e => e.type === WatchEventType.Added && e.path === '/shallow-test/immediate.txt')).toBe(true);
-    
-    // Create file in nested directory (should NOT be detected with shallow watching)
     await fsw.writeFile('/shallow-test/nested/another-deep.txt', new TextEncoder().encode('another deep content'));
     await new Promise(r => setTimeout(r, 10));
-            expect(events.some(e => e.type === WatchEventType.Added && e.path === '/shallow-test/nested/another-deep.txt')).toBe(false);
-    
-    fsw.unwatch('/shallow-test/*');
+
+    expect(events.some(e => e.type === WatchEventType.Added && e.path === '/shallow-test/immediate.txt')).toBe(true);
+    expect(events.some(e => e.type === WatchEventType.Added && e.path === '/shallow-test/nested/another-deep.txt')).toBe(true);
+
     channel.close();
-    
-    // Cleanup
     await fsw.remove('/shallow-test', { recursive: true });
   });
 
-  it('notifies about internal changes even when not watching', async () => {
+  it('broadcasts mutations even when nothing called watch', async () => {
     const events: WatchEvent[] = [];
     const channel = new BroadcastChannel('opfs-worker');
     channel.onmessage = (event) => events.push(event.data);
-    
-    // Don't watch any paths, so no events should be received
+
     await fsw.writeFile('/internal-test.txt', new TextEncoder().encode('test'));
     await new Promise(r => setTimeout(r, 50));
-            expect(events.some(e => e.type === WatchEventType.Changed && e.path === '/internal-test.txt')).toBe(false);
+    expect(events.some(e => e.type === WatchEventType.Added && e.path === '/internal-test.txt')).toBe(true);
 
     await fsw.mkdir('/internal-dir', { recursive: true });
     await new Promise(r => setTimeout(r, 50));
-            expect(events.some(e => e.type === WatchEventType.Added && e.path === '/internal-dir')).toBe(false);
+    expect(events.some(e => e.type === WatchEventType.Added && e.path === '/internal-dir')).toBe(true);
 
     await fsw.remove('/internal-test.txt');
     await new Promise(r => setTimeout(r, 50));
-            expect(events.some(e => e.type === WatchEventType.Removed && e.path === '/internal-test.txt')).toBe(false);
-    
+    expect(events.some(e => e.type === WatchEventType.Removed && e.path === '/internal-test.txt')).toBe(true);
+
     channel.close();
   });
 
@@ -239,11 +223,8 @@ describe('OPFSSync', () => {
     const channel = new BroadcastChannel('opfs-worker');
     channel.onmessage = (event) => events.push(event.data);
     
-    // Watch a specific path
+    // Make changes
     await fsw.mkdir('/watched-path', { recursive: true });
-    await fsw.watch('/watched-path');
-    
-    // Make changes to the watched path
     await fsw.writeFile('/watched-path/file.txt', new TextEncoder().encode('test'));
     // Give BroadcastChannel a moment to deliver the event
     await new Promise(r => setTimeout(r, 10));
@@ -252,7 +233,6 @@ describe('OPFSSync', () => {
           const createEvents = events.filter(e => e.type === WatchEventType.Added && e.path === '/watched-path/file.txt');
     expect(createEvents.length).toBe(1);
     
-    await fsw.unwatch('/watched-path');
     channel.close();
   });
 
@@ -269,9 +249,6 @@ describe('OPFSSync', () => {
       await fsw.remove('/source.txt');
     } catch {}
     
-    // Watch the root directory to receive events for any files
-    await fsw.watch('/');
-    
     // Create a source file
     await fsw.writeFile('/source.txt', new TextEncoder().encode('source content'));
     
@@ -287,55 +264,28 @@ describe('OPFSSync', () => {
     const destContent = await fsw.readFile('/dest.txt');
     expect(new TextDecoder().decode(destContent)).toBe('source content');
     
-    fsw.unwatch('/');
     channel.close();
   });
 
-  it('supports minimatch patterns and include/exclude options', async () => {
+  it('broadcasts all mutations; include/exclude are applied by subscribers', async () => {
     const events: WatchEvent[] = [];
     const channel = new BroadcastChannel('opfs-worker');
     channel.onmessage = (event) => events.push(event.data);
-    
-    // Create test structure
+
     await fsw.mkdir('/pattern-test', { recursive: true });
     await fsw.mkdir('/pattern-test/src', { recursive: true });
     await fsw.mkdir('/pattern-test/dist', { recursive: true });
-    
-    // Watch with minimatch pattern and include/exclude options
-    await fsw.watch('/pattern-test/**/*.js', {
-      recursive: true,
-      include: ['**/*.js', '**/*.ts'],
-      exclude: ['**/dist/**', '**/node_modules/**']
-    });
-    
-    // Create files that should match the pattern
+
     await fsw.writeFile('/pattern-test/app.js', new TextEncoder().encode('console.log("app")'));
-    await new Promise(r => setTimeout(r, 10));
-            expect(events.some(e => e.type === WatchEventType.Added && e.path === '/pattern-test/app.js')).toBe(true);
-    
-    await fsw.writeFile('/pattern-test/src/index.js', new TextEncoder().encode('export default {}'));
-    await new Promise(r => setTimeout(r, 10));
-            expect(events.some(e => e.type === WatchEventType.Added && e.path === '/pattern-test/src/index.js')).toBe(true);
-    
-    // Create files that should NOT match (excluded by pattern)
     await fsw.writeFile('/pattern-test/dist/bundle.js', new TextEncoder().encode('bundle content'));
-    await new Promise(r => setTimeout(r, 10));
-            expect(events.some(e => e.type === WatchEventType.Added && e.path === '/pattern-test/dist/bundle.js')).toBe(false);
-    
-    // Create files that should NOT match (not in include patterns)
     await fsw.writeFile('/pattern-test/readme.md', new TextEncoder().encode('# Readme'));
     await new Promise(r => setTimeout(r, 10));
-            expect(events.some(e => e.type === WatchEventType.Added && e.path === '/pattern-test/readme.md')).toBe(false);
-    
-    // Test minimatch pattern with wildcards
-    await fsw.writeFile('/pattern-test/utils.js', new TextEncoder().encode('utils'));
-    await new Promise(r => setTimeout(r, 10));
-            expect(events.some(e => e.type === WatchEventType.Added && e.path === '/pattern-test/utils.js')).toBe(true);
-    
-    fsw.unwatch('/pattern-test/**/*.js');
+
+    expect(events.some(e => e.path === '/pattern-test/app.js')).toBe(true);
+    expect(events.some(e => e.path === '/pattern-test/dist/bundle.js')).toBe(true);
+    expect(events.some(e => e.path === '/pattern-test/readme.md')).toBe(true);
+
     channel.close();
-    
-    // Cleanup
     await fsw.remove('/pattern-test', { recursive: true });
   });
 
@@ -512,8 +462,7 @@ describe('OPFSSync', () => {
         broadcastChannel: 'channel-a',
       });
 
-      // Force channel creation via a watch + write
-      await fsw.watch('/');
+      // Force channel creation via a write
       await fsw.writeFile('/ch.txt', new TextEncoder().encode('x'));
       await new Promise(r => setTimeout(r, 10));
 
@@ -521,10 +470,17 @@ describe('OPFSSync', () => {
       expect(true).toBe(true);
     });
 
-    it('watch throws when broadcastChannel is disabled', async () => {
+    it('skips watch broadcasts when broadcastChannel is disabled', async () => {
+      const events: WatchEvent[] = [];
+      const channel = new BroadcastChannel('opfs-worker');
+      channel.onmessage = (event) => events.push(event.data);
+
       await fsw.setOptions({ broadcastChannel: null });
-      await expect(fsw.watch('/')).rejects.toMatchObject({ name: 'ENOTSUP' });
-      // restore default for later tests in the same file if any share instance - we recreate per test
+      await fsw.writeFile('/silent.txt', new TextEncoder().encode('x'));
+      await new Promise(r => setTimeout(r, 20));
+      expect(events.some(e => e.path === '/silent.txt')).toBe(false);
+
+      channel.close();
     });
 
     it('mkdir fails when a file blocks the path', async () => {
@@ -536,9 +492,8 @@ describe('OPFSSync', () => {
       await expect(fsw.mkdir('/no-parent/child')).rejects.toMatchObject({ name: 'ENOENT' });
     });
 
-    it('dispose cleans watchers and open descriptors', async () => {
+    it('dispose cleans open descriptors', async () => {
       const fd = await fsw.open('/dispose-me.txt', { create: true });
-      await fsw.watch('/');
       fsw.dispose();
 
       await expect(fsw.close(fd)).rejects.toMatchObject({ name: 'EBADF' });

@@ -21,5 +21,5 @@ import type { DedicatedWorkerOptions } from '../worker/createDedicatedWorker';
 export function createOPFSDedicated(options?: DedicatedWorkerOptions): OPFSFacade {
     const { fs, worker, dispose } = createDedicatedWorker(options);
 
-    return new OPFSFacade({ fs, worker, dispose });
+    return new OPFSFacade({ fs, worker, dispose }, options);
 }

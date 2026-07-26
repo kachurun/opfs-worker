@@ -1,6 +1,9 @@
 import { proxy, transfer } from 'comlink';
 
 import { decodeBuffer, encodeString, isBinaryFileExtension } from '../utils/encoder';
+import { OperationNotSupportedError } from '../utils/errors';
+import { matchMinimatch, normalizeMinimatch } from '../utils/helpers';
+import { expandImportFilesSource, isFileSystemFileHandle } from '../utils/importSources';
 
 import type {
     BinaryEncoding,
@@ -8,15 +11,19 @@ import type {
     Encoding,
     FileOpenOptions,
     FileStat,
-    ImportFileData,
     ImportFilesProgress,
     ImportFilesResult,
+    ImportFilesSource,
+    ImportStreamProgress,
     OPFSApi,
     OPFSOptions,
     PathLike,
     RenameOptions,
     StringEncoding,
-    WatchOptions
+    WatchEvent,
+    WatchListener,
+    WatchOptions,
+    WatchSnapshot
 } from '../types';
 
 /**
@@ -29,6 +36,22 @@ function normalizePath(path: PathLike): string {
     }
 
     return path;
+}
+
+function toWatchSnapshot(path: string, options?: WatchOptions): WatchSnapshot {
+    return {
+        pattern: normalizeMinimatch(path, options?.recursive ?? true),
+        include: Array.isArray(options?.include) ? options.include : [options?.include ?? '**'],
+        exclude: Array.isArray(options?.exclude) ? options.exclude : [options?.exclude ?? ''],
+    };
+}
+
+function matchesWatch(path: string, snapshot: WatchSnapshot): boolean {
+    return (
+        matchMinimatch(path, snapshot.pattern)
+        && snapshot.include.some(include => include && matchMinimatch(path, include))
+        && !snapshot.exclude.some(exclude => exclude && matchMinimatch(path, exclude))
+    );
 }
 
 let createIndexWarned = false;
@@ -50,6 +73,11 @@ export interface OPFSBackend {
     dispose: () => void;
 }
 
+interface LocalWatch {
+    snapshot: WatchSnapshot;
+    listener?: WatchListener;
+}
+
 /**
  * Node-like facade with encoding helpers and string/binary auto-detection.
  *
@@ -68,22 +96,111 @@ export class OPFSFacade {
     readonly worker: Worker | SharedWorker | undefined;
     promises: OPFSFacade = this;
 
-    constructor(backend: OPFSBackend) {
+    #channelName: string | null = 'opfs-worker';
+    #namespace = '';
+    #watches = new Map<string, LocalWatch>();
+    #channel: BroadcastChannel | null = null;
+
+    constructor(backend: OPFSBackend, options?: OPFSOptions) {
         this.#fs = backend.fs;
         this.backend = backend.fs;
         this.worker = backend.worker;
         this.#dispose = backend.dispose;
+        this.#applyLocalOptions(options);
+    }
+
+    #applyLocalOptions(options?: OPFSOptions): void {
+        if (!options) {
+            return;
+        }
+
+        // Mirror BaseOPFS.setOptions so event.namespace filtering stays in sync
+        if (options.namespace) {
+            this.#namespace = options.namespace;
+        }
+
+        if (options.root != null && !this.#namespace) {
+            this.#namespace = `opfs-worker:${ normalizePath(options.root) }`;
+        }
+
+        if (options.broadcastChannel != null) {
+            const bc = options.broadcastChannel;
+
+            this.#channelName = bc == null ? null : typeof bc === 'string' ? bc : bc.name;
+        }
+    }
+
+    #onMessage = (event: MessageEvent<WatchEvent>): void => {
+        const data = event.data;
+
+        if (!data?.path || !data?.type || data.namespace !== this.#namespace) {
+            return;
+        }
+
+        for (const { snapshot, listener } of this.#watches.values()) {
+            if (listener && matchesWatch(data.path, snapshot)) {
+                listener(data);
+            }
+        }
+    };
+
+    #bindChannel(): void {
+        if (this.#channel || !this.#channelName) {
+            return;
+        }
+
+        this.#channel = new BroadcastChannel(this.#channelName);
+        this.#channel.addEventListener('message', this.#onMessage);
+    }
+
+    #unbindChannel(): void {
+        this.#channel?.removeEventListener('message', this.#onMessage);
+        this.#channel?.close();
+        this.#channel = null;
     }
 
     /**
-     * Start watching a file or directory for changes
+     * Start watching a file or directory for changes.
+     *
+     * Node-style: `watch(path[, options][, listener])`. Pass a `listener` to get
+     * events directly (BroadcastChannel is handled for you, including other tabs).
+     * Without a listener, only stores local filters (useful with `unwatch`); prefer
+     * passing a listener for real subscriptions.
      */
-    watch(path: PathLike, options?: WatchOptions): () => void {
+    watch(path: PathLike, listener: WatchListener): () => void;
+    watch(path: PathLike, options?: WatchOptions, listener?: WatchListener): () => void;
+    watch(
+        path: PathLike,
+        optionsOrListener?: WatchOptions | WatchListener,
+        listener?: WatchListener
+    ): () => void {
+        if (this.#channelName == null) {
+            throw new OperationNotSupportedError(
+                'Watching requires options.broadcastChannel (pass a channel name, or omit the option to use the default).'
+            );
+        }
+
+        const options = typeof optionsOrListener === 'function' ? undefined : optionsOrListener;
+        const cb = typeof optionsOrListener === 'function' ? optionsOrListener : listener;
         const normalizedPath = normalizePath(path);
+        const snapshot = toWatchSnapshot(normalizedPath, options);
 
-        void this.#fs.watch(normalizedPath, options);
+        this.#watches.set(normalizedPath, { snapshot, listener: cb });
 
-        return () => this.unwatch(normalizedPath);
+        if (cb) {
+            this.#bindChannel();
+        }
+        else if (![...this.#watches.values()].some(w => w.listener)) {
+            this.#unbindChannel();
+        }
+
+        return () => {
+            if (this.#watches.get(normalizedPath)?.snapshot !== snapshot) {
+                return;
+            }
+
+            this.unwatch(normalizedPath);
+        };
     }
 
     /**
@@ -92,13 +209,29 @@ export class OPFSFacade {
     unwatch(path: PathLike) {
         const normalizedPath = normalizePath(path);
 
-        void this.#fs.unwatch(normalizedPath);
+        this.#watches.delete(normalizedPath);
+
+        if (![...this.#watches.values()].some(w => w.listener)) {
+            this.#unbindChannel();
+        }
     }
 
     /**
      * Update configuration options
      */
     async setOptions(options: OPFSOptions) {
+        const prevName = this.#channelName;
+
+        this.#applyLocalOptions(options);
+
+        if (this.#channel && this.#channelName !== prevName) {
+            this.#unbindChannel();
+
+            if ([...this.#watches.values()].some(w => w.listener)) {
+                this.#bindChannel();
+            }
+        }
+
         return this.#fs.setOptions(options);
     }
 
@@ -221,18 +354,24 @@ export class OPFSFacade {
      * Create or overwrite a file from a byte stream without buffering the
      * complete source in memory.
      *
+     * Accepts a `ReadableStream`, `Blob` / `File`, or a `FileSystemFileHandle`
+     * (from `showOpenFilePicker` — we call `getFile()` for you).
+     *
      * Returns the total number of bytes written.
      */
     async importStream(
         path: PathLike,
-        source: ReadableStream<Uint8Array> | Blob,
-        options?: { onProgress?: (bytesWritten: number) => void }
+        source: ReadableStream<Uint8Array> | Blob | FileSystemFileHandle,
+        options?: { onProgress?: (progress: ImportStreamProgress) => void }
     ): Promise<number> {
         const normalizedPath = normalizePath(path);
-        const stream = source instanceof Blob ? source.stream() : source;
+        const resolved = isFileSystemFileHandle(source) ? await source.getFile() : source;
+        const bytesTotal = resolved instanceof Blob ? resolved.size : undefined;
+        const stream = resolved instanceof Blob ? resolved.stream() : resolved;
         const transferredStream = transfer(stream, [stream]) as unknown as ReadableStream<Uint8Array>;
         const onProgress = options?.onProgress
-            ? proxy((bytesWritten: number) => options.onProgress!(bytesWritten))
+            ? proxy((bytesWritten: number) =>
+                options.onProgress!({ path: normalizedPath, bytesWritten, bytesTotal }))
             : undefined;
 
         return this.#fs.writeStream(normalizedPath, transferredStream, onProgress);
@@ -466,33 +605,31 @@ export class OPFSFacade {
     }
 
     /**
-     * Bulk-import files from `[path, data]` entries (strings, bytes, Blobs, or Files).
-     * Each entry is streamed via {@link importStream} / `writeStream` so large
+     * Bulk-import files from `[path, data]` entries, a `FileSystemDirectoryHandle`,
+     * or one / many `FileSystemFileHandle`s. Handles are resolved via `getFile()`
+     * here (where permission was granted), then each entry is streamed so large
      * Blobs/Files are not fully buffered in memory.
      *
-     * Accepts an array of tuples, a `Map`, or any iterable of `[path, data]` pairs.
-     * Returns written paths, count, and total bytes.
+     * For a directory handle, pass `{ prefix }` to place files under a path
+     * (default `/` → `/readme.txt`, `/src/a.ts`, …).
      */
     async importFiles(
-        entries: Iterable<[PathLike, ImportFileData]> | Map<string, ImportFileData>,
-        options?: { onProgress?: (progress: ImportFilesProgress) => void }
+        entries: ImportFilesSource,
+        options?: { onProgress?: (progress: ImportFilesProgress) => void; prefix?: string }
     ): Promise<ImportFilesResult> {
-        const normalizedEntries = [...entries].map(([path, data]) => [
-            normalizePath(path),
-            data,
-        ] as [string, ImportFileData]);
+        const list = await expandImportFilesSource(entries, options?.prefix ?? '/');
 
         const onProgress = options?.onProgress
             ? proxy((progress: ImportFilesProgress) => options.onProgress!(progress))
             : undefined;
 
-        return this.#fs.importFiles(normalizedEntries, onProgress);
+        return this.#fs.importFiles(list, onProgress);
     }
 
     /**
      * @deprecated Use {@link importFiles} instead.
      */
-    async createIndex(entries: Iterable<[PathLike, ImportFileData]> | Map<string, ImportFileData>): Promise<void> {
+    async createIndex(entries: ImportFilesSource): Promise<void> {
         warnCreateIndexDeprecated();
         await this.importFiles(entries);
     }
@@ -531,6 +668,8 @@ export class OPFSFacade {
      * Dispose of resources, detach the backend and clean up the file system instance
      */
     dispose() {
+        this.#watches.clear();
+        this.#unbindChannel();
         this.#dispose();
     }
 }

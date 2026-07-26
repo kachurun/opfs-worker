@@ -24,7 +24,7 @@ import {
     type ThemeMode,
 } from './lib/persist';
 
-import type { OPFSFacade, WatchEvent } from '../src';
+import type { OPFSFacade } from '../src';
 
 export interface FileBrowserActions {
     newFile: () => void;
@@ -161,7 +161,10 @@ export function createDemoStore() {
                 return;
             }
 
-            unwatch = next.watch('/', { recursive: true });
+            unwatch = next.watch('/', { recursive: true }, (event) => {
+                pushLog('watch', formatWatchDetail(event));
+                void refreshTree();
+            });
             pushLog('op', 'watch(/, recursive)');
             await refreshTree(next);
 
@@ -229,23 +232,9 @@ export function createDemoStore() {
 
     window.addEventListener('storage', onStorage);
 
-    const channel = new BroadcastChannel('opfs-worker-demo');
-
-    channel.onmessage = (event: MessageEvent<WatchEvent>) => {
-        const data = event.data;
-
-        if (!data?.path || !data?.type) {
-            return;
-        }
-
-        pushLog('watch', formatWatchDetail(data));
-        void refreshTree();
-    };
-
     onCleanup(() => {
         bootGen += 1;
         window.removeEventListener('storage', onStorage);
-        channel.close();
         disposeFs();
     });
 

@@ -26,5 +26,5 @@ import type { SharedWorkerOptions } from '../worker/createSharedWorker';
 export function createOPFSShared(options?: SharedWorkerOptions): OPFSFacade {
     const { fs, worker, dispose } = createSharedWorker(options);
 
-    return new OPFSFacade({ fs, worker, dispose });
+    return new OPFSFacade({ fs, worker, dispose }, options);
 }

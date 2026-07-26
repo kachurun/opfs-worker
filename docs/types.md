@@ -37,6 +37,49 @@ interface WatchOptions {
 }
 ```
 
+## `WatchListener`
+
+```typescript
+type WatchListener = (event: WatchEvent) => void;
+```
+
+Used by the facade: `fs.watch(path, listener)` or `fs.watch(path, options, listener)`.
+
+## `ImportFileData`
+
+Payload for one entry in a `[path, data]` pair:
+
+```typescript
+type ImportFileData = string | Uint8Array | Blob | FileSystemFileHandle;
+```
+
+## `ImportFilesSource`
+
+What `importFiles` accepts:
+
+```typescript
+type ImportFilesSource =
+    | Iterable<[PathLike, ImportFileData]>
+    | Map<string, ImportFileData>
+    | FileSystemDirectoryHandle              // walked recursively
+    | FileSystemFileHandle                   // path from handle.name
+    | Iterable<FileSystemFileHandle>;        // same, for showOpenFilePicker({ multiple: true })
+```
+
+Directory / file-handle lists use `{ prefix }` on the facade (default `'/'`) — see [streaming](./guides/streaming.md) and [uploading from disk](./guides/uploading.md).
+
+## `ImportStreamProgress`
+
+Fired by `importStream` / `onProgress` for each chunk written:
+
+```typescript
+interface ImportStreamProgress {
+    path: string;
+    bytesWritten: number;
+    bytesTotal?: number; // set for Blob / File; omitted for raw ReadableStream
+}
+```
+
 ## `ImportFilesProgress`
 
 Fired by `importFiles` / `onProgress` for each chunk written:
@@ -64,8 +107,6 @@ interface ImportFilesResult {
     bytesWritten: number; // total bytes across all files
 }
 ```
-
-Entries accept `Iterable<[path, string | Uint8Array | Blob]>` or `Map<string, …>` — see [streaming](./guides/streaming.md).
 
 ## `OPFSApi`
 

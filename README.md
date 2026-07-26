@@ -1,14 +1,20 @@
-# OPFS Worker
-
 <a href="https://www.npmjs.com/package/opfs-worker" target="_blank" rel="noreferrer"><img src="https://img.shields.io/npm/v/opfs-worker.svg" alt="npm version"></a>
 <a href="https://www.npmjs.com/package/opfs-worker" target="_blank" rel="noreferrer"><img src="https://img.shields.io/npm/dw/opfs-worker.svg" alt="npm downloads"></a>
 <a href="https://kachurun.github.io/opfs-worker/" target="_blank" rel="noreferrer"><img src="https://img.shields.io/badge/demo-live-brightgreen" alt="demo"></a>
 
-## What is OPFS?
+# OPFS Worker
 
-OPFS ([Origin Private File System](https://developer.mozilla.org/en-US/docs/Web/API/File_System_API/Origin_private_file_system)) is a browser filesystem scoped to your origin. It sits under the usual site quota; clearing site data wipes it. The browser does not show a file picker or ask for access.
+A small, practical wrapper around the browser’s [Origin Private File System](https://developer.mozilla.org/en-US/docs/Web/API/File_System_API/Origin_private_file_system), with a familiar Node.js-style API.
 
-This package puts a Node-like API on top of it.
+OPFS gives your web app its own private filesystem. It requires no file picker or permission prompt, supports fast local file access, and is isolated to the current origin.
+
+`opfs-worker` hides the browser-specific complexity behind a simple API for reading, writing, moving, and managing files.
+
+Files are stored within the browser’s site quota and are removed when the user clears the site’s data.
+
+**[Try the demo →](https://kachurun.github.io/opfs-worker/)**
+
+## Features
 
 → **File API** — `readFile`, `writeFile`, `mkdir`, `stat`, `rename`, `copy`, `readDir`; encodings, extension-based detection, `string | URL` paths. [Docs](docs/api/README.md#facade)
 
@@ -24,9 +30,9 @@ This package puts a Node-like API on top of it.
 
 → **Bring your own worker** — use it directly in a worker you already run, or load a prebuilt worker script. [Docs](docs/guides/pure.md)
 
-→ **Large files & uploads** — stream a `ReadableStream`, `Blob`, or `File` in chunks with progress, or bulk-import whole folders from a file picker / drag-and-drop via `importFiles`. [Docs](docs/guides/streaming.md)
+→ **Large files** — stream reads (`readBlob`) and writes (`importStream` / `importFiles`) without buffering everything. [Docs](docs/guides/streaming.md) · [Upload](docs/guides/uploading.md) · [Download](docs/guides/downloading.md)
 
-→ **Watch** — change events over `BroadcastChannel` across tabs / workers. [Docs](docs/guides/watching.md)
+→ **Watch** — change events with a Node-style `watch(path, listener)` (BroadcastChannel under the hood, including across tabs). [Docs](docs/guides/watching.md)
 
 → **Hashing** — `stat()` can include an etag or a SHA hash (SHA skipped above a size cap). [Docs](docs/guides/hashing.md)
 
@@ -67,8 +73,6 @@ fs.dispose();
 | Node-like `fs` via SharedWorker (modern browsers / Safari 26+)   | `createOPFSShared()` from `opfs-worker/sharedworker` |
 | OPFS inside a worker you already run (classes only)              | `OPFSSync` / `OPFSAsync` from `opfs-worker/pure`     |
 
-Trade-offs (FDs, Safari, size, CSP): [API](docs/api/README.md#trade-offs).
-
 ## Docs
 
 - [API overview](docs/api/README.md) — entries, facade methods, options, trade-offs
@@ -78,15 +82,17 @@ Trade-offs (FDs, Safari, size, CSP): [API](docs/api/README.md#trade-offs).
 
 ## Guides
 
-| Guide                                        | About                                                     |
-| -------------------------------------------- | --------------------------------------------------------- |
-| [Dedicated worker](docs/guides/dedicated.md) | How to use OPFS via a dedicated worker (the default path) |
-| [Async](docs/guides/async.md)                | How to use OPFS on the main thread, without a worker      |
-| [SharedWorker](docs/guides/sharedworker.md)  | How to share one filesystem across all tabs               |
-| [Pure classes](docs/guides/pure.md)          | How to drop OPFS into a worker you already run            |
-| [Streaming](docs/guides/streaming.md)        | How to handle large files and bulk uploads                |
-| [Watching](docs/guides/watching.md)          | How to listen for file changes across tabs                |
-| [Hashing](docs/guides/hashing.md)            | How file hashes / etags work on `stat` and watch events   |
+| Guide                                             | About                                                     |
+| ------------------------------------------------- | --------------------------------------------------------- |
+| [Dedicated worker](docs/guides/dedicated.md)      | How to use OPFS via a dedicated worker (the default path) |
+| [Async](docs/guides/async.md)                     | How to use OPFS on the main thread, without a worker      |
+| [SharedWorker](docs/guides/sharedworker.md)       | How to share one filesystem across all tabs               |
+| [Pure classes](docs/guides/pure.md)               | How to drop OPFS into a worker you already run            |
+| [Streaming](docs/guides/streaming.md)             | How to read/write large files without buffering           |
+| [Uploading from disk](docs/guides/uploading.md)   | Pickers, paste, drag-and-drop into `importFiles`          |
+| [Downloading to disk](docs/guides/downloading.md) | `readBlob` → `<a download>` / `showSaveFilePicker`        |
+| [Watching](docs/guides/watching.md)               | How to listen for file changes across tabs                |
+| [Hashing](docs/guides/hashing.md)                 | How file hashes / etags work on `stat` and watch events   |
 
 ## Development
 
@@ -99,10 +105,6 @@ npm run type-check
 ```
 
 Demo: `npm run dev:demo` / `npm run build:demo` / `npm run preview`.
-
-## License
-
-MIT
 
 ## Maintainer
 

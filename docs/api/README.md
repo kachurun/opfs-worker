@@ -32,19 +32,19 @@ const fs = createOPFS(); // or createOPFSAsync(), createOPFSShared({ url: '...' 
 
 ### File I/O
 
-Paths are `string | URL` everywhere below.
+Paths are `string` or `URL` everywhere below.
 
-| Method         | Parameters                                                     | Returns                                                                                        |
-| -------------- | -------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- | -------------------------------------------------------------------------- | --------------- |
-| `readFile`     | `path`, optional `encoding` or `{ encoding }`                  | `Promise<string                                                                                | Uint8Array>` — auto by extension if omitted (`.txt`→ string,`.bin` → bytes) |
-| `writeFile`    | `path`, `data` (`string                                        | Uint8Array                                                                                     | ArrayBuffer                                                                 | Blob`), optional encoding                                                  | `Promise<void>` |
-| `appendFile`   | `path`, `data` (`string                                        | Uint8Array                                                                                     | ArrayBuffer                                                                 | Blob`), optional encoding                                                  | `Promise<void>` |
-| `readText`     | `path`, `encoding?` (default `'utf-8'`)                        | `Promise<string>`                                                                              |
-| `writeText`    | `path`, `text`, `encoding?` (default `'utf-8'`)                | `Promise<void>`                                                                                |
-| `appendText`   | `path`, `text`, `encoding?` (default `'utf-8'`)                | `Promise<void>`                                                                                |
-| `readBlob`     | `path`                                                         | `Promise<Blob>` — disk-backed, not copied into memory. See [streaming](../guides/streaming.md) |
-| `importStream` | `path`, `ReadableStream                                        | Blob                                                                                           | File`, optional `{ onProgress }`                                            | `Promise<number>` — bytes written. See [streaming](../guides/streaming.md) |
-| `importFiles`  | `[path, data][]` / `Map` / iterable, optional `{ onProgress }` | `Promise<ImportFilesResult>` — paths, count, bytes. See [streaming](../guides/streaming.md)    |
+| Method         | Parameters                                                                           | Returns                                                                                          |
+| -------------- | ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------ |
+| `readFile`     | `path`, optional `encoding` or `{ encoding }`                                        | `Promise<string or Uint8Array>` — auto by extension if omitted (`.txt` → string, `.bin` → bytes) |
+| `writeFile`    | `path`, `data` (`string` / `Uint8Array` / `ArrayBuffer` / `Blob`), optional encoding | `Promise<void>`                                                                                  |
+| `appendFile`   | `path`, `data` (`string` / `Uint8Array` / `ArrayBuffer` / `Blob`), optional encoding | `Promise<void>`                                                                                  |
+| `readText`     | `path`, `encoding?` (default `'utf-8'`)                                              | `Promise<string>`                                                                                |
+| `writeText`    | `path`, `text`, `encoding?` (default `'utf-8'`)                                      | `Promise<void>`                                                                                  |
+| `appendText`   | `path`, `text`, `encoding?` (default `'utf-8'`)                                      | `Promise<void>`                                                                                  |
+| `readBlob`     | `path`                                                                               | `Promise<Blob>` — disk-backed, not copied into memory. See [streaming](../guides/streaming.md)   |
+| `importStream` | `path`, stream / `Blob` / `File` / `FileSystemFileHandle`, optional `{ onProgress }` | `Promise<number>` — bytes written. See [streaming](../guides/streaming.md)                       |
+| `importFiles`  | pairs / `Map` / directory or file handles, optional `{ onProgress, prefix }`         | `Promise<ImportFilesResult>` — see [streaming](../guides/streaming.md)                           |
 
 For Node compatibility, `fs.promises` is the same instance (`fs.promises === fs`).
 
@@ -65,12 +65,12 @@ For Node compatibility, `fs.promises` is the same instance (`fs.promises === fs`
 
 ### Watch & lifecycle
 
-| Method       | Parameters                                                            | Returns                                          |
-| ------------ | --------------------------------------------------------------------- | ------------------------------------------------ |
-| `watch`      | `path`, optional `{ recursive, include, exclude }`                    | `() => void` unsubscribe                         |
-| `unwatch`    | `path`                                                                | `void`                                           |
-| `setOptions` | `options` — see [Options](#options) / [hashing](../guides/hashing.md) | `Promise<void>`                                  |
-| `dispose`    | —                                                                     | `void` — tears down watches, backend, and worker |
+| Method       | Parameters                                                              | Returns                                                                      |
+| ------------ | ----------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| `watch`      | `path`, optional `{ recursive, include, exclude }`, optional `listener` | `() => void` unsubscribe — Node-style; see [watching](../guides/watching.md) |
+| `unwatch`    | `path`                                                                  | `void`                                                                       |
+| `setOptions` | `options` — see [Options](#options) / [hashing](../guides/hashing.md)   | `Promise<void>`                                                              |
+| `dispose`    | —                                                                       | `void` — tears down watches, backend, and worker                             |
 
 ### File descriptors
 
@@ -101,10 +101,10 @@ Dedicated / `OPFSSync` only — async throws `ENOTSUP`. Details: [file descripto
 
 `fs.backend` is the raw bytes API the facade wraps — a Comlink proxy to the worker for dedicated / SharedWorker, or the in-process `OPFSAsync` instance for async. Same methods as the facade, but without encoding helpers (you pass / get `Uint8Array`).
 
-| Field        | Type                             | Notes                |
-| ------------ | -------------------------------- | -------------------- | ---------- | ---------------------------------------------------- |
-| `fs.backend` | `[OPFSApi](../types.md#opfsapi)` | bytes in / bytes out |
-| `fs.worker`  | `Worker                          | SharedWorker         | undefined` | set when a worker was created; `undefined` for async |
+| Field        | Type                                    | Notes                                                |
+| ------------ | --------------------------------------- | ---------------------------------------------------- |
+| `fs.backend` | [`OPFSApi`](../types.md#opfsapi)        | bytes in / bytes out                                 |
+| `fs.worker`  | `Worker` / `SharedWorker` / `undefined` | set when a worker was created; `undefined` for async |
 
 ## Options
 
@@ -128,10 +128,10 @@ const fs = createOPFS({
 
 ### Dedicated worker only
 
-| Option   | Type     | Default | What it does                                |
-| -------- | -------- | ------- | ------------------------------------------- | ---------------------------------------------------------------------------------- |
-| `url`    | `string  | URL`    | inlined worker                              | Script URL for `opfs-worker/dedicated.worker.js` (or your own) instead of the blob |
-| `worker` | `Worker` | —       | Pass an existing `Worker` (overrides `url`) |
+| Option   | Type             | Default        | What it does                                                                       |
+| -------- | ---------------- | -------------- | ---------------------------------------------------------------------------------- |
+| `url`    | `string` / `URL` | inlined worker | Script URL for `opfs-worker/dedicated.worker.js` (or your own) instead of the blob |
+| `worker` | `Worker`         | —              | Pass an existing `Worker` (overrides `url`)                                        |
 
 Leave these unset unless you need them — the default inlined worker is enough.
 
@@ -145,11 +145,11 @@ const fs = createOPFS({ root: '/my-app' });
 
 ### SharedWorker only
 
-| Option   | Type           | Default         | What it does                                            |
-| -------- | -------------- | --------------- | ------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
-| `url`    | `string        | URL`            | next to the package                                     | Script URL for `opfs-worker/shared.worker.js` — with Vite: `import url from '…/shared.worker.js?url'` |
-| `worker` | `SharedWorker` | —               | Pass an existing `SharedWorker` (overrides `url`)       |
-| `name`   | `string`       | `'opfs-worker'` | Tabs with the same script URL + name share one instance |
+| Option   | Type             | Default         | What it does                                                                                          |
+| -------- | ---------------- | --------------- | ----------------------------------------------------------------------------------------------------- |
+| `url`    | `string` / `URL` | next to package | Script URL for `opfs-worker/shared.worker.js` — with Vite: `import url from '…/shared.worker.js?url'` |
+| `worker` | `SharedWorker`   | —               | Pass an existing `SharedWorker` (overrides `url`)                                                     |
+| `name`   | `string`         | `'opfs-worker'` | Name **prefix** — real SharedWorker name is `` `${name}:${root}` `` so different roots stay isolated  |
 
 ```typescript
 import workerUrl from 'opfs-worker/shared.worker.js?url'; // Vite
@@ -158,7 +158,7 @@ import { createOPFSShared } from 'opfs-worker/sharedworker';
 const fs = createOPFSShared({
     root: '/my-app',
     url: workerUrl,
-    name: 'opfs-worker',
+    // name: 'opfs-worker', // optional prefix → worker name becomes opfs-worker:/my-app
 });
 ```
 

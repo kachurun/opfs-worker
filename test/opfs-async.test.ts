@@ -140,13 +140,11 @@ describe('OPFSAsync', () => {
 
       channel.onmessage = e => events.push(e.data);
 
-      await fs.watch('/');
       await fs.writeFile('/w.txt', enc('x'));
       await new Promise(r => setTimeout(r, 15));
 
       expect(events.some(e => e.path === '/w.txt' && e.type === 'added')).toBe(true);
 
-      fs.unwatch('/');
       channel.close();
     });
   });
@@ -182,12 +180,12 @@ describe('createOPFSAsync (facade over OPFSAsync)', () => {
     await fs.appendText('/note.txt', '!');
     await expect(fs.readFile('/note.txt', 'utf-8')).resolves.toBe('hello!');
 
-    const progress: number[] = [];
+    const progress: Array<{ path: string; bytesWritten: number; bytesTotal?: number }> = [];
     await expect(fs.importStream('/blob.bin', new Blob([new Uint8Array([1, 2, 3])]), {
-      onProgress: bytes => progress.push(bytes),
+      onProgress: (p) => progress.push(p),
     })).resolves.toBe(3);
     await expect(fs.readFile('/blob.bin', 'binary')).resolves.toEqual(new Uint8Array([1, 2, 3]));
-    expect(progress).toEqual([3]);
+    expect(progress).toEqual([{ path: '/blob.bin', bytesWritten: 3, bytesTotal: 3 }]);
 
     await fs.mkdir('/dir');
     expect(await fs.exists('/dir')).toBe(true);

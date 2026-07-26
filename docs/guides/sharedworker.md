@@ -1,12 +1,12 @@
 # SharedWorker
 
-One `OPFSAsync` for every tab. Locks live in that instance, so writes across tabs don’t collide. Watch events use `BroadcastChannel` as usual.
+Use this when several tabs of your app should talk to **one** filesystem process. Writes go through that single instance, so tabs don’t race each other on the same paths. [Watch](./watching.md) events use `BroadcastChannel` as usual, so every listening tab sees the same changes.
 
-Same limits as [async](./async.md): Safari 26+ for writes, no FDs.
+Under the hood it’s the same async OPFS path as [async](./async.md): no file descriptors, and writes need Safari **26+** (or Chrome / Firefox). For older Safari writes, stick to the [dedicated worker](./dedicated.md).
 
-SharedWorkers are keyed by **script URL**, so we can’t inline the worker. Use the shipped file: `opfs-worker/shared.worker.js`.
+Unlike dedicated mode, a SharedWorker can’t live in an inline blob — the browser ties shared workers to a real script URL. You load the file we ship: `opfs-worker/shared.worker.js`.
 
-## With a bundler (Vite example)
+## With a bundler (Vite)
 
 ```typescript
 import workerUrl from 'opfs-worker/shared.worker.js?url';
@@ -19,7 +19,7 @@ await fs.writeText('/shared-config.json', '{}');
 
 ## Without a bundler
 
-Default URL looks for `./shared.worker.js` next to the package files:
+If you omit `url`, we look for `./shared.worker.js` next to the package files. That only works if your server actually serves the file there:
 
 ```typescript
 import { createOPFSShared } from 'opfs-worker/sharedworker';
@@ -27,31 +27,27 @@ import { createOPFSShared } from 'opfs-worker/sharedworker';
 const fs = createOPFSShared({ root: '/my-app' });
 ```
 
-Or pass your own instance:
+Or build the `SharedWorker` yourself and hand it over (then the `name` is entirely yours — match ``opfs-worker:${root}`` if you want the same isolation as above):
 
 ```typescript
 const worker = new SharedWorker(
     new URL('opfs-worker/shared.worker.js', import.meta.url),
-    { type: 'module', name: 'opfs-worker' }
+    { type: 'module', name: 'opfs-worker:/my-app' }
 );
+
 const fs = createOPFSShared({ root: '/my-app', worker });
 ```
 
-## Raw backend
+Tabs share one instance when they use the **same script URL** and the same SharedWorker `name`.
 
-```typescript
-const fs = createOPFSShared({ root: '/my-app', url: workerUrl });
+`createOPFSShared` builds that name for you as ``${name}:${root}`` (default prefix `'opfs-worker'`). So `root: '/my-app'` becomes a worker named `opfs-worker:/my-app`, and a different root gets a different SharedWorker — same idea as dedicated mode pooling by root. If you pass your own `name` (e.g. `'my-app'`), `root` is still appended (`my-app:/my-app`).
 
-await fs.backend.writeFile('/a.bin', bytes);
-fs.worker; // SharedWorker
+Only when you pass a ready-made `worker` instance do you control the name yourself — then make sure every tab that should share state uses the same script URL + name.
 
-fs.dispose(); // closes this tab’s port only
-```
+## Lifecycle
 
-## Notes
+`dispose()` only closes **this tab’s** connection. Other tabs keep using the SharedWorker until they disconnect too.
 
-- `dispose()` does **not** kill the worker for other tabs — only your port.
-- `setOptions` hits the shared instance, so keep options consistent across tabs.
-- Same script URL + `name` (default `'opfs-worker'`) → same instance.
+`setOptions` applies to the shared instance for everyone. If two tabs pass different options, the last call wins — keep them consistent across tabs.
 
-Also: [async](./async.md), [watching](./watching.md), [API](../api/README.md).
+See also [async](./async.md), [watching](./watching.md), and the [API overview](../api/README.md).

@@ -18,5 +18,5 @@ import type { OPFSOptions } from '../types';
 export function createOPFSAsync(options?: OPFSOptions): OPFSFacade {
     const fs = new OPFSAsync(options);
 
-    return new OPFSFacade({ fs, dispose: () => fs.dispose() });
+    return new OPFSFacade({ fs, dispose: () => fs.dispose() }, options);
 }

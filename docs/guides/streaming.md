@@ -1,41 +1,77 @@
 # Streaming
 
-Write large files without buffering the whole payload.
+With large files, a naive `readFile` / `writeFile` can mean pulling the whole thing into memory.
+Streaming avoids that: read media back as a disk-backed `Blob` the browser can play without copying every byte first, and write from a `File`, `Blob`, or network body in chunks.
 
-|               | Method                                                                         |
-| ------------- | ------------------------------------------------------------------------------ |
-| Facade        | `importStream(path, source, options?)` · `importFiles(entries, options?)`      |
-| Backend / raw | `writeStream(path, stream, onProgress?)` · `importFiles(entries, onProgress?)` |
+| Goal                                               | Method                                    |
+| -------------------------------------------------- | ----------------------------------------- |
+| Play or download without buffering                 | `fs.readBlob(path)`                       |
+| One large upload (`File`, `Blob`, or network body) | `fs.importStream(path, source, options?)` |
+| Many files / a folder                              | `fs.importFiles(entries, options?)`       |
 
-Both create or overwrite the file, return bytes written, and fire a watch event when done.
+For picking files from disk (input, File System Access, paste, drag-and-drop), see [Uploading from disk](./uploading.md).
+For saving files out of OPFS, see [Downloading to disk](./downloading.md).
 
-## `importStream` (facade)
+## Reading without buffering: `readBlob`
 
-Takes a `ReadableStream<Uint8Array>`, or a `Blob` / `File` (we call `.stream()` for you):
+`readFile` copies the whole file into memory. For video, audio, or anything you’d hand the browser as a `Blob`, use `readBlob` instead. It returns the disk-backed blob OPFS already has — nothing is read until something actually asks for bytes:
 
 ```typescript
 import { createOPFS } from 'opfs-worker';
 
 const fs = createOPFS({ root: '/my-app' });
 
-const file = input.files[0];
-await fs.importStream(`/uploads/${file.name}`, file, {
-    onProgress: (n) => console.log(`wrote ${n} bytes`),
-});
+const blob = await fs.readBlob('/media/clip.mp4');
+const url = URL.createObjectURL(blob);
 
+video.src = url;
+// later: URL.revokeObjectURL(url);
+```
+
+The browser then seeks and buffers only the ranges it plays, so a multi-gigabyte file costs no memory up front. The same `Blob` works for `<img>`, `<audio>`, `<iframe>` (PDF), `fetch()` bodies, and downloads — see [Downloading to disk](./downloading.md).
+
+Reading a small header stays cheap too — `slice()` does not touch the rest of the file:
+
+```typescript
+const magic = new Uint8Array(await blob.slice(0, 4).arrayBuffer());
+```
+
+## Writing: `importStream` / `importFiles`
+
+The write helpers create or overwrite the file, return how many bytes were written, and emit a watch event when finished.
+
+### `importStream` — one file
+
+Pass a `ReadableStream<Uint8Array>`, a `Blob` / `File`, or a `FileSystemFileHandle`. Returns bytes written:
+
+```typescript
+const file = document.querySelector<HTMLInputElement>('#file')!.files![0]!;
+const n = await fs.importStream(`/uploads/${file.name}`, file, {
+    onProgress: ({ path, bytesWritten, bytesTotal }) => {
+        console.log(`${path}: ${bytesWritten}/${bytesTotal ?? '?'}`);
+    },
+});
+console.log(`done: ${n} bytes`);
+
+// From the network — stream the response body straight into OPFS
 const res = await fetch('/large.bin');
 await fs.importStream('/cache/large.bin', res.body!);
 ```
 
-With a worker backend the facade transfers the stream and proxies `onProgress`.
+`onProgress` receives `{ path, bytesWritten, bytesTotal? }` — `bytesTotal` is set for `Blob` / `File`, omitted for raw streams. Same API in dedicated, async, and SharedWorker modes.
 
-## `importFiles` (bulk)
+### `importFiles` — many files
 
-Same streaming path for many entries — strings, bytes, Blobs, or Files.
+Same idea for a batch. Pass:
 
-First argument is any iterable of `[path, data]` pairs: an array of tuples, a `Map`, etc.
+- `[path, data]` pairs (`string` / bytes / `Blob` / `File` / `FileSystemFileHandle` as data)
+- a `Map`, or any iterable of those pairs
+- a `FileSystemDirectoryHandle` (walked recursively)
+- one or many `FileSystemFileHandle`s (paths from `handle.name`)
 
-`onProgress` receives an object (not a bare number):
+For directory / bare file handles, use `{ prefix }` to place them under a path (default `/`).
+
+Progress is an object too — with batch fields on top of the per-file ones:
 
 | Field                              | Meaning                                   |
 | ---------------------------------- | ----------------------------------------- |
@@ -45,141 +81,29 @@ First argument is any iterable of `[path, data]` pairs: an array of tuples, a `M
 | `totalBytesWritten` / `totalBytes` | Progress across the whole import          |
 
 ```typescript
-await fs.importFiles(
-  [
-    ['/a.txt', 'hello'],
-    ['/upload.bin', fileFromInput],
-  ],
-  {
-    onProgress: ({ path, bytesWritten, bytesTotal, totalBytesWritten, totalBytes }) => {
-      console.log(`${path}: ${bytesWritten}/${bytesTotal} (all ${totalBytesWritten}/${totalBytes})`);
-    },
-  }
+const result = await fs.importFiles(
+    [
+        ['/a.txt', 'hello'],
+        ['/upload.bin', file], // File / Blob / Uint8Array also fine
+    ],
+    {
+        onProgress: ({ path, bytesWritten, bytesTotal, totalBytesWritten, totalBytes }) => {
+            console.log(`${path}: ${bytesWritten}/${bytesTotal} (all ${totalBytesWritten}/${totalBytes})`);
+        },
+    }
 );
 // → { paths: ['/a.txt', '/upload.bin'], count: 2, bytesWritten: … }
-
-// Map works too
-await fs.importFiles(new Map([
-  ['/a.txt', 'hello'],
-  ['/b.txt', 'world'],
-]));
 ```
 
-`createIndex` is kept as a deprecated alias.
-
-## Uploading files and folders from disk
-
-Getting `File` objects out of the browser is the DOM's job; once you have them, `importFiles` does the rest.
-
-### File / folder picker
-
-A plain `<input type="file">` gives you files. Add `webkitdirectory` and the picker selects a whole folder — each file then carries its relative path in `webkitRelativePath`:
-
-```html
-<input type="file" id="files" multiple />
-<input type="file" id="folder" webkitdirectory multiple />
-```
-
-```typescript
-input.addEventListener('change', async () => {
-    const entries = [...input.files].map((file) => [
-        `/uploads/${file.webkitRelativePath || file.name}`,
-        file,
-    ] as [string, File]);
-
-    await fs.importFiles(entries, {
-        onProgress: ({ path, totalBytesWritten, totalBytes }) => {
-            console.log(`${path}: ${totalBytesWritten}/${totalBytes}`);
-        },
-    });
-});
-```
-
-### Drag and drop
-
-Dropped folders are only reachable through the non-standard (but universally supported) `webkitGetAsEntry` API, which has to be walked recursively:
-
-```typescript
-async function collect(entry: FileSystemEntry, prefix = ''): Promise<[string, File][]> {
-    if (entry.isFile) {
-        const file = await new Promise<File>((res, rej) => (entry as FileSystemFileEntry).file(res, rej));
-
-        return [[`${prefix}${entry.name}`, file]];
-    }
-
-    const reader = (entry as FileSystemDirectoryEntry).createReader();
-    const children: FileSystemEntry[] = [];
-
-    // readEntries returns partial batches — keep calling until it's empty
-    for (;;) {
-        const batch = await new Promise<FileSystemEntry[]>((res, rej) => reader.readEntries(res, rej));
-
-        if (batch.length === 0) break;
-        children.push(...batch);
-    }
-
-    const nested = await Promise.all(children.map((c) => collect(c, `${prefix}${entry.name}/`)));
-
-    return nested.flat();
-}
-
-dropZone.addEventListener('drop', async (e) => {
-    e.preventDefault();
-
-    const entries = [...e.dataTransfer!.items]
-        .map((item) => item.webkitGetAsEntry())
-        .filter((entry): entry is FileSystemEntry => entry !== null);
-
-    const files = (await Promise.all(entries.map((entry) => collect(entry, '/uploads/')))).flat();
-
-    await fs.importFiles(files, {
-        onProgress: ({ path, index, count, bytesWritten, bytesTotal }) => {
-            console.log(`[${index + 1}/${count}] ${path}: ${bytesWritten}/${bytesTotal}`);
-        },
-    });
-});
-```
-
-The [demo](https://kachurun.github.io/opfs-worker/) implements exactly this flow — see `demo/components/FileBrowser/`.
-
-## `writeStream` (raw)
-
-```typescript
-import { createOPFS } from 'opfs-worker';
-
-const fs = createOPFS();
-await fs.backend.writeStream('/data.bin', someBlob.stream(), (n) => console.log(n));
-```
-
-## Reading back without buffering: `readBlob`
-
-`readFile` copies the whole file into a `Uint8Array`, which is wasteful for media. `readBlob` returns the disk-backed `Blob` that OPFS already has, so nothing is read until something asks for bytes:
-
-```typescript
-const blob = await fs.readBlob('/media/clip.mp4');
-
-video.src = URL.createObjectURL(blob);
-```
-
-The browser then seeks and buffers only the ranges it plays — a 2 GB video costs no memory up front. The same `Blob` works for `<img>`, `<audio>`, `<iframe>` (PDF), `fetch()` bodies, and `showSaveFilePicker` downloads.
-
-Reading a small header stays cheap too, since `slice()` does not touch the rest of the file:
-
-```typescript
-const magic = new Uint8Array(await blob.slice(0, 4).arrayBuffer());
-```
-
-When the file system runs in a worker, the `Blob` crosses the boundary by reference — structured clone does not copy its contents.
+How to get those files from a picker, paste, or drop: [Uploading from disk](./uploading.md).
 
 ## When to use what
 
-| API                            | Good for                                                     |
-| ------------------------------ | ------------------------------------------------------------ |
-| `writeFile`                    | Data already in memory                                       |
-| `importStream` / `writeStream` | One large `File` / `Blob` / network body                     |
-| `importFiles`                  | Many files / folder uploads (streamed, with total progress)  |
-| `readBlob`                     | Media previews, downloads, anything you can hand a `Blob` to |
+| API            | Good for                                                |
+| -------------- | ------------------------------------------------------- |
+| `readBlob`     | Media previews, downloads, anything that takes a `Blob` |
+| `writeFile`    | Data already in memory                                  |
+| `importStream` | One large `File` / `Blob` / network body / file handle  |
+| `importFiles`  | Many files, folder uploads, or directory handles        |
 
-Dedicated path chunks through FDs; async path uses `createWritable()` (Safari 26+ for writes).
-
-Also: [facade](../api/README.md#facade).
+See also the [API overview](../api/README.md#facade), [Uploading from disk](./uploading.md), and [Downloading to disk](./downloading.md).

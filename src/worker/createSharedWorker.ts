@@ -1,5 +1,7 @@
 import { wrap } from 'comlink';
 
+import { normalizePath } from '../utils/helpers';
+
 import type { OPFSAsync } from '../core/OPFSAsync';
 import type { OPFSOptions } from '../types';
 import type { Remote } from 'comlink';
@@ -17,7 +19,11 @@ export interface SharedWorkerOptions extends OPFSOptions {
     url?: string | URL;
     /** Bring your own SharedWorker instance (overrides `url`) */
     worker?: SharedWorker;
-    /** Worker name — tabs with the same script URL + name share one instance (default: 'opfs-worker') */
+    /**
+     * SharedWorker name prefix (default: `'opfs-worker'`).
+     * The actual browser name is `${name}:${root}` so different roots get different
+     * SharedWorkers. Tabs with the same script URL + full name share one instance.
+     */
     name?: string;
 }
 
@@ -35,15 +41,19 @@ export interface RawSharedWorker {
  * Prefer {@link createOPFSShared}; access the proxy / SharedWorker via
  * `facade.backend` / `facade.worker`.
  *
- * Note: `OPFSOptions` are applied via `setOptions()` on the shared instance, so
- * they affect every connected tab — use the same options in all tabs.
+ * The SharedWorker `name` is `${name}:${root}` (default prefix `opfs-worker`), so
+ * different roots do not share one process. `OPFSOptions` still go through
+ * `setOptions()` on that instance — keep options consistent across tabs for the
+ * same root.
  */
 export function createSharedWorker(options: SharedWorkerOptions = {}): RawSharedWorker {
     const { url, worker: providedWorker, name = 'opfs-worker', ...fsOptions } = options;
+    const root = normalizePath(fsOptions.root ?? '/');
+    const workerName = `${ name }:${ root }`;
 
     const worker = providedWorker ?? new SharedWorker(
         url ?? new URL('./shared.worker.js', import.meta.url),
-        { type: 'module', name }
+        { type: 'module', name: workerName }
     );
 
     const fs = wrap<RemoteOPFSAsync>(worker.port);
