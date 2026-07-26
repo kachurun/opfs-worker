@@ -120,8 +120,8 @@ describe('OPFSAsync', () => {
       expect(await fs.exists('/renamed.txt')).toBe(false);
     });
 
-    it('index / createIndex / clear', async () => {
-      await fs.createIndex([
+    it('index / importFiles / clear', async () => {
+      await fs.importFiles([
         ['/config.json', '{}'],
         ['/data/bin.dat', new Uint8Array([1, 2])],
       ]);

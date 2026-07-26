@@ -1,5 +1,7 @@
 @import "tailwindcss";
-@plugin "daisyui";
+@plugin "daisyui" {
+    themes: light --default, dark --prefersdark;
+}
 
 html,
 body,
@@ -11,17 +13,21 @@ body,
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
 
-/* Flatten DaisyUI chrome — no bevels, shadows, or harsh borders */
+/* Flatten DaisyUI chrome — no bevels, shadows, or harsh focus rings */
 .btn,
 .select,
 .input,
 .badge {
     --btn-shadow: none;
     --btn-noise: none;
-    border-color: transparent;
     box-shadow: none;
     background-image: none;
     font-weight: 500;
+}
+
+.btn,
+.badge {
+    border-color: transparent;
 }
 
 .btn:hover:not(.btn-primary):not(.btn-error):not(.btn-success):not(.btn-warning):not(.btn-info) {
@@ -31,11 +37,27 @@ body,
 .select,
 .input {
     background-color: var(--color-base-200);
+    border: 1px solid color-mix(in oklab, var(--color-base-content) 10%, transparent);
+    outline: none;
+    box-shadow: none;
+}
+
+.select:hover,
+.input:hover {
+    border-color: color-mix(in oklab, var(--color-base-content) 16%, transparent);
+}
+
+.select:focus,
+.select:focus-within,
+.input:focus,
+.input:focus-within {
+    outline: none;
+    border-color: color-mix(in oklab, var(--color-base-content) 24%, transparent);
+    box-shadow: none;
 }
 
 .select {
     /* Keep room for the custom chevron; don't look like a ghost button */
-    border: 1px solid color-mix(in oklab, var(--color-base-content) 12%, transparent);
     padding-inline-end: 1.5rem;
 }
 
@@ -49,17 +71,45 @@ body,
     font-weight: 500;
 }
 
-/* Juicy press feedback: icon squishes down, then springs back on release */
+/* Soft press feedback on icons */
 .btn svg {
-    transition: transform 0.25s cubic-bezier(0.34, 1.8, 0.64, 1);
+    transition: transform 0.2s cubic-bezier(0.34, 1.4, 0.64, 1);
 }
 
 .btn:active svg {
-    transform: scale(0.75) rotate(-8deg);
-    transition-duration: 0.08s;
+    transform: scale(0.92) rotate(-3deg);
+    transition-duration: 0.1s;
     transition-timing-function: ease-out;
 }
 
 .btn:active {
     transform: none;
+}
+
+/* Mobile-first layout: files / editor / log. Log ≈ 3 lines, ≥20vh; short screens → 1 line. */
+.demo-layout {
+    grid-template-rows: minmax(0, 18vh) minmax(50vh, 1fr) max(6.75rem, 20vh);
+}
+
+@media (max-height: 499px) {
+    .mode-info-panel {
+        display: none;
+    }
+
+    .demo-layout {
+        grid-template-rows: minmax(0, 14vh) minmax(40vh, 1fr) 4rem;
+    }
+}
+
+@media (min-width: 768px) {
+    .demo-layout {
+        grid-template-columns: 250px minmax(0, 1fr);
+        grid-template-rows: minmax(0, 1fr) max(6.75rem, 20vh);
+    }
+}
+
+@media (min-width: 768px) and (max-height: 499px) {
+    .demo-layout {
+        grid-template-rows: minmax(0, 1fr) 4rem;
+    }
 }

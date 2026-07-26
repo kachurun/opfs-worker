@@ -1,5 +1,5 @@
 import { promises as fsp } from 'node:fs';
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { OPFSSync } from '../src/core/OPFSSync';
 import type { WatchEvent } from '../src/types';
 import { WatchEventType } from '../src/types';
@@ -124,13 +124,13 @@ describe('OPFSSync', () => {
     expect(await fsw.exists('/clear.txt')).toBe(false);
   });
 
-  it('syncs external entries', async () => {
+  it('imports external entries', async () => {
     await fsw.writeFile('/old.txt', new TextEncoder().encode('old'));
-    await fsw.createIndex([
+    await fsw.importFiles([
       ['/new.txt', 'new'],
       ['relative.txt', 'rel']
     ]);
-    // Old file should still exist since createIndex doesn't remove existing files
+    // Old file should still exist since importFiles doesn't remove existing files
     expect(await fsw.exists('/old.txt')).toBe(true);
     const newContent = await fsw.readFile('/new.txt');
     const relContent = await fsw.readFile('/relative.txt');
@@ -437,14 +437,73 @@ describe('OPFSSync', () => {
       ).rejects.toMatchObject({ name: 'ENOENT' });
     });
 
-    it('createIndex accepts Blob and Uint8Array entries', async () => {
-      await fsw.createIndex([
-        ['/blob.txt', new Blob(['blob-data'])],
-        ['/bytes.bin', new Uint8Array([10, 20, 30])],
-      ]);
+    it('importFiles accepts Blob and Uint8Array entries and reports progress', async () => {
+      const progress: Array<{ path: string; index: number; count: number; totalBytesWritten: number; totalBytes: number }> = [];
+
+      await expect(
+        fsw.importFiles(
+          [
+            ['/blob.txt', new Blob(['blob-data'])],
+            ['/bytes.bin', new Uint8Array([10, 20, 30])],
+          ],
+          (p) => progress.push({
+            path: p.path,
+            index: p.index,
+            count: p.count,
+            totalBytesWritten: p.totalBytesWritten,
+            totalBytes: p.totalBytes,
+          })
+        )
+      ).resolves.toEqual({
+        paths: ['/blob.txt', '/bytes.bin'],
+        count: 2,
+        bytesWritten: 12,
+      });
 
       expect(new TextDecoder().decode(await fsw.readFile('/blob.txt'))).toBe('blob-data');
       expect(await fsw.readFile('/bytes.bin')).toEqual(new Uint8Array([10, 20, 30]));
+      expect(progress.at(-1)).toMatchObject({
+        path: '/bytes.bin',
+        index: 1,
+        count: 2,
+        totalBytesWritten: 12,
+        totalBytes: 12,
+      });
+    });
+
+    it('importFiles accepts a Map of entries', async () => {
+      await fsw.importFiles(new Map([
+        ['/map-a.txt', 'aaa'],
+        ['/map-b.txt', 'bb'],
+      ]));
+
+      expect(new TextDecoder().decode(await fsw.readFile('/map-a.txt'))).toBe('aaa');
+      expect(new TextDecoder().decode(await fsw.readFile('/map-b.txt'))).toBe('bb');
+    });
+
+    it('readBlob returns a lazy Blob that can be sliced', async () => {
+      await fsw.writeFile('/blob-read.bin', new Uint8Array([1, 2, 3, 4, 5]));
+
+      const blob = await fsw.readBlob('/blob-read.bin');
+
+      expect(blob.size).toBe(5);
+      expect([...new Uint8Array(await blob.slice(0, 2).arrayBuffer())]).toEqual([1, 2]);
+    });
+
+    it('readBlob rejects for missing paths and directories', async () => {
+      await fsw.mkdir('/blob-dir', { recursive: true });
+
+      await expect(fsw.readBlob('/nope.bin')).rejects.toMatchObject({ name: 'ENOENT' });
+      await expect(fsw.readBlob('/blob-dir')).rejects.toThrow();
+    });
+
+    it('createIndex still works as a deprecated alias', async () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+      await fsw.createIndex([['/legacy.txt', 'legacy']]);
+      expect(new TextDecoder().decode(await fsw.readFile('/legacy.txt'))).toBe('legacy');
+
+      warn.mockRestore();
     });
 
     it('setOptions updates namespace and rotates broadcast channel', async () => {

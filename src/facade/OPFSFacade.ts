@@ -8,6 +8,9 @@ import type {
     Encoding,
     FileOpenOptions,
     FileStat,
+    ImportFileData,
+    ImportFilesProgress,
+    ImportFilesResult,
     OPFSApi,
     OPFSOptions,
     PathLike,
@@ -26,6 +29,17 @@ function normalizePath(path: PathLike): string {
     }
 
     return path;
+}
+
+let createIndexWarned = false;
+
+function warnCreateIndexDeprecated(): void {
+    if (createIndexWarned) {
+        return;
+    }
+
+    createIndexWarned = true;
+    console.warn('[opfs-worker] createIndex() is deprecated; use importFiles() instead');
 }
 
 /** Backend the facade talks to: an fs implementation plus its cleanup. */
@@ -442,12 +456,45 @@ export class OPFSFacade {
     }
 
     /**
-     * Synchronize the file system with external data
+     * Read a file as a lazy, disk-backed `Blob` without copying the data to memory.
+     *
+     * Ideal for `URL.createObjectURL()`: the browser streams `<video>` / `<audio>`
+     * on demand instead of loading the whole file first.
      */
-    async createIndex(entries: [PathLike, string | Uint8Array | Blob][]): Promise<void> {
-        const normalizedEntries = entries.map(([path, data]) => [normalizePath(path), data] as [string, string | Uint8Array | Blob]);
+    async readBlob(path: PathLike): Promise<Blob> {
+        return this.#fs.readBlob(normalizePath(path));
+    }
 
-        return this.#fs.createIndex(normalizedEntries);
+    /**
+     * Bulk-import files from `[path, data]` entries (strings, bytes, Blobs, or Files).
+     * Each entry is streamed via {@link importStream} / `writeStream` so large
+     * Blobs/Files are not fully buffered in memory.
+     *
+     * Accepts an array of tuples, a `Map`, or any iterable of `[path, data]` pairs.
+     * Returns written paths, count, and total bytes.
+     */
+    async importFiles(
+        entries: Iterable<[PathLike, ImportFileData]> | Map<string, ImportFileData>,
+        options?: { onProgress?: (progress: ImportFilesProgress) => void }
+    ): Promise<ImportFilesResult> {
+        const normalizedEntries = [...entries].map(([path, data]) => [
+            normalizePath(path),
+            data,
+        ] as [string, ImportFileData]);
+
+        const onProgress = options?.onProgress
+            ? proxy((progress: ImportFilesProgress) => options.onProgress!(progress))
+            : undefined;
+
+        return this.#fs.importFiles(normalizedEntries, onProgress);
+    }
+
+    /**
+     * @deprecated Use {@link importFiles} instead.
+     */
+    async createIndex(entries: Iterable<[PathLike, ImportFileData]> | Map<string, ImportFileData>): Promise<void> {
+        warnCreateIndexDeprecated();
+        await this.importFiles(entries);
     }
 
     /**

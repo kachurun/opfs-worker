@@ -6,40 +6,41 @@ Node-like API: encodings, auto-detect by extension, path as `string` or `URL`. U
 
 ## Backend access
 
-| Field | Notes |
-| ----- | ----- |
+| Field     | Notes                                                                        |
+| --------- | ---------------------------------------------------------------------------- |
 | `backend` | Raw [`OPFSApi`](../types.md#opfsapi) — same methods without encoding helpers |
-| `worker` | `Worker` / `SharedWorker` if this facade owns one; `undefined` for async |
+| `worker`  | `Worker` / `SharedWorker` if this facade owns one; `undefined` for async     |
 
 ## File I/O
 
-| Method | Notes |
-| ------ | ----- |
-| `readFile` / `writeFile` / `appendFile` | Encoding as string, `{ encoding }`, or auto |
-| `importStream` | Stream / Blob / File — [streaming](../guides/streaming.md) |
-| `readText` / `writeText` / `appendText` | UTF-8 by default |
+| Method                                  | Notes                                                                                         |
+| --------------------------------------- | --------------------------------------------------------------------------------------------- |
+| `readFile` / `writeFile` / `appendFile` | Encoding as string, `{ encoding }`, or auto                                                   |
+| `readBlob`                              | Disk-backed `Blob`, nothing copied into memory — [streaming](../guides/streaming.md)          |
+| `importStream`                          | Stream / Blob / File — [streaming](../guides/streaming.md)                                    |
+| `importFiles`                           | Bulk array / `Map` of `[path, data]` with rich progress — [streaming](../guides/streaming.md) |
+| `readText` / `writeText` / `appendText` | UTF-8 by default                                                                              |
 
 ## Directories & metadata
 
-| Method | Notes |
-| ------ | ----- |
-| `mkdir` | `{ recursive }`; numeric mode is accepted and ignored |
-| `readDir` | `DirentData[]` |
-| `stat` / `exists` / `realpath` | |
-| `remove` | `{ recursive, force }` |
-| `rename` / `copy` | `copy` takes `{ recursive, overwrite }` |
-| `clear` | Empty a dir (default `/`) |
-| `index` | `Map<path, FileStat>` |
-| `createIndex` | Bulk `[path, string \| Uint8Array \| Blob][]` |
+| Method                         | Notes                                                 |
+| ------------------------------ | ----------------------------------------------------- |
+| `mkdir`                        | `{ recursive }`; numeric mode is accepted and ignored |
+| `readDir`                      | `DirentData[]`                                        |
+| `stat` / `exists` / `realpath` |                                                       |
+| `remove`                       | `{ recursive, force }`                                |
+| `rename` / `copy`              | `copy` takes `{ recursive, overwrite }`               |
+| `clear`                        | Empty a dir (default `/`)                             |
+| `index`                        | `Map<path, FileStat>`                                 |
 
 ## Watch & lifecycle
 
-| Method | Notes |
-| ------ | ----- |
-| `watch` | Returns `() => void` |
-| `unwatch` | |
+| Method       | Notes                               |
+| ------------ | ----------------------------------- |
+| `watch`      | Returns `() => void`                |
+| `unwatch`    |                                     |
 | `setOptions` | See [hashing](../guides/hashing.md) |
-| `dispose` | Dispose the backend |
+| `dispose`    | Dispose the backend                 |
 
 ## Node aliases
 

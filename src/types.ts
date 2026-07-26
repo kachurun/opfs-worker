@@ -76,6 +76,43 @@ export interface OPFSOptions {
     broadcastChannel?: string | BroadcastChannel | null;
 }
 
+/** Payload accepted by {@link importFiles} for a single entry. */
+export type ImportFileData = string | Uint8Array | Blob;
+
+/**
+ * Entries for {@link importFiles}: an array of `[path, data]` tuples, a `Map`,
+ * or any iterable that yields the same pairs.
+ */
+export type ImportFilesEntries = Iterable<[string, ImportFileData]> | Map<string, ImportFileData>;
+
+/** Progress event fired while {@link importFiles} writes entries. */
+export interface ImportFilesProgress {
+    /** Path of the file currently being written */
+    path: string;
+    /** 0-based index of the current file */
+    index: number;
+    /** Total number of entries in this import */
+    count: number;
+    /** Bytes written for the current file so far */
+    bytesWritten: number;
+    /** Size of the current file in bytes */
+    bytesTotal: number;
+    /** Bytes written across all files so far */
+    totalBytesWritten: number;
+    /** Sum of all entry sizes in bytes */
+    totalBytes: number;
+}
+
+/** Result of a finished {@link importFiles} call. */
+export interface ImportFilesResult {
+    /** Paths written, in import order */
+    paths: string[];
+    /** Number of files imported (`paths.length`) */
+    count: number;
+    /** Total bytes written across all files */
+    bytesWritten: number;
+}
+
 export interface RenameOptions {
     /** Whether to overwrite existing files (default: false) */
     overwrite?: boolean;

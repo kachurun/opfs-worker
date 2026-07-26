@@ -9,7 +9,7 @@
 | `OPFSWorker`             | `OPFSSync`                                                                           |
 | `opfs-worker/raw`        | `opfs-worker/pure`                                                                   |
 | `opfs-worker/raw?worker` | `createOPFSDedicated()` + `fs.backend` / `fs.worker`, or `dedicated.worker.js`       |
-| `fs.sync(entries)`       | `fs.createIndex(entries)`                                                            |
+| `fs.sync(entries)`       | `fs.importFiles(entries)` (`createIndex` alias kept, deprecated)                     |
 
 ```diff
 - import { createWorker, OPFSFileSystem } from 'opfs-worker';

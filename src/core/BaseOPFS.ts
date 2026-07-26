@@ -16,7 +16,6 @@ import {
     basename,
     calculateFileHash,
     checkOPFSSupport,
-    convertBlobToUint8Array,
     dirname,
     joinPath,
     matchMinimatch,
@@ -27,7 +26,19 @@ import {
     splitPath
 } from '../utils/helpers';
 
-import type { DirentData, FileStat, OPFSOptions, RenameOptions, WatchEvent, WatchOptions, WatchSnapshot } from '../types';
+import type {
+    DirentData,
+    FileStat,
+    ImportFileData,
+    ImportFilesEntries,
+    ImportFilesProgress,
+    ImportFilesResult,
+    OPFSOptions,
+    RenameOptions,
+    WatchEvent,
+    WatchOptions,
+    WatchSnapshot,
+} from '../types';
 
 
 /**
@@ -891,42 +902,105 @@ export abstract class BaseOPFS {
     }
 
     /**
-     * Bulk-create files from `[path, data]` entries (strings, bytes, or Blobs).
+     * Read a file as a `Blob` without copying its bytes into memory.
      *
-     * @param entries - Array of `[path, data]` tuples
+     * OPFS hands back a disk-backed `File`, so the browser can stream it on
+     * demand — pass it to `URL.createObjectURL()` for `<video>` / `<audio>` /
+     * `<img>` and only the played range is actually read. Structured clone keeps
+     * the reference intact when the file system runs in a worker.
+     *
+     * @param path - Path to the file
+     * @returns Lazy `File` handle backed by OPFS storage
+     * @throws {OPFSError} If the path is missing or is a directory
+     *
+     * @example
+     * ```typescript
+     * const blob = await fs.readBlob('/media/clip.mp4');
+     * video.src = URL.createObjectURL(blob);
+     * ```
+     */
+    async readBlob(path: string): Promise<Blob> {
+        await this.mount();
+
+        try {
+            const fileHandle = await this.getFileHandle(path, false);
+
+            return await fileHandle.getFile();
+        }
+        catch (error: any) {
+            if (error instanceof OPFSError) {
+                throw error;
+            }
+
+            throw mapDomError(error, { path, isDirectory: error?.name === 'TypeMismatchError' });
+        }
+    }
+
+    /**
+     * Bulk-import files from `[path, data]` entries (strings, bytes, Blobs, or Files).
+     * Each entry is written via {@link writeStream} so large Blobs/Files are not
+     * fully buffered in memory.
+     *
+     * Accepts an array of tuples, a `Map`, or any iterable of `[path, data]` pairs.
+     *
+     * @param entries - Files to write
+     * @param onProgress - Per-chunk progress with path, index, and byte counts
+     * @returns Written paths, count, and total bytes
      * @throws {OPFSError} If a write fails
      *
      * @example
      * ```typescript
-     * await fs.createIndex([
+     * const result = await fs.importFiles([
      *   ['/config.json', JSON.stringify({ theme: 'dark' })],
      *   ['/data/binary.dat', new Uint8Array([1, 2, 3, 4])],
-     *   ['/upload.txt', new Blob(['file content'], { type: 'text/plain' })],
-     * ]);
+     *   ['/upload.txt', fileFromInput],
+     * ], (p) => console.log(`${p.path}: ${p.bytesWritten}/${p.bytesTotal}`));
+     *
+     * console.log(result.count, result.bytesWritten, result.paths);
      * ```
      */
-    async createIndex(entries: [string, string | Uint8Array | Blob][]): Promise<void> {
+    async importFiles(
+        entries: ImportFilesEntries,
+        onProgress?: (progress: ImportFilesProgress) => unknown
+    ): Promise<ImportFilesResult> {
         await this.mount();
 
+        const list = [...entries].map(([path, data]) => [normalizePath(path), data] as [string, ImportFileData]);
+        const count = list.length;
+        const paths = list.map(([path]) => path);
+        const totalBytes = list.reduce((sum, [, data]) => sum + importEntryByteLength(data), 0);
+        let totalBytesWritten = 0;
+
         try {
-            for (const [path, data] of entries) {
-                const normalizedPath = normalizePath(path);
+            for (let index = 0; index < count; index++) {
+                const [path, data] = list[index]!;
+                const { stream, size: bytesTotal } = toImportStream(data);
+                const base = totalBytesWritten;
 
-                let fileData: Uint8Array;
+                const written = await this.writeStream(
+                    path,
+                    stream,
+                    onProgress
+                        ? bytesWritten => onProgress({
+                            path,
+                            index,
+                            count,
+                            bytesWritten,
+                            bytesTotal,
+                            totalBytesWritten: base + bytesWritten,
+                            totalBytes,
+                        })
+                        : undefined
+                );
 
-                if (data instanceof Blob) {
-                    fileData = await convertBlobToUint8Array(data);
-                }
-                else if (typeof data === 'string') {
-                    // Convert string to Uint8Array using UTF-8 encoding
-                    fileData = new TextEncoder().encode(data);
-                }
-                else {
-                    fileData = data;
-                }
-
-                await this.writeFile(normalizedPath, fileData);
+                totalBytesWritten += written;
             }
+
+            return {
+                paths,
+                count,
+                bytesWritten: totalBytesWritten,
+            };
         }
         catch (error) {
             if (error instanceof OPFSError) {
@@ -935,6 +1009,14 @@ export abstract class BaseOPFS {
 
             throw mapDomError(error);
         }
+    }
+
+    /**
+     * @deprecated Use {@link importFiles} instead.
+     */
+    async createIndex(entries: ImportFilesEntries): Promise<void> {
+        warnCreateIndexDeprecated();
+        await this.importFiles(entries);
     }
 
     /**
@@ -948,4 +1030,45 @@ export abstract class BaseOPFS {
 
         this.watchers.clear();
     }
+}
+
+function importEntryByteLength(data: ImportFileData): number {
+    if (typeof data === 'string') {
+        return new TextEncoder().encode(data).byteLength;
+    }
+
+    if (data instanceof Blob) {
+        return data.size;
+    }
+
+    return data.byteLength;
+}
+
+function toImportStream(data: ImportFileData): { stream: ReadableStream<Uint8Array>; size: number } {
+    if (data instanceof Blob) {
+        return { stream: data.stream(), size: data.size };
+    }
+
+    const bytes = typeof data === 'string' ? new TextEncoder().encode(data) : data;
+
+    return {
+        size: bytes.byteLength,
+        stream: new ReadableStream({
+            start(controller) {
+                controller.enqueue(bytes);
+                controller.close();
+            },
+        }),
+    };
+}
+
+let createIndexWarned = false;
+
+function warnCreateIndexDeprecated(): void {
+    if (createIndexWarned) {
+        return;
+    }
+
+    createIndexWarned = true;
+    console.warn('[opfs-worker] createIndex() is deprecated; use importFiles() instead');
 }

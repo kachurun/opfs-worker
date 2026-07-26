@@ -37,6 +37,36 @@ interface WatchOptions {
 }
 ```
 
+## `ImportFilesProgress`
+
+Fired by `importFiles` / `onProgress` for each chunk written:
+
+```typescript
+interface ImportFilesProgress {
+    path: string;            // file currently being written
+    index: number;           // 0-based
+    count: number;           // total entries
+    bytesWritten: number;    // within current file
+    bytesTotal: number;      // size of current file
+    totalBytesWritten: number;
+    totalBytes: number;      // sum of all entry sizes
+}
+```
+
+## `ImportFilesResult`
+
+Returned when `importFiles` finishes:
+
+```typescript
+interface ImportFilesResult {
+    paths: string[];      // written paths, in order
+    count: number;        // paths.length
+    bytesWritten: number; // total bytes across all files
+}
+```
+
+Entries accept `Iterable<[path, string | Uint8Array | Blob]>` or `Map<string, …>` — see [streaming](./guides/streaming.md).
+
 ## `OPFSApi`
 
 Promise-based surface shared by all backends — a Comlink proxy to `OPFSSync`, or an in-process `OPFSAsync`. What `OPFSFacade` talks to (see `OPFSBackend` in [Create helpers](./api/create.md)).

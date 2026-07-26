@@ -3,7 +3,7 @@
 Classes from `opfs-worker/pure` (also re-exported from `/sync`, `/async`, `/sharedworker`). Bytes only — no encoding helpers.
 
 ```
-BaseOPFS     mkdir, stat, readDir, watch, index, createIndex, …
+BaseOPFS     mkdir, stat, readDir, watch, index, importFiles, …
   ├─ OPFSSync   sync access handles + FDs + writeStream
   └─ OPFSAsync  getFile / createWritable + writeStream (no FDs)
 ```
@@ -12,7 +12,7 @@ BaseOPFS     mkdir, stat, readDir, watch, index, createIndex, …
 
 ## Shared methods (`BaseOPFS`)
 
-Path ops: `mkdir`, `stat`, `readDir`, `exists`, `clear`, `remove`, `rename`, `copy`, `realpath`, `index`, `createIndex`, `watch`, `unwatch`, `setOptions`, `dispose`.
+Path ops: `mkdir`, `stat`, `readDir`, `exists`, `clear`, `remove`, `rename`, `copy`, `realpath`, `index`, `readBlob`, `importFiles`, `watch`, `unwatch`, `setOptions`, `dispose`.
 
 Subclasses implement:
 

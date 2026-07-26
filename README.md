@@ -8,6 +8,7 @@
 OPFS ([Origin Private File System](https://developer.mozilla.org/en-US/docs/Web/API/File_System_API/Origin_private_file_system)) is a browser filesystem scoped to your origin. It sits under the usual site quota; clearing site data wipes it. The browser does not show a file picker or ask for access.
 
 This package puts a Node-like API on top of it.
+
 → **File API** — `readFile`, `writeFile`, `mkdir`, `stat`, `rename`, `copy`, `readDir`; encodings, extension-based detection, `string | URL` paths. [Docs](docs/api/facade.md)
 
 → **File descriptors** — `open` / `read` / `write` at an offset, plus `ftruncate` and `fsync`. [Docs](docs/file-descriptors.md)
@@ -16,17 +17,17 @@ This package puts a Node-like API on top of it.
 
 → **Dedicated worker (default)** — `createOPFS()` sets up the worker for you. Fastest path, supports FDs, writes work in older Safari too. [Docs](docs/guides/dedicated.md)
 
-→ **Async / SharedWorker** — same API on the main thread or shared across tabs. No FDs. Writes need Safari 26+ (Safari 18 and older can only read). [Docs](docs/guides/async.md) · [Docs](docs/guides/sharedworker.md)
+→ **Async** — same API on the main thread, no worker. No FDs. Writes need Safari 26+ (Safari 18 and older can only read). [Docs](docs/guides/async.md)
+
+→ **SharedWorker** — one instance shared across tabs. Same limits as async (no FDs, Safari 26+ for writes). [Docs](docs/guides/sharedworker.md)
 
 → **Bring your own worker** — use it directly in a worker you already run, or load a prebuilt worker script. [Docs](docs/choosing-a-mode.md)
 
-→ **Streaming** — `importStream` writes a `ReadableStream`, `Blob`, or `File` in chunks, with optional progress. [Docs](docs/guides/streaming.md)
+→ **Large files & uploads** — stream a `ReadableStream`, `Blob`, or `File` in chunks with progress, or bulk-import whole folders from a file picker / drag-and-drop via `importFiles`. [Docs](docs/guides/streaming.md)
 
 → **Watch** — change events over `BroadcastChannel` across tabs / workers. [Docs](docs/guides/watching.md)
 
 → **Hashing** — `stat()` can include an etag or a SHA hash (SHA skipped above a size cap). [Docs](docs/guides/hashing.md)
-
-→ **Types** — TypeScript types, ESM and CJS; deps are `comlink` and `minimatch`. The async entry does not pull in worker code. [Docs](docs/types.md)
 
 ## Installation
 

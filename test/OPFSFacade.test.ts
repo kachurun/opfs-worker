@@ -177,7 +177,7 @@ describe('OPFSFacade', () => {
       await expect(fs.chmod('/anything', 0o777)).resolves.toBeUndefined();
     });
 
-    it('realpath / rename / copy / index / clear / createIndex', async () => {
+    it('realpath / rename / copy / index / clear / importFiles', async () => {
       await fs.writeFile('/src.txt', 'data', 'utf-8');
       await expect(fs.realpath('./src.txt')).resolves.toBe('/src.txt');
 
@@ -191,11 +191,20 @@ describe('OPFSFacade', () => {
       const index = await fs.index();
       expect(index.has('/src.txt')).toBe(true);
 
-      await fs.createIndex([['/from-index.txt', 'idx']]);
+      await fs.importFiles([['/from-index.txt', 'idx']]);
       await expect(fs.readFile('/from-index.txt', 'utf-8')).resolves.toBe('idx');
 
       await fs.clear('/');
       expect(await fs.exists('/src.txt')).toBe(false);
+    });
+
+    it('readBlob resolves relative paths and returns file contents', async () => {
+      await fs.mkdir('/media', { recursive: true });
+      await fs.writeFile('/media/clip.bin', 'stream me', 'utf-8');
+
+      const blob = await fs.readBlob('media/clip.bin');
+
+      await expect(blob.text()).resolves.toBe('stream me');
     });
   });
 

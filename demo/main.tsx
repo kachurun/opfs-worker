@@ -3,13 +3,13 @@ import { EditorState } from '@codemirror/state';
 import { oneDark } from '@codemirror/theme-one-dark';
 import { EditorView } from '@codemirror/view';
 import CodeMirror from '@uiw/react-codemirror';
-import { ChevronsUpDown } from 'lucide-react';
+import { ChevronsUpDown, Moon, RotateCcw, Sun } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { FaGithub } from 'react-icons/fa';
 
 import { EventLog, formatWatchDetail, type LogEntry } from './EventLog';
-import { FileBrowser } from './FileBrowser';
+import { FileBrowser, type FileBrowserActions } from './FileBrowser';
 import { Inspector } from './Inspector';
 import {
     createDemoFs,
@@ -37,7 +37,7 @@ const MODES: {
         guide: 'https://github.com/kachurun/opfs-worker/blob/main/docs/guides/dedicated.md',
         code: `import { createOPFS } from 'opfs-worker';
 
-const fs = createOPFS({ root: '/opfs-worker-demo' });
+const fs = createOPFS({ root: '/' });
 
 await fs.writeFile('/hello.txt', 'hi');
 const text = await fs.readFile('/hello.txt', 'utf-8');`,
@@ -49,7 +49,7 @@ const text = await fs.readFile('/hello.txt', 'utf-8');`,
         guide: 'https://github.com/kachurun/opfs-worker/blob/main/docs/guides/async.md',
         code: `import { createOPFSAsync } from 'opfs-worker/async';
 
-const fs = createOPFSAsync({ root: '/opfs-worker-demo' });
+const fs = createOPFSAsync({ root: '/' });
 
 await fs.writeFile('/hello.txt', 'hi');
 const text = await fs.readFile('/hello.txt', 'utf-8');`,
@@ -62,33 +62,91 @@ const text = await fs.readFile('/hello.txt', 'utf-8');`,
         code: `import { createOPFSShared } from 'opfs-worker/sharedworker';
 import workerUrl from 'opfs-worker/shared.worker.js?url';
 
-const fs = createOPFSShared({ root: '/opfs-worker-demo', url: workerUrl });
+const fs = createOPFSShared({ root: '/', url: workerUrl });
 
 await fs.writeFile('/hello.txt', 'hi');
 const text = await fs.readFile('/hello.txt', 'utf-8');`,
     },
 ];
 
-const snippetChrome = EditorView.theme({
-    '&': {
-        backgroundColor: 'transparent',
-    },
-    '.cm-scroller': {
-        overflow: 'auto',
-        fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
-        fontSize: '12px',
-        lineHeight: '1.5',
-    },
-    '.cm-content': {
-        padding: '0.5rem 0',
-    },
-    '.cm-gutters': {
-        display: 'none',
-    },
-    '&.cm-focused': {
-        outline: 'none',
-    },
-}, { dark: true });
+type ThemeMode = 'light' | 'dark';
+
+const THEME_LS_KEY = 'opfs-worker-demo-theme';
+
+function systemTheme(): ThemeMode {
+    return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+}
+
+function readStoredTheme(): ThemeMode {
+    try {
+        const value = localStorage.getItem(THEME_LS_KEY);
+
+        if (value === 'light' || value === 'dark') {
+            return value;
+        }
+    }
+    catch {
+        // ignore
+    }
+
+    return systemTheme();
+}
+
+function applyTheme(theme: ThemeMode) {
+    document.documentElement.setAttribute('data-theme', theme);
+}
+
+function useTheme(): [ThemeMode, () => void] {
+    const [theme, setTheme] = useState<ThemeMode>(() => {
+        const initial = readStoredTheme();
+
+        applyTheme(initial);
+
+        return initial;
+    });
+
+    const toggleTheme = useCallback(() => {
+        setTheme((prev) => {
+            const next: ThemeMode = prev === 'dark' ? 'light' : 'dark';
+
+            applyTheme(next);
+
+            try {
+                localStorage.setItem(THEME_LS_KEY, next);
+            }
+            catch {
+                // ignore
+            }
+
+            return next;
+        });
+    }, []);
+
+    return [theme, toggleTheme];
+}
+
+function snippetChrome(dark: boolean) {
+    return EditorView.theme({
+        '&': {
+            backgroundColor: 'transparent',
+        },
+        '.cm-scroller': {
+            overflow: 'auto',
+            fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+            fontSize: '12px',
+            lineHeight: '1.5',
+        },
+        '.cm-content': {
+            padding: '0.5rem 0',
+        },
+        '.cm-gutters': {
+            display: 'none',
+        },
+        '&.cm-focused': {
+            outline: 'none',
+        },
+    }, { dark });
+}
 
 const MODE_IDS = new Set<string>(MODES.map(m => m.id));
 const MODE_LS_KEY = 'opfs-worker-demo-mode';
@@ -205,6 +263,8 @@ function persistFile(path: string | null) {
 }
 
 function App() {
+    const [theme, toggleTheme] = useTheme();
+    const prefersDark = theme === 'dark';
     const [mode, setMode] = useState<DemoMode>(readStoredMode);
     const [fs, setFs] = useState<OPFSFacade | null>(null);
     const [ready, setReady] = useState(false);
@@ -213,7 +273,6 @@ function App() {
     const [selectedPath, setSelectedPath] = useState<string | null>(readStoredFile);
     const [selectedKind, setSelectedKind] = useState<'file' | 'directory' | null>(null);
     const [refreshToken, setRefreshToken] = useState(0);
-    const [uploadProgress, setUploadProgress] = useState<number | null>(null);
     const [entries, setEntries] = useState<LogEntry[]>([]);
     const [quota, setQuota] = useState<{ usage: number; quota: number } | null>(null);
     const [showCode, setShowCode] = useState(false);
@@ -221,6 +280,7 @@ function App() {
     const fsRef = useRef<OPFSFacade | null>(null);
     const unwatchRef = useRef<(() => void) | null>(null);
     const selectedPathRef = useRef(selectedPath);
+    const fileActionsRef = useRef<FileBrowserActions | null>(null);
     const logId = useRef(0);
 
     selectedPathRef.current = selectedPath;
@@ -398,7 +458,6 @@ function App() {
         }
 
         try {
-            pushLog('op', 'clear(/)');
             await fs.clear('/');
             // re-seed marker gone → seed again
             await seedDemoFs(fs);
@@ -411,25 +470,21 @@ function App() {
         }
     };
 
-    const quotaPct = quota && quota.quota > 0
-        ? Math.min(100, Math.round((quota.usage / quota.quota) * 100))
-        : 0;
-
     const modeInfo = MODES.find(m => m.id === mode) ?? MODES[0]!;
     const snippetExtensions = useMemo(() => [
-        oneDark,
-        snippetChrome,
+        ...(prefersDark ? [oneDark] : []),
+        snippetChrome(prefersDark),
         javascript({ typescript: true }),
         EditorState.readOnly.of(true),
         EditorView.editable.of(false),
         EditorView.lineWrapping,
-    ], []);
+    ], [prefersDark]);
 
     return (
         <div className="flex h-full min-h-0 flex-col">
             <header className="flex h-10 shrink-0 items-center gap-3 border-b border-base-300 bg-base-100 px-3">
                 <div className="flex shrink-0 items-center gap-2">
-                    <span className="text-sm font-semibold">opfs-worker</span>
+                    <span className="text-sm font-semibold">OPFS Explorer</span>
                     <a
                         className="btn btn-ghost btn-square btn-xs opacity-60 hover:opacity-100"
                         href="https://github.com/kachurun/opfs-worker"
@@ -442,7 +497,9 @@ function App() {
                     </a>
                 </div>
 
-                <div className="flex shrink-0 items-center gap-1">
+                <div className="ml-auto flex shrink-0 items-center gap-2">
+                    {!ready && !error && <span className="loading loading-spinner loading-xs" />}
+                    {error && <span className="text-[11px] text-error" title={ error }>init failed</span>}
                     <label className="relative inline-flex items-center">
                         <select
                             className="select select-xs w-auto appearance-none pr-6"
@@ -455,30 +512,28 @@ function App() {
                         </select>
                         <ChevronsUpDown size={ 12 } className="pointer-events-none absolute right-1.5 opacity-50" />
                     </label>
-                </div>
-
-                <div className="ml-auto flex shrink-0 items-center gap-2">
-                    {!ready && !error && <span className="loading loading-spinner loading-xs" />}
-                    {error && <span className="text-[11px] text-error" title={ error }>init failed</span>}
-                    {quota && (
-                        <div className="flex min-w-[10rem] max-w-xs flex-col justify-center gap-0.5">
-                            <div className="flex justify-between text-[10px] leading-none opacity-50">
-                                <span>OPFS quota</span>
-                                <span>
-                                    {formatBytes(quota.usage)}
-                                    {' '}
-                                    /
-                                    {' '}
-                                    {formatBytes(quota.quota)}
-                                </span>
-                            </div>
-                            <progress className="progress progress-primary h-1" value={ quotaPct } max={ 100 } />
-                        </div>
-                    )}
+                    <button
+                        type="button"
+                        className="btn btn-ghost btn-square btn-xs"
+                        title={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
+                        aria-label={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
+                        onClick={toggleTheme}
+                    >
+                        {theme === 'dark' ? <Sun size={14} /> : <Moon size={14} />}
+                    </button>
+                    <button
+                        type="button"
+                        className="btn btn-ghost btn-square btn-xs"
+                        title="Reset storage and reseed"
+                        aria-label="Reset storage and reseed"
+                        onClick={() => void clearAll()}
+                    >
+                        <RotateCcw size={14} />
+                    </button>
                 </div>
             </header>
 
-            <div className="shrink-0 border-b border-base-300 bg-base-200/60">
+            <div className="mode-info-panel shrink-0 border-b border-base-300 bg-base-200/60">
                 <div className="flex items-center gap-3 px-3 py-1.5">
                     <p className="min-w-0 flex-1 text-[11px] leading-relaxed opacity-75">
                         {modeInfo.description}
@@ -520,43 +575,48 @@ function App() {
                 )}
             </div>
 
-            <div className="grid min-h-0 flex-1 grid-rows-[minmax(0,1fr)_minmax(12rem,28%)]">
-                <div className="grid min-h-0 grid-cols-1 md:grid-cols-[250px_minmax(0,1fr)]">
-                    <div className="min-h-0">
-                        {fs && (
-                            <FileBrowser
-                                fs={ fs }
-                                tree={ tree }
-                                selectedPath={ selectedPath }
-                                selectedKind={ selectedKind }
-                                uploadProgress={ uploadProgress }
-                                onUploadProgress={ setUploadProgress }
-                                onSelect={ (path, kind) => {
-                                    selectPath(path, kind);
-                                } }
-                                onRefresh={ () => void refreshTree() }
-                                onReset={ () => void clearAll() }
-                                onLog={ pushLog }
-                            />
-                        )}
-                    </div>
-                    <div className="min-h-0">
-                        {fs && (
-                            <Inspector
-                                fs={ fs }
-                                path={ selectedPath }
-                                kind={ selectedKind }
-                                refreshToken={ refreshToken }
-                                onLog={ pushLog }
-                                onRefresh={ () => void refreshTree() }
-                            />
-                        )}
-                    </div>
+            <div className="demo-layout grid min-h-0 flex-1 overflow-y-auto md:overflow-hidden">
+                <div className="min-h-0 overflow-hidden border-b border-base-300 md:border-b-0 md:border-r">
+                    {fs && (
+                        <FileBrowser
+                            fs={fs}
+                            tree={tree}
+                            selectedPath={selectedPath}
+                            selectedKind={selectedKind}
+                            onSelect={(path, kind) => {
+                                selectPath(path, kind);
+                            }}
+                            onRefresh={() => void refreshTree()}
+                            onLog={pushLog}
+                            quota={quota}
+                            actionsRef={fileActionsRef}
+                        />
+                    )}
                 </div>
-                <EventLog
-                    entries={ entries }
-                    onClear={ () => setEntries([]) }
-                />
+                <div className="min-h-0 overflow-hidden md:col-start-2 md:row-start-1">
+                    {fs && (
+                        <Inspector
+                            fs={ fs }
+                            path={ selectedPath }
+                            kind={ selectedKind }
+                            refreshToken={ refreshToken }
+                            onLog={ pushLog }
+                            onRefresh={ () => void refreshTree() }
+                            onSelect={ selectPath }
+                            dark={ prefersDark }
+                            onNewFile={ () => fileActionsRef.current?.newFile() }
+                            onNewFolder={ () => fileActionsRef.current?.newFolder() }
+                            onUpload={ () => fileActionsRef.current?.upload() }
+                            onDownload={ (path, kind) => fileActionsRef.current?.download(path, kind) }
+                        />
+                    )}
+                </div>
+                <div className="min-h-0 overflow-hidden md:col-span-2 md:row-start-2">
+                    <EventLog
+                        entries={ entries }
+                        onClear={ () => setEntries([]) }
+                    />
+                </div>
             </div>
         </div>
     );
