@@ -4,13 +4,13 @@
 
 # OPFS Worker
 
-A small, practical wrapper around the browser’s [Origin Private File System](https://developer.mozilla.org/en-US/docs/Web/API/File_System_API/Origin_private_file_system), with a familiar Node.js-style API.
+A full-featured filesystem layer for the browser, built on the [Origin Private File System](https://developer.mozilla.org/en-US/docs/Web/API/File_System_API/Origin_private_file_system).
 
-OPFS gives your web app its own private filesystem. It requires no file picker or permission prompt, supports fast local file access, and is isolated to the current origin.
+`opfs-worker` gives your app a familiar Node.js-style API for working with files and directories while handling the awkward browser parts for you: Worker setup, concurrent access, encodings, large-file streaming, change events, and cross-tab coordination.
 
-`opfs-worker` hides the browser-specific complexity behind a simple API for reading, writing, moving, and managing files.
+Choose the runtime that fits your app: use a dedicated Worker for the fastest and widest-compatible path, run the async backend directly on the current thread, or share one filesystem process across every tab with SharedWorker.
 
-Files are stored within the browser’s site quota and are removed when the user clears the site’s data.
+No permission prompt or file picker is required. Files stay private to the current origin and live within the browser’s site storage, so clearing site data removes them.
 
 **[Try the demo →](https://kachurun.github.io/opfs-worker/)**
 

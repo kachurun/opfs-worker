@@ -1,7 +1,7 @@
 {
     "name": "opfs-worker",
-    "version": "2.2.0",
-    "description": "A robust TypeScript library for working with Origin Private File System (OPFS) through Web Workers",
+    "version": "2.2.1",
+    "description": "Node.js-style filesystem API for OPFS — auto-creates a Worker for you, with optional async and SharedWorker modes",
     "type": "module",
     "main": "dist/index.js",
     "types": "dist/index.d.ts",
