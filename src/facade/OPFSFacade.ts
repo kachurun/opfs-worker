@@ -4,6 +4,7 @@ import { decodeBuffer, encodeString, isBinaryFileExtension } from '../utils/enco
 import { OperationNotSupportedError } from '../utils/errors';
 import { matchMinimatch, normalizeMinimatch } from '../utils/helpers';
 import { expandImportFilesSource, isFileSystemFileHandle } from '../utils/importSources';
+import { defaultNamespace } from '../utils/namespace';
 
 import type {
     BinaryEncoding,
@@ -120,7 +121,7 @@ export class OPFSFacade {
         }
 
         if (options.root != null && !this.#namespace) {
-            this.#namespace = `opfs-worker:${ normalizePath(options.root) }`;
+            this.#namespace = defaultNamespace(normalizePath(options.root));
         }
 
         if (options.broadcastChannel != null) {

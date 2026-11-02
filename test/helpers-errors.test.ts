@@ -25,6 +25,7 @@ import {
   isPathExcluded,
   normalizeMinimatch,
 } from '../src/utils/helpers';
+import { defaultNamespace } from '../src/utils/namespace';
 
 describe('path helpers', () => {
   it('normalizePath / joinPath / basename / dirname / extname', () => {
@@ -46,6 +47,12 @@ describe('path helpers', () => {
     expect(absoluteOpfsPath('/app/', 'x.txt')).toBe('/app/x.txt');
     expect(absoluteOpfsPath('/app', './a/../b.txt')).toBe('/app/b.txt');
     expect(absoluteOpfsPath('/', '/app/x.txt')).toBe(absoluteOpfsPath('/app', '/x.txt'));
+  });
+
+  it('defaultNamespace normalizes the root', () => {
+    expect(defaultNamespace('/')).toBe('opfs-worker:/');
+    expect(defaultNamespace('app')).toBe('opfs-worker:/app');
+    expect(defaultNamespace('/app')).toBe('opfs-worker:/app');
   });
 
   it('resolvePath handles ., .. and home', () => {

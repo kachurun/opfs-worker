@@ -306,6 +306,22 @@ describe('OPFSFacade', () => {
       stop();
     });
 
+    it('matches the worker default namespace for a root without a leading slash', async () => {
+      const { fs: nested } = createFacade({ root: 'nested', broadcastChannel: 'nested-root-watch' });
+
+      const events: string[] = [];
+      const stop = nested.watch('/', (event) => {
+        events.push(event.path);
+      });
+
+      await nested.writeFile('/inside.txt', 'x', 'utf-8');
+      await vi.waitFor(() => expect(events).toContain('/inside.txt'));
+
+      stop();
+      await nested.clear('/');
+      nested.dispose();
+    });
+
     it('receives mutations from another instance that never called watch', async () => {
       const channel = 'cross-instance-watch';
       const namespace = 'cross-ns';
