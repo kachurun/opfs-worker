@@ -322,6 +322,46 @@ describe('OPFSFacade', () => {
       nested.dispose();
     });
 
+    it('calls a listener once per change when its watches overlap', async () => {
+      await fs.setOptions({ root: '/', broadcastChannel: 'opfs-worker', namespace: 'overlap-ns' });
+      await fs.mkdir('/ws', { recursive: true });
+
+      const events: string[] = [];
+      const listener = (event: { path: string }) => events.push(event.path);
+      const stopFolder = fs.watch('/ws', { recursive: true }, listener);
+      const stopFile = fs.watch('/ws/a.txt', { recursive: false }, listener);
+
+      await fs.writeFile('/ws/a.txt', 'one', 'utf-8');
+      await fs.writeFile('/ws/a.txt', 'two', 'utf-8');
+      await vi.waitFor(() => expect(events.length).toBeGreaterThanOrEqual(2));
+      await new Promise(r => setTimeout(r, 20));
+
+      expect(events).toEqual(['/ws/a.txt', '/ws/a.txt']);
+
+      stopFolder();
+      stopFile();
+    });
+
+    it('calls each distinct listener on overlapping watches', async () => {
+      await fs.setOptions({ root: '/', broadcastChannel: 'opfs-worker', namespace: 'overlap-distinct-ns' });
+      await fs.mkdir('/ws', { recursive: true });
+
+      const folderEvents: string[] = [];
+      const fileEvents: string[] = [];
+      const stopFolder = fs.watch('/ws', { recursive: true }, event => folderEvents.push(event.path));
+      const stopFile = fs.watch('/ws/a.txt', { recursive: false }, event => fileEvents.push(event.path));
+
+      await fs.writeFile('/ws/a.txt', 'one', 'utf-8');
+      await vi.waitFor(() => expect(folderEvents.length + fileEvents.length).toBeGreaterThanOrEqual(2));
+      await new Promise(r => setTimeout(r, 20));
+
+      expect(folderEvents).toEqual(['/ws/a.txt']);
+      expect(fileEvents).toEqual(['/ws/a.txt']);
+
+      stopFolder();
+      stopFile();
+    });
+
     it('receives mutations from another instance that never called watch', async () => {
       const channel = 'cross-instance-watch';
       const namespace = 'cross-ns';

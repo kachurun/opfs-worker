@@ -138,10 +138,17 @@ export class OPFSFacade {
             return;
         }
 
+        // One listener may sit on several overlapping watches — call it once per event
+        const listeners = new Set<WatchListener>();
+
         for (const { snapshot, listener } of this.#watches.values()) {
             if (listener && matchesWatch(data.path, snapshot)) {
-                listener(data);
+                listeners.add(listener);
             }
+        }
+
+        for (const listener of listeners) {
+            listener(data);
         }
     };
 
