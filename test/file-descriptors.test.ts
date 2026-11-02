@@ -90,6 +90,149 @@ describe('OPFSSync File Descriptors', () => {
     });
   });
 
+  describe('concurrent open()', () => {
+    const encoder = new TextEncoder();
+    const decoder = new TextDecoder();
+
+    const nextTurn = () => new Promise(resolve => setImmediate(resolve));
+
+    // Reads like a stream consumer: small chunks with an event-loop turn between them,
+    // so the descriptor stays open while the other operations run
+    async function readAllWithFd(path: string): Promise<string> {
+      const fd = await fsw.open(path);
+      const chunks: number[] = [];
+      const buffer = new Uint8Array(7);
+
+      try {
+        while (true) {
+          const { bytesRead, buffer: out } = await fsw.read(fd, buffer, 0, buffer.length, null);
+
+          if (bytesRead === 0) {
+            break;
+          }
+
+          chunks.push(...out.subarray(0, bytesRead));
+          await nextTurn();
+        }
+      }
+      finally {
+        await fsw.close(fd);
+      }
+
+      return decoder.decode(new Uint8Array(chunks));
+    }
+
+    it('shares one sync handle between concurrent opens of the same path', async () => {
+      await fsw.writeFile('/race.txt', encoder.encode('data'));
+
+      const [fd1, fd2] = await Promise.all([fsw.open('/race.txt'), fsw.open('/race.txt')]);
+
+      expect(fd1).not.toBe(fd2);
+
+      const handles = (fsw as any).openHandles as Map<string, { refCount: number }>;
+
+      expect(handles.size).toBe(1);
+      expect(handles.get('/race.txt')?.refCount).toBe(2);
+
+      await fsw.close(fd1);
+      await fsw.close(fd2);
+
+      expect(handles.size).toBe(0);
+    });
+
+    it('never fails when descriptors overlap readFile/writeFile on the same path', async () => {
+      const rounds = 20;
+      const contentFor = (round: number) => `round-${ round }:`.repeat(50);
+      const written = new Set<string>([contentFor(0)]);
+
+      await fsw.writeFile('/mixed.txt', encoder.encode(contentFor(0)));
+
+      for (let round = 1; round <= rounds; round++) {
+        written.add(contentFor(round));
+
+        const results = await Promise.allSettled([
+          fsw.writeFile('/mixed.txt', encoder.encode(contentFor(round))),
+          fsw.readFile('/mixed.txt'),
+          fsw.readFile('/mixed.txt'),
+          readAllWithFd('/mixed.txt'),
+        ]);
+
+        const rejected = results.filter(r => r.status === 'rejected');
+
+        expect(rejected).toEqual([]);
+
+        for (const result of results.slice(1, 3)) {
+          const text = decoder.decode((result as PromiseFulfilledResult<Uint8Array>).value);
+
+          expect(written.has(text)).toBe(true);
+        }
+      }
+
+      expect((fsw as any).openHandles.size).toBe(0);
+    });
+
+    it('opens again when the last descriptor closes while another open is pending', async () => {
+      await fsw.writeFile('/reopen.txt', encoder.encode('hello'));
+
+      // Close the first descriptor after 0, 1 and 2 event-loop turns, racing the second open
+      for (let turns = 0; turns < 3; turns++) {
+        const first = fsw.open('/reopen.txt').then(async(fd) => {
+          for (let i = 0; i < turns; i++) {
+            await nextTurn();
+          }
+
+          await fsw.close(fd);
+        });
+        const second = fsw.open('/reopen.txt');
+
+        await first;
+
+        const fd = await second;
+        const { bytesRead, buffer } = await fsw.read(fd, new Uint8Array(5), 0, 5, 0);
+
+        expect(decoder.decode(buffer.subarray(0, bytesRead))).toBe('hello');
+
+        await fsw.close(fd);
+      }
+
+      expect((fsw as any).openHandles.size).toBe(0);
+
+      const fd = await fsw.open('/reopen.txt');
+
+      await fsw.write(fd, encoder.encode('world'), 0, 5, 0);
+      await fsw.close(fd);
+
+      expect(decoder.decode(await fsw.readFile('/reopen.txt'))).toBe('world');
+    });
+
+    it('creates the file when an open with create races an open without it', async () => {
+      const [plain, creating] = await Promise.allSettled([
+        fsw.open('/late.txt'),
+        fsw.open('/late.txt', { create: true }),
+      ]);
+
+      expect(plain).toMatchObject({ status: 'rejected', reason: { name: 'ENOENT' } });
+      expect(creating.status).toBe('fulfilled');
+
+      await fsw.close((creating as PromiseFulfilledResult<number>).value);
+
+      expect(await fsw.exists('/late.txt')).toBe(true);
+    });
+
+    it('rejects every waiter when opening fails, then recovers', async () => {
+      const [a, b] = await Promise.allSettled([fsw.open('/missing.txt'), fsw.open('/missing.txt')]);
+
+      expect(a).toMatchObject({ status: 'rejected', reason: { name: 'ENOENT' } });
+      expect(b).toMatchObject({ status: 'rejected', reason: { name: 'ENOENT' } });
+
+      const fd = await fsw.open('/missing.txt', { create: true });
+
+      await fsw.close(fd);
+
+      expect((fsw as any).openHandles.size).toBe(0);
+    });
+  });
+
   describe('close()', () => {
     it('closes file descriptor successfully', async () => {
       const fd = await fsw.open('/test.txt', { create: true });

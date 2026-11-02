@@ -21,6 +21,13 @@ import {
 
 import type { FileOpenOptions, FileStat, OPFSOptions } from '../types';
 
+/** One sync access handle shared by every descriptor open on a path */
+interface SharedHandle {
+    fileHandle: FileSystemFileHandle;
+    syncHandle: FileSystemSyncAccessHandle;
+    refCount: number;
+}
+
 /**
  * Sync OPFS backend using `FileSystemSyncAccessHandle` (dedicated worker only).
  *
@@ -37,11 +44,10 @@ import type { FileOpenOptions, FileStat, OPFSOptions } from '../types';
  */
 export class OPFSSync extends BaseOPFS {
     /** Shared sync handles per path (OPFS allows only one handle per file) */
-    private openHandles = new Map<string, {
-        fileHandle: FileSystemFileHandle;
-        syncHandle: FileSystemSyncAccessHandle;
-        refCount: number;
-    }>();
+    private openHandles = new Map<string, SharedHandle>();
+
+    /** In-flight sync handle creation per path, so concurrent opens don't each create one */
+    private pendingHandles = new Map<string, { promise: Promise<void>; create: boolean }>();
 
     /** Map of open file descriptors to their metadata */
     private openFiles = new Map<number, {
@@ -262,26 +268,7 @@ export class OPFSSync extends BaseOPFS {
      * @private
      */
     private async _openFile(path: string, create: boolean, truncate: boolean): Promise<number> {
-        let shared = this.openHandles.get(path);
-
-        if (!shared) {
-            const fileHandle = await this.getFileHandle(path, create);
-
-            // Verify that we got a file handle, not a directory
-            try {
-                await fileHandle.getFile();
-            }
-            catch (error: any) {
-                throw mapDomError(error, { path, isDirectory: true });
-            }
-
-            const syncHandle = await createSyncHandleSafe(fileHandle, path);
-
-            shared = { fileHandle, syncHandle, refCount: 0 };
-            this.openHandles.set(path, shared);
-        }
-
-        shared.refCount++;
+        const shared = await this._acquireSharedHandle(path, create);
 
         if (truncate) {
             shared.syncHandle.truncate(0);
@@ -298,6 +285,69 @@ export class OPFSSync extends BaseOPFS {
         });
 
         return fd;
+    }
+
+    /**
+     * Take a reference to the shared sync handle for a path, creating it if needed.
+     *
+     * Concurrent callers wait for the same creation instead of each calling
+     * `createSyncAccessHandle()` (the second call would fail). The reference is
+     * taken synchronously after the check, so a handle closed by another
+     * descriptor in the meantime is never returned — the loop opens it again.
+     * @private
+     */
+    private async _acquireSharedHandle(path: string, create: boolean): Promise<SharedHandle> {
+        while (true) {
+            const shared = this.openHandles.get(path);
+
+            if (shared) {
+                shared.refCount++;
+
+                return shared;
+            }
+
+            let pending = this.pendingHandles.get(path);
+
+            if (!pending) {
+                const promise = this._createSharedHandle(path, create).finally(() => {
+                    this.pendingHandles.delete(path);
+                });
+
+                pending = { promise, create };
+                this.pendingHandles.set(path, pending);
+            }
+
+            try {
+                await pending.promise;
+            }
+            catch (error) {
+                // A creation started without `create` may fail only because the file
+                // doesn't exist yet — retry with our own flag instead of sharing that error
+                if (!create || pending.create) {
+                    throw error;
+                }
+            }
+        }
+    }
+
+    /**
+     * Create the sync handle for a path and register it with no references yet
+     * @private
+     */
+    private async _createSharedHandle(path: string, create: boolean): Promise<void> {
+        const fileHandle = await this.getFileHandle(path, create);
+
+        // Verify that we got a file handle, not a directory
+        try {
+            await fileHandle.getFile();
+        }
+        catch (error: any) {
+            throw mapDomError(error, { path, isDirectory: true });
+        }
+
+        const syncHandle = await createSyncHandleSafe(fileHandle, path);
+
+        this.openHandles.set(path, { fileHandle, syncHandle, refCount: 0 });
     }
 
     async close(fd: number): Promise<void> {
@@ -452,6 +502,9 @@ export class OPFSSync extends BaseOPFS {
             safeCloseSyncHandle(-1, shared.syncHandle, path);
         }
 
+        // pendingHandles is left alone: in-flight creations can't be cancelled and remove
+        // their own entry when done. Clearing it would let a later open start a second
+        // createSyncAccessHandle() for the same path and fail with EBUSY.
         this.openHandles.clear();
         this.openFiles.clear();
         this.nextFd = 1;

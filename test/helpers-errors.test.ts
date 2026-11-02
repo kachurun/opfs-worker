@@ -72,6 +72,7 @@ describe('path helpers', () => {
 describe('mapDomError', () => {
   it('maps known DOM exception names', () => {
     expect(mapDomError({ name: 'InvalidStateError' }, { path: '/a' })).toBeInstanceOf(FileBusyError);
+    expect(mapDomError({ name: 'NoModificationAllowedError' }, { path: '/a' })).toMatchObject({ name: 'EBUSY' });
     expect(mapDomError({ name: 'QuotaExceededError' }, { path: '/a' })).toBeInstanceOf(StorageError);
     expect(mapDomError({ name: 'NotFoundError' }, { path: '/a' })).toBeInstanceOf(ExistenceError);
     expect(mapDomError({ name: 'TypeMismatchError' }, { path: '/a', isDirectory: true })).toBeInstanceOf(FileTypeError);
