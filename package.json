@@ -1,6 +1,6 @@
 {
     "name": "opfs-worker",
-    "version": "2.2.1",
+    "version": "2.3.0",
     "description": "Node.js-style filesystem API for OPFS — auto-creates a Worker for you, with optional async and SharedWorker modes",
     "type": "module",
     "main": "dist/index.js",
