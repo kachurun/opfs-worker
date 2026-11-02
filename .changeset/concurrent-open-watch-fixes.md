@@ -1,5 +1,5 @@
 ---
-"opfs-worker": patch
+"opfs-worker": minor
 ---
 
 File descriptors: an open descriptor now holds the path lock until `close()`, the same lock `readFile` / `writeFile` take. Whole-file operations on the path wait for open descriptors instead of failing with `EIO`. Descriptors opened without `truncate` share the file; an open with `truncate` waits for the others to close and keeps new ones out until it closes, so a reader never sees a write's truncate mid-write. `exclusive` creates are atomic. Concurrent `open()` calls on one file share one sync access handle instead of the second failing with `EIO`. `NoModificationAllowedError` now maps to `EBUSY`. Upgrading: `readFile`, `writeFile` or `rm` on a path while you hold a descriptor on it now waits for that descriptor to close (in the same worker they used to run alongside it; `rm` failed), so close descriptors before those calls.
