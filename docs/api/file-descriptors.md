@@ -47,7 +47,17 @@ const fd = await fs.open('/data/log.txt', { create: true, truncate: true });
 
 Throws `AlreadyExistsError` (`exclusive`), `FileTypeError` (path is a directory), or `FileSystemOperationError`.
 
-`exclusive` is best-effort — two workers can still race. OPFS has no real file locking.
+### Locking
+
+An open FD holds the file’s lock until you `close()` it. It’s the same per-path lock `readFile`, `writeFile`, `appendFile`, `writeStream` and `rm` take, and it’s a Web Lock, so it covers other tabs and workers of the origin too. While an FD is open:
+
+- whole-file operations on that path wait for it;
+- other FDs opened without `truncate` in the same worker share the file, each with its own cursor (an FD opened in another worker waits);
+- an open with `truncate` waits for the other FDs to close and keeps new ones out until it closes, so no reader sees a half-written file.
+
+The `exclusive` check and the create are atomic: of two exclusive creates of one path, the second gets `AlreadyExistsError`.
+
+Always close FDs — one left open blocks its path until `close()` or `dispose()`. For the same reason, while you hold an FD on a path, don’t call `readFile`, `writeFile`, `rm` or the like on it, or open it with `truncate`: the call waits for that FD to close.
 
 ## `read(fd, buffer, offset, length, position?)`
 

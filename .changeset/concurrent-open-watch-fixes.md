@@ -2,7 +2,7 @@
 "opfs-worker": patch
 ---
 
-File descriptors: concurrent `open()` calls on one file now share a single sync access handle instead of each creating one. Overlapping `open()` / `readFile()` / `writeFile()` on the same path no longer fail with `EIO`. `NoModificationAllowedError` (a handle held elsewhere, e.g. in another tab) now maps to `EBUSY`.
+File descriptors: an open descriptor now holds the path lock until `close()`, the same lock `readFile` / `writeFile` take. Whole-file operations on the path wait for open descriptors instead of failing with `EIO`. Descriptors opened without `truncate` share the file; an open with `truncate` waits for the others to close and keeps new ones out until it closes, so a reader never sees a write's truncate mid-write. `exclusive` creates are atomic. Concurrent `open()` calls on one file share a single sync access handle instead of each creating one. `NoModificationAllowedError` now maps to `EBUSY`. Upgrading: `readFile`, `writeFile` or `rm` on a path while you hold a descriptor on it now waits for that descriptor to close (it used to fail fast), so close descriptors before those calls.
 
 Watching: the facade's default namespace now matches the worker's for roots without a leading slash (`root: 'app'`), so listeners receive events without an explicit `namespace`. A listener registered on overlapping watches (a recursive folder watch and a file inside it) is called once per change.
 
