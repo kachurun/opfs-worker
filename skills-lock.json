@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "skills": {
+    "briefback": {
+      "source": "reforma-ai/briefback",
+      "sourceType": "github",
+      "skillPath": "skills/briefback/SKILL.md",
+      "computedHash": "ebfee8a5f235d1c46c137422a0eaee4b4adca7ce31ffd742f259184471ef8247"
+    }
+  }
+}
