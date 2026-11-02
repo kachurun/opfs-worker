@@ -1,12 +1,10 @@
 import { wrap } from 'comlink';
 
-import WorkerCtor from './dedicated.worker?worker&inline';
+import InlineWorker from './dedicated.worker?worker&inline';
 import { normalizePath } from '../utils/helpers';
 
 import type { OPFSOptions, OPFSSync } from '../types';
 import type { Remote } from 'comlink';
-
-const InlineWorker = WorkerCtor as new (options?: WorkerOptions) => Worker;
 
 type RemoteOPFSSync = Remote<OPFSSync>;
 
@@ -136,7 +134,7 @@ export function createDedicatedWorker(options: DedicatedWorkerOptions = {}): Raw
                     port.close();
                 }
 
-                if (!current || current.worker !== worker) {
+                if (current?.worker !== worker) {
                     return;
                 }
 

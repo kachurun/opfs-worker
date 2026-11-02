@@ -24,6 +24,7 @@ import {
     withLock
 } from '../utils/helpers';
 import { expandImportFilesSource } from '../utils/importSources';
+import { defaultNamespace } from '../utils/namespace';
 
 import type {
     DirentData,
@@ -240,7 +241,7 @@ export abstract class BaseOPFS {
             this.options.root = normalizePath(options.root);
 
             if (!this.options.namespace) {
-                this.options.namespace = `opfs-worker:${ this.options.root }`;
+                this.options.namespace = defaultNamespace(this.options.root);
             }
 
             await this.mount();

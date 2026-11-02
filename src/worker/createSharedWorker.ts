@@ -52,7 +52,9 @@ export function createSharedWorker(options: SharedWorkerOptions = {}): RawShared
     const workerName = `${ name }:${ root }`;
 
     const worker = providedWorker ?? new SharedWorker(
-        url ?? new URL('./shared.worker.js', import.meta.url),
+        // Resolved at runtime next to the built chunk (dist/shared.worker.js). @vite-ignore keeps
+        // Vite from resolving it to src/worker/shared.worker.ts and inlining that as a data: URL.
+        url ?? new URL(/* @vite-ignore */ './shared.worker.js', import.meta.url),
         { type: 'module', name: workerName }
     );
 

@@ -245,7 +245,10 @@ export function mapDomError(error: any, context?: MapDomErrorContext): OPFSError
     const operation = context?.operation;
 
     switch (error.name) {
+        // NoModificationAllowedError: the file is locked by an open sync access handle
+        // (e.g. in another tab) — raised by createSyncAccessHandle() and by removeEntry()
         case 'InvalidStateError':
+        case 'NoModificationAllowedError':
             return new FileBusyError(path || 'unknown', error);
 
         case 'QuotaExceededError':

@@ -14,10 +14,36 @@ describe('OPFSSync File Descriptors', () => {
   });
 
   afterEach(async () => {
-    // Close all open file descriptors manually
-    // We'll rely on the clear() method to clean up files
+    // First, so clear() doesn't wait on path locks held by descriptors a failed test left open
+    fsw.dispose();
     await fsw.clear('/');
   });
+
+  const nextTurns = async(count = 3) => {
+    for (let i = 0; i < count; i++) {
+      await new Promise(resolve => setImmediate(resolve));
+    }
+  };
+
+  async function readText(fd: number): Promise<string> {
+    const { size } = await fsw.fstat(fd);
+    const { bytesRead, buffer } = await fsw.read(fd, new Uint8Array(size), 0, size, 0);
+
+    return new TextDecoder().decode(buffer.subarray(0, bytesRead));
+  }
+
+  // Reading through a second instance needs both the path lock and the sync handle
+  // (OPFS allows one per file), so it hangs or fails with EBUSY if either was leaked
+  async function expectReleased(path: string): Promise<void> {
+    const other = new OPFSSync({ root: '/' });
+
+    try {
+      await other.readFile(path);
+    }
+    finally {
+      other.dispose();
+    }
+  }
 
   describe('open()', () => {
     it('opens existing file for reading', async () => {
@@ -87,6 +113,269 @@ describe('OPFSSync File Descriptors', () => {
       await expect(
         fsw.open('/nope.txt')
       ).rejects.toMatchObject({ name: 'ENOENT' });
+    });
+  });
+
+  describe('concurrent open()', () => {
+    const encoder = new TextEncoder();
+    const decoder = new TextDecoder();
+
+    it('shares one sync handle between concurrent opens of the same path', async () => {
+      await fsw.writeFile('/race.txt', encoder.encode('data'));
+
+      const [fd1, fd2] = await Promise.all([fsw.open('/race.txt'), fsw.open('/race.txt')]);
+
+      expect(fd1).not.toBe(fd2);
+
+      await fsw.close(fd1);
+      expect(await readText(fd2)).toBe('data');
+      await fsw.close(fd2);
+
+      await expectReleased('/race.txt');
+    });
+
+    it('opens again when the last descriptor closes while another open is pending', async () => {
+      await fsw.writeFile('/reopen.txt', encoder.encode('hello'));
+
+      // Close the first descriptor after 0, 1 and 2 event-loop turns, racing the second open
+      for (let turns = 0; turns < 3; turns++) {
+        const first = fsw.open('/reopen.txt').then(async(fd) => {
+          await nextTurns(turns);
+          await fsw.close(fd);
+        });
+        const second = fsw.open('/reopen.txt');
+
+        await first;
+
+        const fd = await second;
+
+        expect(await readText(fd)).toBe('hello');
+        await fsw.close(fd);
+      }
+
+      await expectReleased('/reopen.txt');
+    });
+
+    it('creates the file when an open with create races an open without it', async () => {
+      const [plain, creating] = await Promise.allSettled([
+        fsw.open('/late.txt'),
+        fsw.open('/late.txt', { create: true }),
+      ]);
+
+      expect(plain).toMatchObject({ status: 'rejected', reason: { name: 'ENOENT' } });
+      expect(creating.status).toBe('fulfilled');
+
+      await fsw.close((creating as PromiseFulfilledResult<number>).value);
+
+      expect(await fsw.exists('/late.txt')).toBe(true);
+    });
+
+    it('rejects every waiter when opening fails, then releases the path', async () => {
+      const [a, b] = await Promise.allSettled([fsw.open('/missing.txt'), fsw.open('/missing.txt')]);
+
+      expect(a).toMatchObject({ status: 'rejected', reason: { name: 'ENOENT' } });
+      expect(b).toMatchObject({ status: 'rejected', reason: { name: 'ENOENT' } });
+
+      await fsw.writeFile('/missing.txt', encoder.encode('created'));
+      expect(decoder.decode(await fsw.readFile('/missing.txt'))).toBe('created');
+      await expectReleased('/missing.txt');
+    });
+  });
+
+  describe('path lock from open() to close()', () => {
+    const encoder = new TextEncoder();
+    const decoder = new TextDecoder();
+
+    function track<T>(promise: Promise<T>): { promise: Promise<T>; settled: () => boolean } {
+      let settled = false;
+
+      promise.then(() => (settled = true), () => (settled = true));
+
+      return { promise, settled: () => settled };
+    }
+
+    beforeEach(async () => {
+      await fsw.writeFile('/locked.txt', encoder.encode('old'));
+    });
+
+    it('makes readFile wait until the descriptor closes', async () => {
+      const fd = await fsw.open('/locked.txt');
+      const reading = track(fsw.readFile('/locked.txt'));
+
+      await fsw.write(fd, encoder.encode('new'), 0, 3, 0);
+      await nextTurns();
+      expect(reading.settled()).toBe(false);
+
+      await fsw.close(fd);
+      expect(decoder.decode(await reading.promise)).toBe('new');
+    });
+
+    it('makes writeFile wait until the descriptor closes', async () => {
+      const fd = await fsw.open('/locked.txt');
+      const writing = track(fsw.writeFile('/locked.txt', encoder.encode('new')));
+
+      await nextTurns();
+      expect(writing.settled()).toBe(false);
+      expect(await readText(fd)).toBe('old');
+
+      await fsw.close(fd);
+      await writing.promise;
+      expect(decoder.decode(await fsw.readFile('/locked.txt'))).toBe('new');
+    });
+
+    it('keeps a reader from seeing a truncating open mid-write', async () => {
+      const writer = await fsw.open('/locked.txt', { create: true, truncate: true });
+
+      await fsw.write(writer, encoder.encode('ne'), 0, 2, 0);
+
+      const opening = track(fsw.open('/locked.txt'));
+
+      await nextTurns();
+      expect(opening.settled()).toBe(false);
+
+      await fsw.write(writer, encoder.encode('w'), 0, 1, 2);
+      await fsw.close(writer);
+
+      const reader = await opening.promise;
+
+      expect(await readText(reader)).toBe('new');
+      await fsw.close(reader);
+    });
+
+    it('makes a truncating open wait for open descriptors', async () => {
+      const reader = await fsw.open('/locked.txt');
+      const opening = track(fsw.open('/locked.txt', { create: true, truncate: true }));
+
+      await nextTurns();
+      expect(opening.settled()).toBe(false);
+      expect(await readText(reader)).toBe('old');
+
+      await fsw.close(reader);
+
+      const writer = await opening.promise;
+
+      expect((await fsw.fstat(writer)).size).toBe(0);
+      await fsw.close(writer);
+    });
+
+    it('lets a descriptor join the open ones while a truncating open waits', async () => {
+      const fd1 = await fsw.open('/locked.txt');
+      const writing = track(fsw.open('/locked.txt', { truncate: true }));
+
+      await nextTurns();
+
+      const fd2 = await fsw.open('/locked.txt');
+
+      expect(await readText(fd2)).toBe('old');
+      await fsw.close(fd1);
+      await fsw.close(fd2);
+      await fsw.close(await writing.promise);
+    });
+
+    it('lets only one exclusive create of a path succeed', async () => {
+      const results = await Promise.allSettled([
+        fsw.open('/unique.txt', { create: true, exclusive: true }),
+        fsw.open('/unique.txt', { create: true, exclusive: true }),
+      ]);
+
+      const fulfilled = results.filter(r => r.status === 'fulfilled') as PromiseFulfilledResult<number>[];
+
+      expect(fulfilled).toHaveLength(1);
+      expect(results.find(r => r.status === 'rejected')).toMatchObject({ reason: { name: 'EEXIST' } });
+      await fsw.close(fulfilled[0]!.value);
+    });
+
+    it('does not make other paths wait', async () => {
+      await fsw.writeFile('/other.txt', encoder.encode('other'));
+
+      const fd = await fsw.open('/locked.txt');
+
+      expect(decoder.decode(await fsw.readFile('/other.txt'))).toBe('other');
+      await fsw.close(fd);
+    });
+
+    it('releases held locks on dispose', async () => {
+      await fsw.open('/locked.txt');
+      fsw.dispose();
+
+      const next = new OPFSSync({ root: '/' });
+
+      expect(decoder.decode(await next.readFile('/locked.txt'))).toBe('old');
+      next.dispose();
+    });
+
+    it('keeps descriptor and whole-file access to one path apart', async () => {
+      const contentFor = (round: number) => `round-${ round }:`.repeat(50);
+
+      // Like a buffered write: open with truncate, write in chunks, close
+      async function writeWithFd(text: string): Promise<string> {
+        const data = encoder.encode(text);
+        const fd = await fsw.open('/locked.txt', { create: true, truncate: true });
+
+        try {
+          for (let offset = 0; offset < data.length; offset += 100) {
+            await fsw.write(fd, data, offset, Math.min(100, data.length - offset), null, false);
+            await nextTurns(1);
+          }
+        }
+        finally {
+          await fsw.close(fd);
+        }
+
+        return text;
+      }
+
+      // Like a stream read: open, read in chunks, close
+      async function readWithFd(): Promise<string> {
+        const fd = await fsw.open('/locked.txt');
+        const chunks: number[] = [];
+
+        try {
+          while (true) {
+            const { bytesRead, buffer } = await fsw.read(fd, new Uint8Array(64), 0, 64, null);
+
+            if (bytesRead === 0) {
+              break;
+            }
+
+            chunks.push(...buffer.subarray(0, bytesRead));
+            await nextTurns(1);
+          }
+        }
+        finally {
+          await fsw.close(fd);
+        }
+
+        return decoder.decode(new Uint8Array(chunks));
+      }
+
+      let previous = 'old';
+
+      for (let round = 0; round < 20; round++) {
+        const next = contentFor(round);
+        // Alternate the writer between a descriptor and writeFile (an internal open)
+        const write = round % 2 === 0
+          ? () => writeWithFd(next)
+          : () => fsw.writeFile('/locked.txt', encoder.encode(next)).then(() => next);
+        const accesses = [
+          write,
+          () => readWithFd(),
+          () => fsw.readFile('/locked.txt').then(data => decoder.decode(data)),
+          () => readWithFd(),
+        ];
+        const rotated = [...accesses.slice(round % 4), ...accesses.slice(0, round % 4)];
+        const results = await Promise.allSettled(rotated.map(access => access()));
+
+        expect(results.filter(r => r.status === 'rejected')).toEqual([]);
+
+        for (const result of results) {
+          expect([previous, next]).toContain((result as PromiseFulfilledResult<string>).value);
+        }
+
+        previous = next;
+      }
+
+      await expectReleased('/locked.txt');
     });
   });
 

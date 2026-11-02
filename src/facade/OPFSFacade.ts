@@ -4,6 +4,7 @@ import { decodeBuffer, encodeString, isBinaryFileExtension } from '../utils/enco
 import { OperationNotSupportedError } from '../utils/errors';
 import { matchMinimatch, normalizeMinimatch } from '../utils/helpers';
 import { expandImportFilesSource, isFileSystemFileHandle } from '../utils/importSources';
+import { defaultNamespace } from '../utils/namespace';
 
 import type {
     BinaryEncoding,
@@ -120,7 +121,7 @@ export class OPFSFacade {
         }
 
         if (options.root != null && !this.#namespace) {
-            this.#namespace = `opfs-worker:${ normalizePath(options.root) }`;
+            this.#namespace = defaultNamespace(options.root);
         }
 
         if (options.broadcastChannel != null) {
@@ -137,10 +138,17 @@ export class OPFSFacade {
             return;
         }
 
+        // One listener may sit on several overlapping watches — call it once per event
+        const listeners = new Set<WatchListener>();
+
         for (const { snapshot, listener } of this.#watches.values()) {
             if (listener && matchesWatch(data.path, snapshot)) {
-                listener(data);
+                listeners.add(listener);
             }
+        }
+
+        for (const listener of listeners) {
+            listener(data);
         }
     };
 
@@ -368,7 +376,7 @@ export class OPFSFacade {
         const resolved = isFileSystemFileHandle(source) ? await source.getFile() : source;
         const bytesTotal = resolved instanceof Blob ? resolved.size : undefined;
         const stream = resolved instanceof Blob ? resolved.stream() : resolved;
-        const transferredStream = transfer(stream, [stream]) as unknown as ReadableStream<Uint8Array>;
+        const transferredStream = transfer(stream, [stream]);
         const onProgress = options?.onProgress
             ? proxy((bytesWritten: number) =>
                 options.onProgress!({ path: normalizedPath, bytesWritten, bytesTotal }))

@@ -25,6 +25,7 @@ import {
   isPathExcluded,
   normalizeMinimatch,
 } from '../src/utils/helpers';
+import { defaultNamespace } from '../src/utils/namespace';
 
 describe('path helpers', () => {
   it('normalizePath / joinPath / basename / dirname / extname', () => {
@@ -46,6 +47,12 @@ describe('path helpers', () => {
     expect(absoluteOpfsPath('/app/', 'x.txt')).toBe('/app/x.txt');
     expect(absoluteOpfsPath('/app', './a/../b.txt')).toBe('/app/b.txt');
     expect(absoluteOpfsPath('/', '/app/x.txt')).toBe(absoluteOpfsPath('/app', '/x.txt'));
+  });
+
+  it('defaultNamespace normalizes the root', () => {
+    expect(defaultNamespace('/')).toBe('opfs-worker:/');
+    expect(defaultNamespace('app')).toBe('opfs-worker:/app');
+    expect(defaultNamespace('/app')).toBe('opfs-worker:/app');
   });
 
   it('resolvePath handles ., .. and home', () => {
@@ -72,6 +79,7 @@ describe('path helpers', () => {
 describe('mapDomError', () => {
   it('maps known DOM exception names', () => {
     expect(mapDomError({ name: 'InvalidStateError' }, { path: '/a' })).toBeInstanceOf(FileBusyError);
+    expect(mapDomError({ name: 'NoModificationAllowedError' }, { path: '/a' })).toMatchObject({ name: 'EBUSY' });
     expect(mapDomError({ name: 'QuotaExceededError' }, { path: '/a' })).toBeInstanceOf(StorageError);
     expect(mapDomError({ name: 'NotFoundError' }, { path: '/a' })).toBeInstanceOf(ExistenceError);
     expect(mapDomError({ name: 'TypeMismatchError' }, { path: '/a', isDirectory: true })).toBeInstanceOf(FileTypeError);
