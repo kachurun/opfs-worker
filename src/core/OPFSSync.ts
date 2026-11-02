@@ -251,7 +251,7 @@ export class OPFSSync extends BaseOPFS {
 
             // TypeMismatchError here means the path actually refers to a directory
             // so we map it as a directory-type error (EISDIR) for better Node.js parity.
-            const isTypeMismatchDirectory = error && error.name === 'TypeMismatchError';
+            const isTypeMismatchDirectory = error?.name === 'TypeMismatchError';
 
             throw mapDomError(error, {
                 path: normalizedPath,

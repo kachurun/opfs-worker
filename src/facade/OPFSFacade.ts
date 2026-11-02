@@ -368,7 +368,7 @@ export class OPFSFacade {
         const resolved = isFileSystemFileHandle(source) ? await source.getFile() : source;
         const bytesTotal = resolved instanceof Blob ? resolved.size : undefined;
         const stream = resolved instanceof Blob ? resolved.stream() : resolved;
-        const transferredStream = transfer(stream, [stream]) as unknown as ReadableStream<Uint8Array>;
+        const transferredStream = transfer(stream, [stream]);
         const onProgress = options?.onProgress
             ? proxy((bytesWritten: number) =>
                 options.onProgress!({ path: normalizedPath, bytesWritten, bytesTotal }))
