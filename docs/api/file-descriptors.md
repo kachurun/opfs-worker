@@ -53,7 +53,7 @@ An open FD holds the file’s lock until you `close()` it. It’s the same per-p
 
 - whole-file operations on that path wait for it;
 - other FDs opened without `truncate` in the same worker share the file, each with its own cursor (an FD opened in another worker waits);
-- an open with `truncate` waits for the other FDs to close and keeps new ones out until it closes, so no reader sees a half-written file.
+- an open with `truncate` waits for the other FDs to close (FDs opened while it waits still join them) and keeps new ones out until it closes, so no reader sees a half-written file.
 
 The `exclusive` check and the create are atomic: of two exclusive creates of one path, the second gets `AlreadyExistsError`.
 

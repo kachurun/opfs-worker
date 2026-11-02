@@ -121,7 +121,7 @@ export class OPFSFacade {
         }
 
         if (options.root != null && !this.#namespace) {
-            this.#namespace = defaultNamespace(normalizePath(options.root));
+            this.#namespace = defaultNamespace(options.root);
         }
 
         if (options.broadcastChannel != null) {

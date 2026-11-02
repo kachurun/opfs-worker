@@ -19,6 +19,32 @@ describe('OPFSSync File Descriptors', () => {
     await fsw.clear('/');
   });
 
+  const nextTurns = async(count = 3) => {
+    for (let i = 0; i < count; i++) {
+      await new Promise(resolve => setImmediate(resolve));
+    }
+  };
+
+  async function readText(fd: number): Promise<string> {
+    const { size } = await fsw.fstat(fd);
+    const { bytesRead, buffer } = await fsw.read(fd, new Uint8Array(size), 0, size, 0);
+
+    return new TextDecoder().decode(buffer.subarray(0, bytesRead));
+  }
+
+  // Reading through a second instance needs both the path lock and the sync handle
+  // (OPFS allows one per file), so it hangs or fails with EBUSY if either was leaked
+  async function expectReleased(path: string): Promise<void> {
+    const other = new OPFSSync({ root: '/' });
+
+    try {
+      await other.readFile(path);
+    }
+    finally {
+      other.dispose();
+    }
+  }
+
   describe('open()', () => {
     it('opens existing file for reading', async () => {
       await fsw.writeFile('/test.txt', new TextEncoder().encode('Hello, World!'));
@@ -94,34 +120,6 @@ describe('OPFSSync File Descriptors', () => {
     const encoder = new TextEncoder();
     const decoder = new TextDecoder();
 
-    const nextTurn = () => new Promise(resolve => setImmediate(resolve));
-
-    // Reads like a stream consumer: small chunks with an event-loop turn between them,
-    // so the descriptor stays open while the other operations run
-    async function readAllWithFd(path: string): Promise<string> {
-      const fd = await fsw.open(path);
-      const chunks: number[] = [];
-      const buffer = new Uint8Array(7);
-
-      try {
-        while (true) {
-          const { bytesRead, buffer: out } = await fsw.read(fd, buffer, 0, buffer.length, null);
-
-          if (bytesRead === 0) {
-            break;
-          }
-
-          chunks.push(...out.subarray(0, bytesRead));
-          await nextTurn();
-        }
-      }
-      finally {
-        await fsw.close(fd);
-      }
-
-      return decoder.decode(new Uint8Array(chunks));
-    }
-
     it('shares one sync handle between concurrent opens of the same path', async () => {
       await fsw.writeFile('/race.txt', encoder.encode('data'));
 
@@ -129,46 +127,11 @@ describe('OPFSSync File Descriptors', () => {
 
       expect(fd1).not.toBe(fd2);
 
-      const handles = (fsw as any).openHandles as Map<string, { refCount: number }>;
-
-      expect(handles.size).toBe(1);
-      expect(handles.get('/race.txt')?.refCount).toBe(2);
-
       await fsw.close(fd1);
+      expect(await readText(fd2)).toBe('data');
       await fsw.close(fd2);
 
-      expect(handles.size).toBe(0);
-    });
-
-    it('never fails when descriptors overlap readFile/writeFile on the same path', async () => {
-      const rounds = 20;
-      const contentFor = (round: number) => `round-${ round }:`.repeat(50);
-      const written = new Set<string>([contentFor(0)]);
-
-      await fsw.writeFile('/mixed.txt', encoder.encode(contentFor(0)));
-
-      for (let round = 1; round <= rounds; round++) {
-        written.add(contentFor(round));
-
-        const results = await Promise.allSettled([
-          fsw.writeFile('/mixed.txt', encoder.encode(contentFor(round))),
-          fsw.readFile('/mixed.txt'),
-          fsw.readFile('/mixed.txt'),
-          readAllWithFd('/mixed.txt'),
-        ]);
-
-        const rejected = results.filter(r => r.status === 'rejected');
-
-        expect(rejected).toEqual([]);
-
-        for (const result of results.slice(1, 3)) {
-          const text = decoder.decode((result as PromiseFulfilledResult<Uint8Array>).value);
-
-          expect(written.has(text)).toBe(true);
-        }
-      }
-
-      expect((fsw as any).openHandles.size).toBe(0);
+      await expectReleased('/race.txt');
     });
 
     it('opens again when the last descriptor closes while another open is pending', async () => {
@@ -177,10 +140,7 @@ describe('OPFSSync File Descriptors', () => {
       // Close the first descriptor after 0, 1 and 2 event-loop turns, racing the second open
       for (let turns = 0; turns < 3; turns++) {
         const first = fsw.open('/reopen.txt').then(async(fd) => {
-          for (let i = 0; i < turns; i++) {
-            await nextTurn();
-          }
-
+          await nextTurns(turns);
           await fsw.close(fd);
         });
         const second = fsw.open('/reopen.txt');
@@ -188,21 +148,12 @@ describe('OPFSSync File Descriptors', () => {
         await first;
 
         const fd = await second;
-        const { bytesRead, buffer } = await fsw.read(fd, new Uint8Array(5), 0, 5, 0);
 
-        expect(decoder.decode(buffer.subarray(0, bytesRead))).toBe('hello');
-
+        expect(await readText(fd)).toBe('hello');
         await fsw.close(fd);
       }
 
-      expect((fsw as any).openHandles.size).toBe(0);
-
-      const fd = await fsw.open('/reopen.txt');
-
-      await fsw.write(fd, encoder.encode('world'), 0, 5, 0);
-      await fsw.close(fd);
-
-      expect(decoder.decode(await fsw.readFile('/reopen.txt'))).toBe('world');
+      await expectReleased('/reopen.txt');
     });
 
     it('creates the file when an open with create races an open without it', async () => {
@@ -219,28 +170,21 @@ describe('OPFSSync File Descriptors', () => {
       expect(await fsw.exists('/late.txt')).toBe(true);
     });
 
-    it('rejects every waiter when opening fails, then recovers', async () => {
+    it('rejects every waiter when opening fails, then releases the path', async () => {
       const [a, b] = await Promise.allSettled([fsw.open('/missing.txt'), fsw.open('/missing.txt')]);
 
       expect(a).toMatchObject({ status: 'rejected', reason: { name: 'ENOENT' } });
       expect(b).toMatchObject({ status: 'rejected', reason: { name: 'ENOENT' } });
 
-      const fd = await fsw.open('/missing.txt', { create: true });
-
-      await fsw.close(fd);
-
-      expect((fsw as any).openHandles.size).toBe(0);
+      await fsw.writeFile('/missing.txt', encoder.encode('created'));
+      expect(decoder.decode(await fsw.readFile('/missing.txt'))).toBe('created');
+      await expectReleased('/missing.txt');
     });
   });
 
   describe('path lock from open() to close()', () => {
     const encoder = new TextEncoder();
     const decoder = new TextDecoder();
-    const nextTurns = async(count = 3) => {
-      for (let i = 0; i < count; i++) {
-        await new Promise(resolve => setImmediate(resolve));
-      }
-    };
 
     function track<T>(promise: Promise<T>): { promise: Promise<T>; settled: () => boolean } {
       let settled = false;
@@ -248,13 +192,6 @@ describe('OPFSSync File Descriptors', () => {
       promise.then(() => (settled = true), () => (settled = true));
 
       return { promise, settled: () => settled };
-    }
-
-    async function readText(fd: number): Promise<string> {
-      const { size } = await fsw.fstat(fd);
-      const { bytesRead, buffer } = await fsw.read(fd, new Uint8Array(size), 0, size, 0);
-
-      return decoder.decode(buffer.subarray(0, bytesRead));
     }
 
     beforeEach(async () => {
@@ -284,17 +221,6 @@ describe('OPFSSync File Descriptors', () => {
       await fsw.close(fd);
       await writing.promise;
       expect(decoder.decode(await fsw.readFile('/locked.txt'))).toBe('new');
-    });
-
-    it('lets descriptors without truncate share the file', async () => {
-      const fd1 = await fsw.open('/locked.txt');
-      const fd2 = await fsw.open('/locked.txt');
-
-      expect(await readText(fd1)).toBe('old');
-      expect(await readText(fd2)).toBe('old');
-
-      await fsw.close(fd1);
-      await fsw.close(fd2);
     });
 
     it('keeps a reader from seeing a truncating open mid-write', async () => {
@@ -359,13 +285,6 @@ describe('OPFSSync File Descriptors', () => {
       await fsw.close(fulfilled[0]!.value);
     });
 
-    it('releases the lock when open fails', async () => {
-      await expect(fsw.open('/missing.txt')).rejects.toMatchObject({ name: 'ENOENT' });
-
-      await fsw.writeFile('/missing.txt', encoder.encode('created'));
-      expect(decoder.decode(await fsw.readFile('/missing.txt'))).toBe('created');
-    });
-
     it('does not make other paths wait', async () => {
       await fsw.writeFile('/other.txt', encoder.encode('other'));
 
@@ -385,7 +304,7 @@ describe('OPFSSync File Descriptors', () => {
       next.dispose();
     });
 
-    it('keeps descriptor writes and whole-file reads apart', async () => {
+    it('keeps descriptor and whole-file access to one path apart', async () => {
       const contentFor = (round: number) => `round-${ round }:`.repeat(50);
 
       // Like a buffered write: open with truncate, write in chunks, close
@@ -434,8 +353,12 @@ describe('OPFSSync File Descriptors', () => {
 
       for (let round = 0; round < 20; round++) {
         const next = contentFor(round);
+        // Alternate the writer between a descriptor and writeFile (an internal open)
+        const write = round % 2 === 0
+          ? () => writeWithFd(next)
+          : () => fsw.writeFile('/locked.txt', encoder.encode(next)).then(() => next);
         const accesses = [
-          () => writeWithFd(next),
+          write,
           () => readWithFd(),
           () => fsw.readFile('/locked.txt').then(data => decoder.decode(data)),
           () => readWithFd(),
@@ -451,6 +374,8 @@ describe('OPFSSync File Descriptors', () => {
 
         previous = next;
       }
+
+      await expectReleased('/locked.txt');
     });
   });
 

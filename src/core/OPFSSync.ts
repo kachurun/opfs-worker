@@ -23,7 +23,6 @@ import type { FileOpenOptions, FileStat, OPFSOptions } from '../types';
 
 /** One sync access handle shared by every descriptor open on a path */
 interface SharedHandle {
-    fileHandle: FileSystemFileHandle;
     syncHandle: FileSystemSyncAccessHandle;
     refCount: number;
 }
@@ -42,8 +41,8 @@ interface DescriptorLock {
 
 interface FileDescriptor {
     path: string;
-    fileHandle: FileSystemFileHandle;
-    syncHandle: FileSystemSyncAccessHandle;
+    /** The sync handle shared with the other descriptors open on the path */
+    handle: SharedHandle;
     position: number;
     /** Set for descriptors from the public `open()`; internal ones run under the caller's lock */
     lock?: DescriptorLock;
@@ -365,7 +364,7 @@ export class OPFSSync extends BaseOPFS {
     }
 
     /**
-     * Internal method to open a file (without locking)
+     * Open a descriptor; the caller takes care of the path lock.
      *
      * Multiple FDs for the same path share one sync access handle (OPFS limit),
      * with independent per-FD positions — similar to Node.js.
@@ -382,13 +381,7 @@ export class OPFSSync extends BaseOPFS {
 
         const fd = this.nextFd++;
 
-        this.openFiles.set(fd, {
-            path,
-            fileHandle: shared.fileHandle,
-            syncHandle: shared.syncHandle,
-            position: 0,
-            lock,
-        });
+        this.openFiles.set(fd, { path, handle: shared, position: 0, lock });
 
         return fd;
     }
@@ -397,9 +390,10 @@ export class OPFSSync extends BaseOPFS {
      * Take a reference to the shared sync handle for a path, creating it if needed.
      *
      * Concurrent callers wait for the same creation instead of each calling
-     * `createSyncAccessHandle()` (the second call would fail). The reference is
-     * taken synchronously after the check, so a handle closed by another
-     * descriptor in the meantime is never returned — the loop opens it again.
+     * `createSyncAccessHandle()` (the second call would fail). Descriptors that join
+     * one path lock open concurrently, and without Web Locks nothing serializes opens,
+     * so the path lock alone doesn't prevent this. After waiting, the loop looks the
+     * handle up again, since `dispose()` may have dropped it in the meantime.
      * @private
      */
     private async _acquireSharedHandle(path: string, create: boolean): Promise<SharedHandle> {
@@ -453,7 +447,7 @@ export class OPFSSync extends BaseOPFS {
 
         const syncHandle = await createSyncHandleSafe(fileHandle, path);
 
-        this.openHandles.set(path, { fileHandle, syncHandle, refCount: 0 });
+        this.openHandles.set(path, { syncHandle, refCount: 0 });
     }
 
     async close(fd: number): Promise<void> {
@@ -461,12 +455,16 @@ export class OPFSSync extends BaseOPFS {
 
         this.openFiles.delete(fd);
 
-        const shared = this.openHandles.get(fileInfo.path);
+        const { handle } = fileInfo;
 
-        if (shared && --shared.refCount <= 0) {
-            // Only close the underlying sync handle when the last FD for this path is gone
-            safeCloseSyncHandle(fd, shared.syncHandle, fileInfo.path);
-            this.openHandles.delete(fileInfo.path);
+        // Only close the underlying sync handle when the last FD for this path is gone
+        if (--handle.refCount <= 0) {
+            safeCloseSyncHandle(fd, handle.syncHandle, fileInfo.path);
+
+            // A dispose() mid-open can leave a newer handle registered for the path — keep it
+            if (this.openHandles.get(fileInfo.path) === handle) {
+                this.openHandles.delete(fileInfo.path);
+            }
         }
 
         // After the handle is closed, so the next lock holder can create its own
@@ -491,7 +489,7 @@ export class OPFSSync extends BaseOPFS {
             const readPosition = position ?? fileInfo.position;
 
             // Get file size and calculate read length
-            const fileSize = fileInfo.syncHandle.getSize();
+            const fileSize = fileInfo.handle.syncHandle.getSize();
             const { isEOF, actualLength } = calculateReadLength(readPosition, length, fileSize);
 
             if (isEOF) {
@@ -502,7 +500,7 @@ export class OPFSSync extends BaseOPFS {
             const targetBuffer = buffer.subarray(offset, offset + actualLength);
 
             // Perform efficient positioned read
-            const bytesRead = fileInfo.syncHandle.read(targetBuffer, { at: readPosition });
+            const bytesRead = fileInfo.handle.syncHandle.read(targetBuffer, { at: readPosition });
 
             // Update position if position was not explicitly specified (null means use current position)
             if (position == null) {
@@ -540,7 +538,7 @@ export class OPFSSync extends BaseOPFS {
             const sourceBuffer = buffer.subarray(offset, offset + actualLength);
 
             // Perform efficient positioned write
-            const bytesWritten = fileInfo.syncHandle.write(sourceBuffer, { at: writePosition });
+            const bytesWritten = fileInfo.handle.syncHandle.write(sourceBuffer, { at: writePosition });
 
             // Update position if position was null or undefined (i.e., use current position)
             // Also update position when writing at current position (position === fileInfo.position)
@@ -575,8 +573,8 @@ export class OPFSSync extends BaseOPFS {
         }
 
         try {
-            fileInfo.syncHandle.truncate(size);
-            fileInfo.syncHandle.flush();
+            fileInfo.handle.syncHandle.truncate(size);
+            fileInfo.handle.syncHandle.flush();
 
             // Adjust position if it's beyond the new file size
             if (fileInfo.position > size) {
@@ -594,7 +592,7 @@ export class OPFSSync extends BaseOPFS {
         const fileInfo = this._getFileDescriptor(fd);
 
         try {
-            fileInfo.syncHandle.flush();
+            fileInfo.handle.syncHandle.flush();
         }
         catch (error) {
             throw createFDError('sync', fd, fileInfo.path, error);
@@ -607,9 +605,6 @@ export class OPFSSync extends BaseOPFS {
             safeCloseSyncHandle(-1, shared.syncHandle, path);
         }
 
-        // pendingHandles is left alone: in-flight creations can't be cancelled and remove
-        // their own entry when done. Clearing it would let a later open start a second
-        // createSyncAccessHandle() for the same path and fail with EBUSY.
         // Let go of the path locks still held by open descriptors (release is idempotent)
         for (const { lock } of this.openFiles.values()) {
             lock?.release();
@@ -619,6 +614,10 @@ export class OPFSSync extends BaseOPFS {
         this.sharedLocks.clear();
         this.openFiles.clear();
         this.nextFd = 1;
+
+        // pendingHandles is left alone: in-flight creations can't be cancelled and remove
+        // their own entry when done. Clearing it would let a later open start a second
+        // createSyncAccessHandle() for the same path and fail with EBUSY.
 
         super.dispose();
     }
