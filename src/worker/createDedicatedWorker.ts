@@ -1,9 +1,9 @@
 import { wrap } from 'comlink';
 
 import InlineWorker from './dedicated.worker?worker&inline';
-import { normalizePath } from '../utils/helpers';
+import { normalizePath } from '../utils/helpers.js';
 
-import type { OPFSOptions, OPFSSync } from '../types';
+import type { OPFSOptions, OPFSSync } from '../types.js';
 import type { Remote } from 'comlink';
 
 type RemoteOPFSSync = Remote<OPFSSync>;

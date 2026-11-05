@@ -1,13 +1,13 @@
 import { minimatch } from 'minimatch';
 
-import { encodeString } from './encoder';
+import { encodeString } from './encoder.js';
 import {
     OPFSNotSupportedError,
     ValidationError,
     mapDomError
-} from './errors';
+} from './errors.js';
 
-import type { Encoding } from '../types';
+import type { Encoding } from '../types.js';
 
 
 /**

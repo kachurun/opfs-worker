@@ -1,6 +1,6 @@
 import { expose } from 'comlink';
 
-import { OPFSAsync } from '../core/OPFSAsync';
+import { OPFSAsync } from '../core/OPFSAsync.js';
 
 /**
  * Shared worker entry — built self-contained (comlink bundled in) to

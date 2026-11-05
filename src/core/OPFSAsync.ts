@@ -1,10 +1,10 @@
 import { transfer } from 'comlink';
 
-import { BaseOPFS } from './BaseOPFS';
-import { WatchEventType } from '../types';
-import { OPFSError, OperationNotSupportedError, mapDomError } from '../utils/errors';
+import { BaseOPFS } from './BaseOPFS.js';
+import { WatchEventType } from '../types.js';
+import { OPFSError, OperationNotSupportedError, mapDomError } from '../utils/errors.js';
 
-import type { FileOpenOptions, FileStat } from '../types';
+import type { FileOpenOptions, FileStat } from '../types.js';
 
 const FD_UNSUPPORTED = 'file descriptors are not available in the async backend, use the dedicated worker backend (`createOPFSDedicated`) for positional I/O';
 

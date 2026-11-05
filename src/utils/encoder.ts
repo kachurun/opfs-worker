@@ -1,6 +1,6 @@
-import { ValidationError } from './errors';
+import { ValidationError } from './errors.js';
 
-import type { Encoding } from '../types';
+import type { Encoding } from '../types.js';
 
 
 /**

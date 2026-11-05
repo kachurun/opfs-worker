@@ -1,7 +1,7 @@
-import { OPFSFacade } from './OPFSFacade';
-import { createDedicatedWorker } from '../worker/createDedicatedWorker';
+import { OPFSFacade } from './OPFSFacade.js';
+import { createDedicatedWorker } from '../worker/createDedicatedWorker.js';
 
-import type { DedicatedWorkerOptions } from '../worker/createDedicatedWorker';
+import type { DedicatedWorkerOptions } from '../worker/createDedicatedWorker.js';
 
 /**
  * Dedicated mode: start a dedicated worker and get a Node-like `fs` API

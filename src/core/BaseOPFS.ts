@@ -1,4 +1,4 @@
-import { WatchEventType } from '../types';
+import { WatchEventType } from '../types.js';
 import {
     AlreadyExistsError,
     DirectoryOperationError,
@@ -9,7 +9,7 @@ import {
     OPFSError,
     PathError,
     mapDomError
-} from '../utils/errors';
+} from '../utils/errors.js';
 
 import {
     basename,
@@ -22,9 +22,9 @@ import {
     resolvePath,
     splitPath,
     withLock
-} from '../utils/helpers';
-import { expandImportFilesSource } from '../utils/importSources';
-import { defaultNamespace } from '../utils/namespace';
+} from '../utils/helpers.js';
+import { expandImportFilesSource } from '../utils/importSources.js';
+import { defaultNamespace } from '../utils/namespace.js';
 
 import type {
     DirentData,
@@ -36,8 +36,8 @@ import type {
     OPFSOptions,
     RenameOptions,
     WatchEvent,
-} from '../types';
-import type { ResolvedImportFileData } from '../utils/importSources';
+} from '../types.js';
+import type { ResolvedImportFileData } from '../utils/importSources.js';
 
 
 /**

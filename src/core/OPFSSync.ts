@@ -1,14 +1,14 @@
 import { transfer } from 'comlink';
 
-import { BaseOPFS } from './BaseOPFS';
-import { WatchEventType } from '../types';
+import { BaseOPFS } from './BaseOPFS.js';
+import { WatchEventType } from '../types.js';
 import {
     AlreadyExistsError,
     OPFSError,
     ValidationError,
     createFDError,
     mapDomError
-} from '../utils/errors';
+} from '../utils/errors.js';
 
 import {
     calculateReadLength,
@@ -17,9 +17,9 @@ import {
     resolvePath,
     safeCloseSyncHandle,
     validateReadWriteArgs
-} from '../utils/helpers';
+} from '../utils/helpers.js';
 
-import type { FileOpenOptions, FileStat, OPFSOptions } from '../types';
+import type { FileOpenOptions, FileStat, OPFSOptions } from '../types.js';
 
 /** One sync access handle shared by every descriptor open on a path */
 interface SharedHandle {

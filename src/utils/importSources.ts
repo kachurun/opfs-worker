@@ -1,6 +1,6 @@
-import { normalizePath, resolvePath } from './helpers';
+import { normalizePath, resolvePath } from './helpers.js';
 
-import type { ImportFileData, ImportFilesSource, PathLike } from '../types';
+import type { ImportFileData, ImportFilesSource, PathLike } from '../types.js';
 
 /** Content types after File System Access handles are resolved. */
 export type ResolvedImportFileData = string | Uint8Array | Blob;

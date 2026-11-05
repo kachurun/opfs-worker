@@ -2,8 +2,8 @@
     "extends": "./tsconfig.json",
     "compilerOptions": {
         "target": "ES2022",
-        "module": "ESNext",
-        "moduleResolution": "bundler",
+        "module": "NodeNext",
+        "moduleResolution": "NodeNext",
         "lib": ["ES2022", "DOM", "DOM.Iterable", "WebWorker"],
         "allowSyntheticDefaultImports": true,
         "esModuleInterop": true,

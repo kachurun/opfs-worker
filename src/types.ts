@@ -1,5 +1,5 @@
-import type { BaseOPFS } from './core/BaseOPFS';
-import type { OPFSSync } from './core/OPFSSync';
+import type { BaseOPFS } from './core/BaseOPFS.js';
+import type { OPFSSync } from './core/OPFSSync.js';
 
 /**
  * Type for paths that can be either a string or URI
