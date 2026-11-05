@@ -1,7 +1,7 @@
-import { OPFSFacade } from './OPFSFacade';
-import { createSharedWorker } from '../worker/createSharedWorker';
+import { OPFSFacade } from './OPFSFacade.js';
+import { createSharedWorker } from '../worker/createSharedWorker.js';
 
-import type { SharedWorkerOptions } from '../worker/createSharedWorker';
+import type { SharedWorkerOptions } from '../worker/createSharedWorker.js';
 
 /**
  * Shared mode: Node-like `fs` API over a SharedWorker running one `OPFSAsync`

@@ -1,9 +1,9 @@
 import { wrap } from 'comlink';
 
-import { normalizePath } from '../utils/helpers';
+import { normalizePath } from '../utils/helpers.js';
 
-import type { OPFSAsync } from '../core/OPFSAsync';
-import type { OPFSOptions } from '../types';
+import type { OPFSAsync } from '../core/OPFSAsync.js';
+import type { OPFSOptions } from '../types.js';
 import type { Remote } from 'comlink';
 
 type RemoteOPFSAsync = Remote<OPFSAsync>;

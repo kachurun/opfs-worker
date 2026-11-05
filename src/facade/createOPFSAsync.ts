@@ -1,7 +1,7 @@
-import { OPFSFacade } from './OPFSFacade';
-import { OPFSAsync } from '../core/OPFSAsync';
+import { OPFSFacade } from './OPFSFacade.js';
+import { OPFSAsync } from '../core/OPFSAsync.js';
 
-import type { OPFSOptions } from '../types';
+import type { OPFSOptions } from '../types.js';
 
 /**
  * Async mode: Node-like `fs` API over the promise-based File System API,

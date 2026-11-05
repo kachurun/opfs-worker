@@ -1,5 +1,5 @@
 // Internal module: not re-exported from the package entry points (unlike ./helpers).
-import { normalizePath } from './helpers';
+import { normalizePath } from './helpers.js';
 
 /**
  * Default watch event namespace for a root: `opfs-worker:${normalizedRoot}`.

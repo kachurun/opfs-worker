@@ -60,6 +60,7 @@ OPFS allows **one sync access handle per file**. A second `createSyncAccessHandl
 
 - **Lib build:** `vite.config.ts` builds the library. The dedicated worker is inlined with `import … from './dedicated.worker?worker&inline'`.
 - **Worker builds:** `vite.worker.config.ts` builds each self-contained worker script separately (`OPFS_WORKER=…`). A multi-entry build would split chunks and break loading a worker from a single URL.
+- **Relative imports in `src/` end in `.js`** (`'./types.js'`, `'../utils/helpers.js'`). `tsc` copies specifiers into `dist/*.d.ts` as written, and consumers using `moduleResolution: node16`/`nodenext` can't resolve extensionless ones. `tsconfig.build.json` uses `NodeNext`, so `build:types` fails with TS2835 if one is missing.
 - **`new URL('./x.js', import.meta.url)` in `src/`:** Vite resolves it to the `.ts` source and inlines that as a `data:` URL. Add `/* @vite-ignore */` when the URL should point to a built file next to the chunk, as in `createSharedWorker`. After building, `grep -rl 'data:video/mp2t' dist/` must print nothing.
 
 ## Tests

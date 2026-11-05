@@ -1,8 +1,8 @@
-export * from './types';
-export * from './utils/errors';
-export * from './utils/helpers';
-export * from './utils/encoder';
+export * from './types.js';
+export * from './utils/errors.js';
+export * from './utils/helpers.js';
+export * from './utils/encoder.js';
 
-export { BaseOPFS } from './core/BaseOPFS';
-export { OPFSSync } from './core/OPFSSync';
-export { OPFSAsync } from './core/OPFSAsync';
+export { BaseOPFS } from './core/BaseOPFS.js';
+export { OPFSSync } from './core/OPFSSync.js';
+export { OPFSAsync } from './core/OPFSAsync.js';

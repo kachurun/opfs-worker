@@ -1,10 +1,10 @@
 import { proxy, transfer } from 'comlink';
 
-import { decodeBuffer, encodeString, isBinaryFileExtension } from '../utils/encoder';
-import { OperationNotSupportedError } from '../utils/errors';
-import { matchMinimatch, normalizeMinimatch } from '../utils/helpers';
-import { expandImportFilesSource, isFileSystemFileHandle } from '../utils/importSources';
-import { defaultNamespace } from '../utils/namespace';
+import { decodeBuffer, encodeString, isBinaryFileExtension } from '../utils/encoder.js';
+import { OperationNotSupportedError } from '../utils/errors.js';
+import { matchMinimatch, normalizeMinimatch } from '../utils/helpers.js';
+import { expandImportFilesSource, isFileSystemFileHandle } from '../utils/importSources.js';
+import { defaultNamespace } from '../utils/namespace.js';
 
 import type {
     BinaryEncoding,
@@ -25,7 +25,7 @@ import type {
     WatchListener,
     WatchOptions,
     WatchSnapshot
-} from '../types';
+} from '../types.js';
 
 /**
  * Utility function to convert a PathLike to a string path

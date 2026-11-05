@@ -1,6 +1,6 @@
 import { expose } from 'comlink';
 
-import { OPFSSync } from '../core/OPFSSync';
+import { OPFSSync } from '../core/OPFSSync.js';
 
 /**
  * Dedicated worker entry.
