@@ -1,5 +1,11 @@
 # opfs-worker
 
+## 2.3.1
+
+### Patch Changes
+
+-   c854473: Emit `.js` extensions on relative imports in the published `.d.ts` files, so the types resolve under `moduleResolution: "node16"` / `"nodenext"`.
+
 ## 2.3.0
 
 ### Minor Changes
